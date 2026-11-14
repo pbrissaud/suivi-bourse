@@ -83,6 +83,7 @@ PARAMETERS: Dict[str, Tuple[Tuple[str, str, bool], ...]] = {
     ),
     BRACKETED_REALISED: (
         ('brackets', BRACKETS, True),
+        ('social_rate', RATE, False),
     ),
     WITHHOLDING_INCOME: (
         ('rate', RATE, True),

@@ -36,16 +36,6 @@ from api.common import (
 bp = Blueprint('portfolio', __name__)
 
 
-@bp.get('/portfolio/movers')
-def get_portfolio_movers():
-    """What moved since each line's previous close (#652 déc. 8, #1142)."""
-    reader = _reader()
-    movers = portfolio_view.build_movers(
-        portfolio_view.build_shares(reader.positions(), _carried()),
-        reader.previous_closes())
-    return jsonify({'movers': [mover.to_dict() for mover in movers]})
-
-
 @bp.get('/positions')
 def list_positions():
     """The hot read of the portfolio — one query for the whole of it."""
@@ -56,7 +46,8 @@ def list_positions():
 @bp.get('/portfolio-totals')
 def get_portfolio_totals():
     """The newest day of the global perf series, plus three derived members."""
-    return jsonify(portfolio_facts.totals_payload(_store()))
+    return jsonify(portfolio_facts.totals_payload(
+        _store(), _snapshot(), datetime.now(timezone.utc)))
 
 
 @bp.get('/portfolio-totals/history')

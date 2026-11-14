@@ -280,7 +280,8 @@ def references(store, snapshot, now: datetime) -> List[Dict[str, Any]]:
 
     An unfollowed ETF holding a series is either ``kept`` (consulted: the purge
     spares it) or ``freed`` (the owner stopped keeping it: it goes at the next
-    purge).
+    purge -- never one the ledger names or a position holds, which the purge
+    spares whatever the owner chose).
     """
     following = followed(store)
     done = readiness(store, snapshot, following, now)
@@ -288,6 +289,9 @@ def references(store, snapshot, now: datetime) -> List[Dict[str, Any]]:
     kept = ledger.consulted_benchmarks(store)
     empty = never_priced(store, snapshot, following, now)
     current = _current(following, done, empty)
+    # A series the purge would spare because the ledger or a position holds the
+    # symbol is not « released »: nobody stopped keeping a fund they own.
+    owned = ledger.ledger_symbols(store)
 
     rows = []
     for entry in benchmarks.BENCHMARKS:
@@ -302,7 +306,7 @@ def references(store, snapshot, now: datetime) -> List[Dict[str, Any]]:
                'never_priced': symbol in empty}
         if not is_followed and quotes.oldest_ts(store, symbol) is not None:
             row['kept'] = symbol in kept
-            row['freed'] = symbol not in kept
+            row['freed'] = symbol not in kept and symbol not in owned
         if is_followed and not row['ready']:
             window = windows.get(symbol)
             if window is None:
@@ -577,6 +581,10 @@ def _aggregate(replayed: Dict[str, Any], merged,
         'accounts': sorted(accounts),
         'portfolio_value': portfolio,
         'reference_value': reference,
+        # The money both sides were handed, net of what came back out of the
+        # securities: the denominator of the two returns and the « same money
+        # invested » the page states, so it is published rather than re-derived.
+        'contributed': contributed,
         'gap_gross': None if portfolio is None else portfolio - reference,
         'portfolio_return': _return(portfolio, contributed),
         'reference_return': _return(reference, contributed),
@@ -613,6 +621,7 @@ def _rows(replayed: Dict[str, Any]) -> List[Dict[str, Any]]:
             'ended': result.ended,
             'portfolio_value': portfolio,
             'reference_value': reference,
+            'contributed': contributed,
             'gap_gross': (None if portfolio is None or reference is None
                           else portfolio - reference),
             'portfolio_return': _return(portfolio, contributed),

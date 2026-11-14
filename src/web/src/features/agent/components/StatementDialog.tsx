@@ -23,7 +23,8 @@ import {
 } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { accountsApi } from '@/features/accounts/lib/api'
-import { agentApi, PROVIDER_NAME, STATEMENT_MAX } from '@/features/agent/lib/api'
+import { providerName } from '@/features/agent/components/ModelPicker'
+import { agentApi, STATEMENT_MAX } from '@/features/agent/lib/api'
 import { useI18n } from '@/lib/i18n'
 
 /** The `<select>` skin the forms share (`EventForm`, `AgentProviderSheet`). */
@@ -39,12 +40,15 @@ export interface StatementDraftIn {
 export function StatementDialog({
   draft,
   threadId,
+  providerId,
   onClose,
   onSent,
 }: {
   /** The box is open while there is a draft. */
   draft: StatementDraftIn | null
   threadId: string
+  /** The provider the thread runs on; the default one while it names none. */
+  providerId?: string
   onClose: () => void
   /** The proposal exists and the thread holds its messages on the server. */
   onSent: () => void
@@ -57,11 +61,15 @@ export function StatementDialog({
   const [text, setText] = useState('')
   const open = draft !== null
 
-  const config = useQuery({
-    queryKey: ['agent-config'],
-    queryFn: agentApi.agentConfig,
+  const providers = useQuery({
+    queryKey: ['agent-providers'],
+    queryFn: agentApi.providers,
     enabled: open,
   })
+  const chosen =
+    providers.data?.find((one) => one.id === providerId) ??
+    providers.data?.find((one) => one.is_default) ??
+    providers.data?.[0]
   const accounts = useQuery({
     queryKey: ['accounts'],
     queryFn: accountsApi.accounts,
@@ -79,12 +87,11 @@ export function StatementDialog({
 
   const write = useMutation({
     mutationFn: () => {
-      const provider = config.data?.provider
-      if (!provider) throw new Error('no provider')
+      if (!chosen) throw new Error('no provider')
       return agentApi.sendStatement({
         thread_id: threadId,
         account,
-        provider,
+        provider_id: chosen.id,
         name: draft?.name || t('agent.statement.pasted'),
         text: text.trim(),
       })
@@ -108,15 +115,14 @@ export function StatementDialog({
 
   const count = text.trim().length
   const tooLong = count > STATEMENT_MAX
-  const provider = config.data?.provider
-  const ready = provider != null && account !== '' && count > 0 && !tooLong
+  const ready = chosen !== undefined && account !== '' && count > 0 && !tooLong
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? null : close())}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('agent.statement.title')}</DialogTitle>
-          <DialogDescription>{t('agent.statement.description')}</DialogDescription>
+          <DialogDescription className="sr-only">{t('agent.statement.title')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-1.5">
@@ -150,7 +156,7 @@ export function StatementDialog({
             id={textId}
             value={text}
             rows={8}
-            className="max-h-64 font-mono text-xs"
+            className="max-h-64 fig text-xs"
             aria-invalid={tooLong}
             onChange={(event) => setText(event.target.value)}
           />
@@ -164,11 +170,11 @@ export function StatementDialog({
           </p>
         </div>
 
-        {provider ? (
+        {chosen ? (
           <p className="text-sm">
             {t('agent.statement.provider', {
-              provider: t(PROVIDER_NAME[provider]),
-              model: config.data?.model_name ?? config.data?.model ?? '',
+              provider: providerName(chosen, t),
+              model: chosen.default_model ?? '',
             })}
           </p>
         ) : null}
@@ -180,7 +186,12 @@ export function StatementDialog({
           <Button type="button" variant="outline" disabled={write.isPending} onClick={close}>
             {t('agent.statement.cancel')}
           </Button>
-          <Button type="button" disabled={!ready || write.isPending} onClick={() => write.mutate()}>
+          <Button
+            variant="primary"
+            type="button"
+            disabled={!ready || write.isPending}
+            onClick={() => write.mutate()}
+          >
             {write.isPending ? t('agent.statement.sending') : t('agent.statement.send')}
           </Button>
         </div>

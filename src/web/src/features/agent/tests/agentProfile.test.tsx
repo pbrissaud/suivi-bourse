@@ -7,10 +7,10 @@ import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
 import { factLabel, type Profile, type Proposal } from '@/features/agent/lib/profile'
+import { aProvider } from '@/features/agent/tests/agentFixtures'
 import { ROUTES } from '@/lib/api'
 import fr from '@/i18n/fr.json'
 import { formatMessage } from '@/lib/i18n'
-import { anAgentConfig } from '@/test/factories'
 import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
@@ -23,11 +23,8 @@ function switchedOn(profile: Profile = { facts: {}, projects: [] }) {
   let current = profile
   server.use(
     http.get(ROUTES.agentThreads, () => HttpResponse.json([])),
-    http.get(ROUTES.agentConfig, () =>
-      HttpResponse.json(
-        anAgentConfig({ enabled: true, provider: 'anthropic', model: 'claude-sonnet-5-5' }),
-      ),
-    ),
+    http.get(ROUTES.agentConfig, () => HttpResponse.json({ enabled: true, reasoning: 'low' })),
+    http.get(ROUTES.agentProviders, () => HttpResponse.json([aProvider()])),
     http.get(ROUTES.profile, () => HttpResponse.json(current)),
     http.put(ROUTES.profileFact, async ({ params, request }) => {
       const { value } = (await request.json()) as { value: unknown }
@@ -263,7 +260,7 @@ describe('the proposal card (5A)', () => {
   })
 })
 
-describe('the profile chips (13A)', () => {
+describe('the profile line (13A)', () => {
   const project = (id: string, label: string, year: number) => ({
     id: id.padEnd(12, '0'),
     label,
@@ -288,14 +285,14 @@ describe('the profile chips (13A)', () => {
     switchedOn()
     const { main } = await openPage('/agent')
     await within(main).findByRole('textbox', { name: 'Votre question' })
-    expect(within(main).queryByRole('list', { name: 'Votre profil' })).not.toBeInTheDocument()
+    expect(within(main).queryByRole('group', { name: 'Votre profil' })).not.toBeInTheDocument()
   })
 
-  it('shows four chips and +2, the income not sent, and +2 opens all six', async () => {
+  it('shows three values and « 3 autres », the income not sent, and the latter opens all six', async () => {
     switchedOn(full)
     const { user, main } = await openPage('/agent')
 
-    const chips = await within(main).findByRole('list', { name: 'Votre profil' })
+    const chips = await within(main).findByRole('group', { name: 'Votre profil' })
     expect(
       within(chips)
         .getAllByRole('button')
@@ -304,20 +301,19 @@ describe('the profile chips (13A)', () => {
       'Revenu · non envoyé',
       expect.stringMatching(/^TMI 30\s%$/),
       'Équilibré',
-      'Maison · 2028',
-      '+2',
+      '3 autres',
     ])
-    await user.click(within(chips).getByRole('button', { name: 'Tout votre profil (+2)' }))
+    await user.click(within(chips).getByRole('button', { name: 'Tout votre profil (3 autres)' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getAllByRole('button', { name: 'Oublier' })).toHaveLength(6)
     expect(within(dialog).getByText('Voilier · 2040')).toBeInTheDocument()
   })
 
-  it('edits a fact in its popover, and the chip shows the new value', async () => {
+  it('edits a fact in its popover, and the line shows the new value', async () => {
     const writes = switchedOn({ facts: { marginal_rate: full.facts.marginal_rate }, projects: [] })
     const { user, main } = await openPage('/agent')
 
-    const chips = await within(main).findByRole('list', { name: 'Votre profil' })
+    const chips = await within(main).findByRole('group', { name: 'Votre profil' })
     await user.click(within(chips).getByRole('button', { name: /^TMI 30/ }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(/^Confirmé le /)).toBeInTheDocument()
@@ -333,14 +329,14 @@ describe('the profile chips (13A)', () => {
     expect(await within(chips).findByRole('button', { name: /^TMI 41/ })).toBeInTheDocument()
   })
 
-  it('forgets a fact at once, and its chip goes', async () => {
+  it('forgets a fact at once, and its value goes', async () => {
     const writes = switchedOn({
       facts: { income: full.facts.income, risk_tolerance: full.facts.risk_tolerance },
       projects: [],
     })
     const { user, main } = await openPage('/agent')
 
-    const chips = await within(main).findByRole('list', { name: 'Votre profil' })
+    const chips = await within(main).findByRole('group', { name: 'Votre profil' })
     await user.click(within(chips).getByRole('button', { name: 'Équilibré' }))
     await user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Oublier' }),

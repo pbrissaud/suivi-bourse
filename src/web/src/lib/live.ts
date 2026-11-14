@@ -11,7 +11,7 @@
  * reader coming back to the tab after an hour should not wait up to a minute
  * for figures that are an hour old.
  *
- * `config`, `events` and `dashboard-layout` are **not** here, and must not be:
+ * `config` and `events` are **not** here, and must not be:
  * forms are seeded from them, and a refetch under a form being typed in would
  * reseed it.
  */
@@ -29,7 +29,6 @@ export const LIVE_KEYS = [
   'runtime',
   'positions',
   'portfolio-totals',
-  'movers',
   'portfolio-totals-history',
   'positions-history',
 ] as const

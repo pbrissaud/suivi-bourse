@@ -6,10 +6,10 @@ a credential, so a route added later is unreachable without one whatever its
 path. With the PIN off it forwards everything untouched and answers ``/auth/*``
 only.
 
-Two credentials. The **session cookie** opens the app. The **access token**, a
-bearer shown once, opens ``/mcp`` and every method on ``/api`` (#1313), never
-``/auth/*``: a leaked token cannot rotate itself, change the lifetime or turn
-the code off. A session lives the **stored lifetime** (30 days unless the owner
+Two credentials. The **session cookie** opens the app. An **access token**, a
+bearer shown once, opens the mount its scopes name: ``/mcp`` for ``mcp``, every
+method on ``/api`` for ``api`` (#1313). Never ``/auth/*`` nor ``/api/tokens``: a
+leaked token cannot mint another, change the lifetime or turn the code off. A session lives the **stored lifetime** (30 days unless the owner
 chose less) after it was last signed; any request re-signs a cookie older than
 a minute, except one marked ``X-SB-Background: 1`` — a poll from a tab nobody
 touches does not keep the session alive.
@@ -17,8 +17,8 @@ touches does not keep the session alive.
 It also owns ``auth_secret``, the one row it reads and writes: the state lives
 in an immutable snapshot, loaded at startup and swapped under an
 ``asyncio.Lock`` only once the store has taken the write (one uvicorn worker
-assumed). The rules themselves — hashing, the throttle, the purge — are
-``auth_rules``.
+assumed). The tokens are ``access_tokens``' rows, looked up per bearer request.
+The rules themselves — hashing, the throttle, the purge — are ``auth_rules``.
 """
 import asyncio
 import hashlib
@@ -34,6 +34,7 @@ from itsdangerous import BadSignature, TimestampSigner
 from werkzeug.http import parse_cookie
 from logfmt_logger import getLogger
 
+from application import access_tokens
 from application import auth_rules
 from application import instants
 from application import store_steps
@@ -66,11 +67,11 @@ class AuthState:
 
     pin_hash: Optional[str] = None
     session_secret: Optional[str] = None
-    token_hash: Optional[str] = None
-    token_created_at: Optional[datetime] = None
     revoked: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     #: As stored: ``None`` is the default. Read :attr:`lifetime`.
     session_seconds: Optional[int] = None
+    #: When the code was first set: « Actif depuis le … » (kept across changes).
+    enabled_at: Optional[datetime] = None
 
     @property
     def enabled(self) -> bool:
@@ -88,29 +89,31 @@ OFF = AuthState()
 def read_state(store) -> AuthState:
     """The stored row, or :data:`OFF` when there is none."""
     rows = store.query(
-        'SELECT pin_hash, session_secret, token_hash, token_created_at, revoked, '
-        'session_seconds FROM auth_secret WHERE id = 1')
+        'SELECT pin_hash, session_secret, revoked, session_seconds, '
+        'enabled_at, updated_at FROM auth_secret WHERE id = 1')
     if not rows:
         return OFF
-    pin_hash, secret, token_hash, created_at, revoked, seconds = rows[0]
-    return AuthState(pin_hash, secret, token_hash,
-                     instants.utc(created_at) if created_at else None,
-                     MappingProxyType(json.loads(revoked or '{}')), seconds)
+    pin_hash, secret, revoked, seconds, enabled_at, updated_at = rows[0]
+    # A code set before the column existed: its last write is the best date known.
+    since = enabled_at or updated_at
+    return AuthState(pin_hash, secret,
+                     MappingProxyType(json.loads(revoked or '{}')), seconds,
+                     instants.utc(since) if since else None)
 
 
 def write_state(store, state: AuthState) -> None:
-    """Replace the row with ``state``, or delete it when the PIN is off."""
+    """Replace the row with ``state``, or delete it when the PIN is off, and the
+    access tokens with it."""
     with store.transaction():
         store.execute('DELETE FROM auth_secret')
         if not state.enabled:
+            access_tokens.clear(store)
             return
         store.execute(
-            'INSERT INTO auth_secret (id, pin_hash, session_secret, token_hash, '
-            'token_created_at, revoked, session_seconds, updated_at) '
-            'VALUES (1, ?, ?, ?, ?, ?, ?, ?)',
-            [state.pin_hash, state.session_secret, state.token_hash,
-             state.token_created_at, json.dumps(dict(state.revoked)),
-             state.session_seconds, datetime.now(timezone.utc)])
+            'INSERT INTO auth_secret (id, pin_hash, session_secret, revoked, '
+            'session_seconds, enabled_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?)',
+            [state.pin_hash, state.session_secret, json.dumps(dict(state.revoked)),
+             state.session_seconds, state.enabled_at, datetime.now(timezone.utc)])
 
 
 def add_session_seconds(connection) -> None:
@@ -123,8 +126,28 @@ def add_session_seconds(connection) -> None:
     store_steps.add_column(connection, 'auth_secret', 'session_seconds', 'INTEGER')
 
 
+def add_enabled_at(connection) -> None:
+    """The schema step giving an existing ``auth_secret`` its first-set date.
+
+    ``NULL`` on a code set before it: read as ``updated_at``. A no-op on a new store.
+    """
+    store_steps.add_column(connection, 'auth_secret', 'enabled_at', 'TIMESTAMPTZ')
+
+
+def move_token_to_access_tokens(connection) -> None:
+    """The schema step turning the single access token into a row of
+    ``access_tokens`` (#1313): both scopes, never expiring, so the clients that
+    hold it keep working. The legacy columns stay, unread. A no-op on a store
+    with no token."""
+    row = connection.execute(
+        'SELECT token_hash, token_created_at FROM auth_secret '
+        'WHERE id = 1 AND token_hash IS NOT NULL').fetchone()
+    if row:
+        access_tokens.adopt(connection, row[0], row[1])
+
+
 def reset(store) -> None:
-    """``SB_RESET_AUTH=1``: the PIN, the session secret and the access token, gone."""
+    """``SB_RESET_AUTH=1``: the PIN, the session secret and the access tokens, gone."""
     write_state(store, OFF)
     logger.warning(
         'SB_RESET_AUTH is set: the PIN, the session secret and the access token '
@@ -176,14 +199,15 @@ class Gate:
         # PIN screen has a session: without them it caches the index page as
         # the favicon and keeps it after login.
         public = path.startswith('/assets/') or path in (
-            '/health', '/api/theme.css', '/favicon.svg', '/favicon-32.png',
+            '/health', '/healthz', '/readyz', '/api/theme.css', '/favicon.svg', '/favicon-32.png',
             '/apple-touch-icon.png')
         if reading and public:
             await self.inner(scope, receive, send)
             return
 
+        bearer = _bearer(scope)
         if path.startswith('/mcp'):
-            if auth_rules.token_matches(_bearer(scope), state.token_hash):
+            if await self._token_opens(bearer, 'mcp'):
                 await self.inner(scope, receive, send)
                 return
             await _problem(send, 401, 'Unauthorized',
@@ -192,9 +216,11 @@ class Gate:
             return
 
         api = path == '/api' or path.startswith('/api/')
-        # The access token opens /api for scripts, every method (#1313). A
-        # wrong one is no answer yet: the cookie beside it may still be good.
-        if api and auth_rules.token_matches(_bearer(scope), state.token_hash):
+        # A token with the ``api`` scope opens /api for scripts, every method
+        # (#1313), but not the tokens themselves. A wrong one is no answer yet:
+        # the cookie beside it may still be good.
+        tokens = path == '/api/tokens' or path.startswith('/api/tokens/')
+        if api and not tokens and await self._token_opens(bearer, 'api'):
             await self.inner(scope, receive, send)
             return
 
@@ -242,6 +268,12 @@ class Gate:
     def _fresh_cookie(self, scope, state: AuthState) -> bytes:
         return self._cookie(scope, state, secrets.token_urlsafe(16))
 
+    async def _token_opens(self, bearer: Optional[str], scope: str) -> bool:
+        if not bearer:
+            return False
+        return await asyncio.to_thread(
+            access_tokens.authenticate, self.store, bearer, scope, self.now())
+
     async def _verify(self, pin, stored: Optional[str]) -> bool:
         async with self._checks:
             return await asyncio.to_thread(auth_rules.verify_pin, pin, stored)
@@ -270,7 +302,6 @@ class Gate:
             ('POST', '/auth/enable'): self._enable,
             ('POST', '/auth/change'): self._change,
             ('POST', '/auth/disable'): self._disable,
-            ('POST', '/auth/token'): self._regenerate,
             ('POST', '/auth/lifetime'): self._lifetime,
         }.get((method, path))
         if route is None:
@@ -278,7 +309,7 @@ class Gate:
             return
         state = self.state
         session = self._session(scope, state)
-        guarded = route in (self._change, self._disable, self._regenerate)
+        guarded = route in (self._change, self._disable)
         if guarded:
             if not state.enabled:
                 await _problem(send, 409, 'No code is set')
@@ -313,9 +344,9 @@ class Gate:
         await _json(send, 200, {
             'enabled': state.enabled,
             'authenticated': signed_in,
-            'token_created_at': instants.iso(state.token_created_at)
-            if signed_in and state.token_created_at else None,
             'session_seconds': state.lifetime if signed_in else None,
+            'enabled_since': (instants.iso(state.enabled_at)
+                              if signed_in and state.enabled_at else None),
         })
 
     async def _sign_in(self, scope, send, state, session, body) -> None:
@@ -361,22 +392,23 @@ class Gate:
         if not auth_rules.is_pin(pin):
             await _problem(send, 400, 'Bad request', 'A code is six digits.')
             return
-        token = auth_rules.new_token()
+        created = False
 
         async def enable(current: AuthState) -> AuthState:
+            nonlocal created
             if current.enabled:
                 return current
+            created = True
             return AuthState(
                 pin_hash=await asyncio.to_thread(auth_rules.hash_pin, pin),
                 session_secret=secrets.token_hex(32),
-                token_hash=auth_rules.hash_token(token),
-                token_created_at=self.now())
+                enabled_at=self.now())
         after = await self._commit(enable)
-        if after.token_hash != auth_rules.hash_token(token):
+        if not created:
             await _problem(send, 409, 'A code is already set')
             return
         logger.info('A PIN was set')
-        await _json(send, 200, _token_body(token, after),
+        await _json(send, 200, {'enabled': True},
                     headers=[(b'set-cookie', self._fresh_cookie(scope, after))])
 
     async def _change(self, scope, send, state, session, body) -> None:
@@ -404,21 +436,9 @@ class Gate:
                 raise _WrongCode()
             return OFF
         await self._commit(disable)
-        logger.info('The PIN was removed, and the access token with it')
+        logger.info('The PIN was removed, and the access tokens with it')
         await _json(send, 200, {'enabled': False},
                     headers=[(b'set-cookie', _set_cookie(scope, '', 0))])
-
-    async def _regenerate(self, scope, send, state, session, body) -> None:
-        token = auth_rules.new_token()
-
-        async def regenerate(current: AuthState) -> AuthState:
-            if not await self._verify(body.get('current'), current.pin_hash):
-                raise _WrongCode()
-            return replace(current, token_hash=auth_rules.hash_token(token),
-                           token_created_at=self.now())
-        after = await self._commit(regenerate)
-        logger.info('The access token was regenerated')
-        await _json(send, 200, _token_body(token, after))
 
     async def _lifetime(self, scope, send, state, session, body) -> None:
         """Store how long a session lives, and re-sign the caller's cookie.
@@ -483,11 +503,6 @@ class _Signer(TimestampSigner):
 
 class _WrongCode(Exception):
     """The current PIN a change asked for was not the right one."""
-
-
-def _token_body(token: str, state: AuthState) -> dict:
-    return {'token': token,
-            'token_created_at': instants.iso(state.token_created_at)}
 
 
 # --------------------------------------------------------------------------- #

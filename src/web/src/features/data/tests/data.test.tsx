@@ -39,6 +39,7 @@ import {
   aPriceSeries,
   anAccountsPayload,
   anEvent,
+  defaultAccounts,
   anUnaddressableEvent,
   aTypedEvent,
   ledgerEvents,
@@ -72,26 +73,33 @@ function rowsOf(table: HTMLElement) {
 type User = ReturnType<typeof renderApp>['user']
 
 /**
- * A toolbar menu (#1278), opened: the group of its options inside the popover.
- * One that is already open is left alone — pressing its trigger would shut it.
+ * A filter of the control line, opened: its listbox. A filter is a text button
+ * whose name is « Type : Tous les types »; one that is already open is left alone.
  */
 async function openMenu(user: User, axis: 'Type' | 'Compte' | 'Période') {
-  const open = screen.queryByRole('group', { name: axis })
+  const open = screen.queryByRole('listbox', { name: axis })
   if (open) return open
-  await user.click(screen.getByRole('button', { name: new RegExp(`^${axis}`) }))
-  return screen.findByRole('group', { name: axis })
+  await user.click(screen.getByRole('button', { name: new RegExp(`^${axis} :`) }))
+  return screen.findByRole('listbox', { name: axis })
 }
 
-/** A type, picked from the *Type* menu; the menu is left open, as the product does. */
-async function pickType(user: User, name: RegExp) {
-  const types = await openMenu(user, 'Type')
-  await user.click(within(types).getByRole('button', { name }))
-  return types
+/** The options of an open filter, as the reader reads them. */
+const optionNames = (list: HTMLElement) =>
+  within(list)
+    .getAllByRole('option')
+    .map((option) => option.textContent)
+
+/** An option of a filter, picked; the list closes, as the product does. */
+async function pick(user: User, axis: 'Type' | 'Compte' | 'Période', name: string | RegExp) {
+  const list = await openMenu(user, axis)
+  await user.click(within(list).getByRole('option', { name }))
 }
+
+const pickType = (user: User, name: string | RegExp) => pick(user, 'Type', name)
 
 async function openTheForm(user: ReturnType<typeof renderApp>['user']) {
   await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
-  return screen.getByRole('radiogroup', { name: 'Ce qui s’est passé' })
+  return screen.getByRole('tablist', { name: 'Ce qui s’est passé' })
 }
 
 describe('one route, one thing', () => {
@@ -125,7 +133,7 @@ describe('one route, one thing', () => {
 })
 
 describe('the columns of the ledger', () => {
-  it('are the eight, and there is no ninth', async () => {
+  it('are the seven, after the one that ticks, and there is no ninth', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
@@ -137,13 +145,18 @@ describe('the columns of the ledger', () => {
       '',
       'Date',
       'Type',
-      'De quoi il s’agit',
+      'Événement',
       'Quantité',
       'Prix unitaire',
-      'Frais',
       'Montant',
       'Compte',
     ])
+    // The ledger is served newest first: the one sorted column, `foreground` by
+    // the table's own rule, with no glyph.
+    expect(within(ledger()).getByRole('columnheader', { name: 'Date' })).toHaveAttribute(
+      'aria-sort',
+      'descending',
+    )
   })
 
   it('hands a grant’s Montant cell to its quantity below 896 px, and to a dash from there (#1355)', async () => {
@@ -151,7 +164,7 @@ describe('the columns of the ledger', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     // jsdom evaluates no container query: the two spans and their classes are the contract.
-    const cell = rowsOf(ledger())[0].querySelectorAll('td')[7]
+    const cell = rowsOf(ledger())[0].querySelectorAll('td')[6]
     expect(within(cell).getByText(/×\s0,1661/).parentElement).toHaveClass(
       '@min-[56rem]/ledger:hidden',
     )
@@ -172,13 +185,12 @@ describe('the columns of the ledger', () => {
     expect(screen.queryByText('🔒')).not.toBeInTheDocument()
   })
 
-  it('puts the ticker first and the label second, and the label alone on a transfer', async () => {
+  it('leads with the name, « TICKER · libellé » under it, and the label alone on a transfer', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const share = within(ledger()).getAllByText('ZZA')[0].closest('tr') as HTMLElement
-    expect(share).toHaveTextContent(/ZZA/)
-    expect(share).toHaveTextContent(/Ordre au marché, exécution partielle/)
+    const share = within(ledger()).getAllByText('Zeta Alpha')[0].closest('tr') as HTMLElement
+    expect(share).toHaveTextContent('ZZA · Ordre au marché, exécution partielle')
 
     // `Apple Pay Top up` on the real portfolio: there is no symbol at all, so
     // the label *is* the identity — one column doing the work for both families.
@@ -186,7 +198,8 @@ describe('the columns of the ledger', () => {
       .getByText('Virement entrant depuis le compte courant')
       .closest('tr') as HTMLElement
     expect(cash).toHaveTextContent('Versement')
-    expect(within(cash).queryByText('ZZA')).not.toBeInTheDocument()
+    expect(cash).not.toHaveTextContent('ZZ')
+    expect(cash.querySelectorAll('td')[3].querySelectorAll('span')).toHaveLength(0)
   })
 
   it('names no file anywhere, and leads to no source', async () => {
@@ -208,10 +221,10 @@ describe('the columns of the ledger', () => {
     // A ledger is opened to check what has just happened.
     expect(rowsOf(ledger())).toHaveLength(4)
     expect(rowsOf(ledger()).map((row) => within(row).getAllByRole('cell')[1].textContent)).toEqual([
-      '10/02/2026',
-      '12/01/2026',
-      '05/01/2026',
-      '24/12/2025',
+      '10 févr. 2026',
+      '12 janv. 2026',
+      '5 janv. 2026',
+      '24 déc. 2025',
     ])
     expect(screen.queryByRole('navigation', { name: /pagination/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/page \d+/i)).not.toBeInTheDocument()
@@ -223,13 +236,13 @@ describe('the columns of the ledger', () => {
 
     // The cell that used to close a row said *« Saisie manuelle »* or named a
     // file; both halves went with the population they told apart (#816).
-    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
+    const row = within(ledger()).getByText('Zeta Gamma').closest('tr') as HTMLElement
     const cells = within(row).getAllByRole('cell')
-    expect(cells[cells.length - 1]).toHaveTextContent('alpha')
+    expect(cells[cells.length - 1]).toHaveTextContent('Alpha')
     expect(cells[cells.length - 1]).not.toHaveTextContent('—')
   })
 
-  it('truncates a label without a ticker to two lines and keeps the whole text in its title', async () => {
+  it('truncates a label without a ticker to one line and keeps the whole text in its title', async () => {
     const label = `Virement ${'x'.repeat(71)}`
     expect(label).toHaveLength(80)
     renderData([
@@ -248,25 +261,24 @@ describe('the columns of the ledger', () => {
     const identity = within(ledger()).getByRole('button', { name: label })
     expect(identity).toHaveTextContent(label)
     expect(identity).toHaveAttribute('title', label)
-    expect(identity).toHaveClass('line-clamp-2')
+    expect(identity).toHaveClass('truncate')
   })
 
-  it('clamps a label under a ticker to one line', async () => {
+  it('puts the ticker and the label on one truncated sub-line under the name', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const label = within(ledger()).getByText('Ordre au marché, exécution partielle')
-    expect(label).toHaveClass('truncate')
-    expect(label).not.toHaveClass('line-clamp-2')
-    expect(label).toHaveAttribute('title', 'Ordre au marché, exécution partielle')
+    const sub = within(ledger()).getByTitle('ZZA · Ordre au marché, exécution partielle')
+    expect(sub).toHaveClass('truncate', 'text-muted-foreground')
+    expect(sub).toHaveAttribute('title', 'ZZA · Ordre au marché, exécution partielle')
   })
 
-  it('writes the date as dd/mm/yyyy in the table and in full in the checkbox name', async () => {
+  it('writes the date in its medium form, in the table and in the checkbox name', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
-    expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('24/12/2025')
+    const row = within(ledger()).getByText('Zeta Gamma').closest('tr') as HTMLElement
+    expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('24 déc. 2025')
     expect(within(row).getByRole('checkbox')).toHaveAccessibleName(/24 déc\. 2025/)
   })
 
@@ -307,105 +319,45 @@ describe('the reduction, which is what pays for no pagination', () => {
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
   })
 
-  it('lays the six types out in the Type menu, each with what it would leave', async () => {
+  it('lays the six types out in the Type filter, and the way back first', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
-    // Behind a trigger: nothing of the vocabulary is on the page until it is asked for.
-    expect(screen.queryByRole('group', { name: 'Type' })).not.toBeInTheDocument()
+    // Behind a button that shows its value only: nothing of the vocabulary is on
+    // the page until it is asked for.
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Type : Tous les types' })).toBeInTheDocument()
     const types = await openMenu(user, 'Type')
 
-    // A `<select>` collapsed to `Tous` said the absence of a reduction and
-    // nothing else: the vocabulary of the ledger was behind a menu. Since #834
-    // each option also says **what pressing it would leave**, which is the
-    // question a ledger is opened with — and an option retaining nothing stays
-    // on screen, because *no sale ever* is a fact about the reader's ledger.
-    expect(
-      within(types)
-        .getAllByRole('button')
-        .map((facet) => facet.getAttribute('aria-label')),
-    ).toEqual([
-      'Tous les types · 4 événements',
-      'Achat · 2 événements',
-      'Vente · 0 événement',
-      'Attribution · 1 événement',
-      'Dividende · 0 événement',
-      'Versement · 1 événement',
-      'Retrait · 0 événement',
+    expect(optionNames(types)).toEqual([
+      'Tous les types',
+      'Achat',
+      'Vente',
+      'Attribution',
+      'Dividende',
+      'Versement',
+      'Retrait',
     ])
-    expect(within(types).getByRole('button', { name: /^Tous les types/ })).toHaveAttribute(
-      'aria-pressed',
+    expect(within(types).getByRole('option', { name: 'Tous les types' })).toHaveAttribute(
+      'aria-selected',
       'true',
     )
 
-    expect(screen.getByText('4 événements')).toBeInTheDocument()
-    await user.click(within(types).getByRole('button', { name: /^Versement/ }))
-
+    await user.click(within(types).getByRole('option', { name: 'Versement' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
-    // The facet states what it retains, and the count follows the reduction —
-    // saying, since #834, that it *is* one. The menu stayed open under the press.
-    expect(within(types).getByRole('button', { name: /^Versement/ })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    expect(screen.getByText('1 événement filtré')).toBeInTheDocument()
+    // The button wears the value in force, and the list is closed.
+    expect(screen.getByRole('button', { name: 'Type : Versement' })).toBeInTheDocument()
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
 
-    // And it offers the way out, which is the option beside it.
-    await user.click(within(types).getByRole('button', { name: /^Tous les types/ }))
+    // And it offers the way out, which is the first option.
+    await pickType(user, 'Tous les types')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
-    expect(screen.getByText('4 événements')).toBeInTheDocument()
   })
 
-  it('counts every facet with its own axis excluded, which is what a facet is', async () => {
-    // **The criterion** (#834). The number beside *Achat* is *what is left if I
-    // press Achat*, so the type facets do not move when a type is pressed — the
-    // account, the period and the search do apply, and the axis being counted
-    // does not. Counted off the rows on screen instead, five of the six would
-    // read zero the instant one was chosen, and the panel would be answering a
-    // question nobody asks.
+  it('offers the account filter only where there are two accounts to tell apart', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const labels = (group: HTMLElement) =>
-      within(group)
-        .getAllByRole('button')
-        .map((facet) => facet.getAttribute('aria-label'))
-
-    expect(labels(await openMenu(user, 'Période'))).toEqual([
-      'Toutes · 4 événements',
-      '2026 · 3 événements',
-      '2025 · 1 événement',
-    ])
-
-    const types = await pickType(user, /^Achat/)
-    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
-
-    // Its own axis: unmoved, every option still counting the ledger.
-    expect(
-      within(types)
-        .getAllByRole('button')
-        .map((facet) => facet.getAttribute('aria-label')),
-    ).toEqual([
-      'Tous les types · 4 événements',
-      'Achat · 2 événements',
-      'Vente · 0 événement',
-      'Attribution · 1 événement',
-      'Dividende · 0 événement',
-      'Versement · 1 événement',
-      'Retrait · 0 événement',
-    ])
-    // The other axis: reduced by the type in force, down to the two purchases.
-    expect(labels(await openMenu(user, 'Période'))).toEqual([
-      'Toutes · 2 événements',
-      '2026 · 2 événements',
-      '2025 · 0 événement',
-    ])
-  })
-
-  it('offers the account menu only where there are two accounts to tell apart', async () => {
-    const { user } = renderData()
-    await waitFor(() => expect(ledger()).toBeInTheDocument())
-
-    expect(screen.queryByRole('button', { name: /^Compte/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Compte :/ })).not.toBeInTheDocument()
 
     const two = [...ledgerEvents(), anEvent({ id: '12', date: '2026-02-11', account: 'beta' })]
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(two))))
@@ -413,105 +365,29 @@ describe('the reduction, which is what pays for no pagination', () => {
     await user.click(screen.getByRole('link', { name: 'Grand livre' }))
 
     const accounts = await openMenu(user, 'Compte')
-    expect(
-      within(accounts)
-        .getAllByRole('button')
-        .map((facet) => facet.getAttribute('aria-label')),
-    ).toEqual([
-      'Tous les comptes · 5 événements',
-      // The order the ledger names them in, which is the sorted table's own.
-      'beta · 1 événement',
-      'alpha · 4 événements',
-    ])
+    // The order the ledger names them in, which is the sorted table's own.
+    expect(optionNames(accounts)).toEqual(['Tous les comptes', 'Beta', 'Alpha'])
 
-    await user.click(within(accounts).getByRole('button', { name: /^beta/ }))
+    await user.click(within(accounts).getByRole('option', { name: 'Beta' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
-    expect(screen.getByText('1 événement filtré')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Compte : Beta' })).toBeInTheDocument()
   })
 
-  it('reduces to a period, names the interval on a pastille, and lets it go', async () => {
+  it('reduces to a year, shows it as the value of the Période filter, and lets it go', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // No pastille while nothing is in force: what is on screen is the panel's
-    // own vocabulary, and there is nothing to let go of yet.
-    expect(screen.queryByRole('group', { name: 'Filtres actifs' })).not.toBeInTheDocument()
-    await openMenu(user, 'Période')
-
-    // `fireEvent` and not `user.type`: a date field takes its value whole, and
-    // jsdom sanitises anything it cannot parse to an empty string before any
-    // code sees it — which is exactly the trap `parseDay` exists for.
-    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2025-12-24' } })
-    fireEvent.change(screen.getByLabelText('Au'), { target: { value: '2026-01-12' } })
-
-    // Both bounds retain the day they name: the 24th and the 12th are in, and
-    // a half-open reading would have dropped one of the three rows.
-    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
-    expect(screen.getByText('3 événements filtrés')).toBeInTheDocument()
-
-    const chips = screen.getByRole('group', { name: 'Filtres actifs' })
-    const chip = within(chips).getByRole('button', {
-      name: 'Retirer ce filtre : Du 24 déc. 2025 au 12 janv. 2026',
-    })
-
-    // A table shorter than the reader's ledger always has, on screen, the
-    // sentence that says why and the control that undoes it.
-    await user.click(chip)
-    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
-    expect(screen.queryByRole('group', { name: 'Filtres actifs' })).not.toBeInTheDocument()
-  })
-
-  it('takes one bound alone, which is an interval open on the other side', async () => {
-    const { user } = renderData()
-    await waitFor(() => expect(ledger()).toBeInTheDocument())
-    await openMenu(user, 'Période')
-
-    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2026-01-06' } })
-
-    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
-    // Read out as what it is — *everything since that day* — rather than as
-    // half of a pair the reader forgot to fill in.
-    expect(
-      within(screen.getByRole('group', { name: 'Filtres actifs' })).getByRole('button', {
-        name: 'Retirer ce filtre : Depuis le 6 janv. 2026',
-      }),
-    ).toBeInTheDocument()
-  })
-
-  it('keeps the period menu open from a year to a month, and the exact dates in it', async () => {
-    // **The period is one axis with three controls** (#834): the years are the
-    // vocabulary, and the months appear only once the period fits inside a
-    // year — which is the state pressing a year puts the reader in.
-    const { user } = renderData()
-    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Période : Depuis le début' })).toBeInTheDocument()
     const period = await openMenu(user, 'Période')
-    expect(screen.queryByRole('group', { name: 'Mois' })).not.toBeInTheDocument()
+    // The years the ledger names, most recent first: no month grid, no field.
+    expect(optionNames(period)).toEqual(['Depuis le début', '2026', '2025'])
 
-    await user.click(within(period).getByRole('button', { name: /^2026/ }))
-    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+    await user.click(within(period).getByRole('option', { name: '2025' }))
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
+    expect(screen.getByRole('button', { name: 'Période : 2025' })).toBeInTheDocument()
 
-    const months = await screen.findByRole('group', { name: 'Mois' })
-    expect(within(months).getAllByRole('button')).toHaveLength(12)
-    expect(within(months).getByRole('button', { name: 'janv. · 2 événements' })).toBeInTheDocument()
-
-    await user.click(within(months).getByRole('button', { name: /^janv\./ }))
-    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
-    // The pastille names the month the two bounds spell, and the year it
-    // belongs to is still the one in force in the panel.
-    expect(
-      within(screen.getByRole('group', { name: 'Filtres actifs' })).getByRole('button', {
-        name: 'Retirer ce filtre : Du 1ᵉʳ janv. 2026 au 31 janv. 2026',
-      }),
-    ).toBeInTheDocument()
-
-    // The exact dates sit in the same menu and say the month's two bounds.
-    expect(screen.getByLabelText('Du')).toHaveValue('2026-01-01')
-    expect(screen.getByLabelText('Au')).toHaveValue('2026-01-31')
-
-    // Pressing the month in force goes back **up** to its year, which is where
-    // the reader came from, rather than releasing the period whole.
-    await user.click(within(months).getByRole('button', { name: /^janv\./ }))
-    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
+    await pick(user, 'Période', 'Depuis le début')
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
   })
 
   it('carries the period on the export’s own address', async () => {
@@ -520,9 +396,7 @@ describe('the reduction, which is what pays for no pagination', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await openMenu(user, 'Période')
-    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2026-01-01' } })
-    fireEvent.change(screen.getByLabelText('Au'), { target: { value: '2026-12-31' } })
+    await pick(user, 'Période', '2026')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
 
     let asked: string | null = null
@@ -543,20 +417,19 @@ describe('the reduction, which is what pays for no pagination', () => {
     await waitFor(() => expect(asked).toBe('?since=2026-01-01&until=2026-12-31'))
   })
 
-  it('takes the period from the address, and gives it back when it is released', async () => {
+  it('takes an open interval from the address, names it, and gives it back when it is released', async () => {
     // A reduced ledger has an address, and since #810 the period is one of its
-    // dimensions: a reader who reloads on an extract of a year keeps it.
+    // dimensions: a reader who reloads on an extract keeps it. An interval no
+    // year spells is the value of the filter, worded as what it is.
     const { user, router } = renderData(ledgerEvents(), '/ledger?since=2026-01-06')
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
-    const chips = screen.getByRole('group', { name: 'Filtres actifs' })
-    await openMenu(user, 'Période')
-    expect(screen.getByLabelText('Du')).toHaveValue('2026-01-06')
+    expect(
+      screen.getByRole('button', { name: 'Période : Depuis le 6 janv. 2026' }),
+    ).toBeInTheDocument()
 
-    await user.click(
-      within(chips).getByRole('button', { name: 'Retirer ce filtre : Depuis le 6 janv. 2026' }),
-    )
+    await pick(user, 'Période', 'Depuis le début')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
     // The address stopped describing the table, so it stops being one — a
     // reload restoring a reduction the reader has just lifted is the defect.
@@ -568,7 +441,9 @@ describe('the reduction, which is what pays for no pagination', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await user.type(screen.getByLabelText('Rechercher'), 'zzzz')
-    expect(await screen.findByText('Aucun événement ne correspond')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Aucun événement ne correspond à ces filtres.'),
+    ).toBeInTheDocument()
     // Named, since #729: the declaration is a second table on this tab, and it
     // is not reduced by a search over the ledger. What the assertion is about is
     // that the *ledger* is replaced rather than left empty.
@@ -576,7 +451,7 @@ describe('the reduction, which is what pays for no pagination', () => {
   })
 })
 
-describe('the toolbar', () => {
+describe('the control line', () => {
   const withDividend = () => [
     ...ledgerEvents(),
     anEvent({
@@ -598,29 +473,29 @@ describe('the toolbar', () => {
     expect(screen.queryByRole('button', { name: /les filtres/ })).not.toBeInTheDocument()
     // The table is not a track of a grid: nothing sits beside it. It sits on
     // the page's background, with no plane and no frame (#1273).
-    const table = ledger().closest('[data-drop="ledger"]') as HTMLElement
+    const table = ledger().closest('[data-slot="table-container"]')?.parentElement as HTMLElement
     expect(table.parentElement?.className).not.toMatch(/\bgrid\b/)
     expectNoBox()
     expect(ledger().closest('[data-slot="table-container"]')?.className).not.toMatch(/border/)
   })
 
-  it('marks a trigger whose axis is in force, and names its value', async () => {
+  it('shows the value in force in foreground, and the others muted', async () => {
     const { user } = renderData(withDividend())
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const idle = screen.getByRole('button', { name: 'Type' })
-    expect(idle.className).not.toMatch(/border-primary/)
+    const idle = screen.getByRole('button', { name: 'Type : Tous les types' })
+    expect(idle).toHaveClass('text-muted-foreground')
 
-    await pickType(user, /^Dividende/)
+    await pickType(user, 'Dividende')
 
-    // The visible text stays the axis; the accessible name reads the value back.
     const marked = await screen.findByRole('button', { name: 'Type : Dividende' })
-    expect(marked).toHaveTextContent(/^Type$/)
-    expect(marked.className).toMatch(/border-primary/)
-    expect(marked.className).toMatch(/bg-primary\/12/)
-    expect(marked.className).toMatch(/text-primary/)
-    // The other axes are untouched.
-    expect(screen.getByRole('button', { name: 'Période' }).className).not.toMatch(/border-primary/)
+    expect(marked).toHaveClass('text-foreground')
+    // No pill, no tint, no border: a filter is a text button.
+    expect(marked.className).not.toMatch(/\b(border|bg)-/)
+    // The other filters are untouched.
+    expect(screen.getByRole('button', { name: 'Période : Depuis le début' })).toHaveClass(
+      'text-muted-foreground',
+    )
   })
 
   it('clears the address when a menu reduces a ledger that arrived by one', async () => {
@@ -629,46 +504,57 @@ describe('the toolbar', () => {
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
     expect(router.state.location.search).not.toEqual({})
 
-    await pickType(user, /^Achat/)
+    await pickType(user, 'Achat')
 
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
     expect(router.state.location.search).toEqual({})
   })
 
-  it('keeps Importer, Exporter and Saisir un événement in the toolbar', async () => {
+  it('keeps Importer, Exporter and the one filled Saisir un événement on the control line', async () => {
     renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // The row the search field sits in, and not the wrapper that also holds
-    // the summary line and the table.
-    const toolbar = screen.getByRole('searchbox').closest('div.flex-wrap')
-    expect(toolbar).toBeTruthy()
-    const inside = within(toolbar as HTMLElement)
-    expect(inside.getByRole('button', { name: 'Importer' })).toBeInTheDocument()
+    // The row the search field sits in, and not the wrapper that also holds the table.
+    const line = screen.getByRole('searchbox').closest('div.flex-wrap')
+    expect(line).toBeTruthy()
+    const inside = within(line as HTMLElement)
+    expect(inside.getByRole('link', { name: 'Importer' })).toBeInTheDocument()
     expect(inside.getByRole('button', { name: 'Exporter' })).toBeInTheDocument()
-    expect(inside.getByRole('button', { name: 'Saisir un événement' })).toBeInTheDocument()
+    expect(inside.getByRole('button', { name: 'Saisir un événement' })).toHaveAttribute(
+      'data-variant',
+      'primary',
+    )
   })
 
-  it('says the count on the summary line, reduced or not', async () => {
+  it('says no count, draws no pill and keeps no summary line', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const line = screen.getByText('4 événements').closest('[role="status"]') as HTMLElement
-    expect(line).toBeInTheDocument()
-    // Nothing to let go of yet.
-    expect(within(line).queryByRole('button', { name: 'Réinitialiser' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/\d+ événements?( filtrés?)?$/)).not.toBeInTheDocument()
+    await pickType(user, 'Achat')
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
+    expect(screen.queryByText(/\d+ événements? filtrés?/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Filtres actifs' })).not.toBeInTheDocument()
+    // The status region is there for the selection, and says nothing yet.
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
+  })
 
-    await pickType(user, /^Achat/)
+  it('names the set of securities a gesture reduced the ledger to, and lets go of it', async () => {
+    const { user, router } = renderData(ledgerEvents(), '/ledger?symbol=ZZA')
+    await waitFor(() => expect(ledger()).toBeInTheDocument())
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
 
-    expect(await within(line).findByText('2 événements filtrés')).toBeInTheDocument()
-    expect(within(line).getByRole('group', { name: 'Filtres actifs' })).toBeInTheDocument()
-    await user.click(within(line).getByRole('button', { name: 'Réinitialiser' }))
-    expect(await within(line).findByText('4 événements')).toBeInTheDocument()
+    // A reduction no control types into: the control line names it, once.
+    await user.click(
+      screen.getByRole('button', { name: /^Retirer ce filtre : Réduit à un titre : ZZA/ }),
+    )
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
+    expect(router.state.location.search).toEqual({})
   })
 })
 
 describe('the ledger reveals by packets, and only the first flight is silent', () => {
-  it('draws forty of a hundred and seventy-six, and says so without a spinner', async () => {
+  it('draws forty of a hundred and seventy-six, without a spinner or a sentence', async () => {
     renderData(aLongLedger(176))
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
@@ -676,7 +562,7 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     // holds**: `GET /api/events` answered once, from the published snapshot in
     // process memory, and handed back the ledger entire.
     expect(rowsOf(ledger())).toHaveLength(40)
-    expect(screen.getByText('40 sur 176 affichés')).toBeInTheDocument()
+    expect(screen.queryByText(/sur 176/)).not.toBeInTheDocument()
     // No button: the next packet comes with the scroll.
     expect(screen.queryByRole('button', { name: 'Afficher la suite' })).not.toBeInTheDocument()
     // The end is not said before the last row has arrived.
@@ -685,31 +571,21 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
-  it('adds forty each time the last row comes into view, and says the end at the last row', async () => {
+  it('adds forty each time the sentinel under the table comes into view', async () => {
     renderData(aLongLedger(85))
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     reachTheEnd()
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(80))
-    expect(screen.getByText('80 sur 85 affichés')).toBeInTheDocument()
 
     reachTheEnd()
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(85))
     // Nothing left to reveal, so a further scroll reveals nothing.
     reachTheEnd()
     expect(rowsOf(ledger())).toHaveLength(85)
-    expect(screen.getByText('Fin du grand livre')).toBeInTheDocument()
   })
 
-  it('says the end straight away on a ledger shorter than one packet', async () => {
-    renderData()
-    await waitFor(() => expect(ledger()).toBeInTheDocument())
-
-    expect(rowsOf(ledger())).toHaveLength(4)
-    expect(screen.getByText('Fin du grand livre')).toBeInTheDocument()
-  })
-
-  it('counts the reduction and not the store, and starts it over when a chip moves', async () => {
+  it('starts the reveal over when a filter moves', async () => {
     const mixed = [
       ...aLongLedger(120),
       ...Array.from({ length: 3 }, (_, index) =>
@@ -735,23 +611,16 @@ describe('the ledger reveals by packets, and only the first flight is silent', (
     // The chips are a reduction, so both sentences are true of what survives
     // them — and the budget starts over, or a reader asking a question would
     // get every row answering it at once.
-    const types = await pickType(user, /^Achat/)
+    await pickType(user, 'Achat')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(40))
-    expect(screen.getByText('40 sur 120 affichés')).toBeInTheDocument()
-    expect(screen.getByText('120 événements filtrés')).toBeInTheDocument()
 
-    await user.click(within(types).getByRole('button', { name: /^Versement/ }))
+    await pickType(user, 'Versement')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
-    // **Of the reduction, never of the store** (#834): *the end of
-    // the ledger* said over three rows out of a hundred and twenty-three is the
-    // sentence that record refuses by name.
-    expect(screen.getByText('Fin des résultats')).toBeInTheDocument()
-    expect(screen.queryByText(/Fin du grand livre/)).not.toBeInTheDocument()
   })
 })
 
-describe('a reduction in force always has the chip that releases it', () => {
-  it('keeps the account chip after the rows naming that account are deleted', async () => {
+describe('a reduction in force always has the way out', () => {
+  it('keeps the account filter after the rows naming that account are deleted', async () => {
     // The ledger is what names the accounts, and the ledger changes under the
     // reader: deleting every `beta` row takes `beta` out of the list while the
     // filter still holds it. With the group gone the table is simply shorter
@@ -773,23 +642,22 @@ describe('a reduction in force always has the chip that releases it', () => {
     const { user } = renderApp({ url: '/ledger' })
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const accounts = await openMenu(user, 'Compte')
-    await user.click(within(accounts).getByRole('button', { name: /^beta/ }))
+    await pick(user, 'Compte', 'Beta')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(1))
 
     await user.click(within(rowsOf(ledger())[0]).getByRole('checkbox'))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }),
     )
 
     // The reduction survives the re-read, so the way out has to survive it too.
     const after = await openMenu(user, 'Compte')
-    expect(within(after).getByRole('button', { name: /^beta/ })).toHaveAttribute(
-      'aria-pressed',
+    expect(within(after).getByRole('option', { name: 'Beta' })).toHaveAttribute(
+      'aria-selected',
       'true',
     )
-    await user.click(within(after).getByRole('button', { name: /^Tous les comptes/ }))
+    await user.click(within(after).getByRole('option', { name: 'Tous les comptes' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
   })
 })
@@ -810,8 +678,8 @@ describe('deleting the ticked rows (#1113)', () => {
     expect(document.body.textContent).not.toMatch(/réduction/i)
 
     // The reduced wordings only render under a filter.
-    await pickType(user, /^Achat/)
-    expect(await screen.findByText('2 événements filtrés')).toBeInTheDocument()
+    await pickType(user, 'Achat')
+    await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
     expect(document.body.textContent).not.toMatch(/réduction/i)
   })
 
@@ -841,9 +709,8 @@ describe('deleting the ticked rows (#1113)', () => {
     expect(rowBox(ledger(), 1)).not.toBeChecked()
     expect(screen.queryByRole('button', { name: 'Supprimer' })).not.toBeInTheDocument()
     expect(screen.queryByText(/sélectionnés?$/)).not.toBeInTheDocument()
-    // The button that was pressed is gone: the summary line takes the focus.
+    // The button that was pressed is gone: the status region takes the focus.
     expect(document.activeElement).toHaveAttribute('role', 'status')
-    expect(document.activeElement).toHaveTextContent('4 événements')
   })
 
   it('sends the ticked ids in a body, says what left, and clears the selection', async () => {
@@ -862,11 +729,11 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(rowBox(ledger(), 2))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
 
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(
       within(box).getByRole('heading', { name: 'Supprimer les 2 événements sélectionnés ?' }),
     ).toBeInTheDocument()
-    await user.click(within(box).getByRole('button', { name: 'Les supprimer' }))
+    await user.click(within(box).getByRole('button', { name: 'Supprimer' }))
 
     await waitFor(() => expect(asked).toEqual({ search: '', body: { ids: ['1', '3'] } }))
     expect(await screen.findByText('2 événements supprimés.')).toBeInTheDocument()
@@ -891,7 +758,7 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(rowBox(ledger(), 1))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les garder' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Annuler' }),
     )
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
@@ -927,7 +794,7 @@ describe('deleting the ticked rows (#1113)', () => {
     const { user } = renderData(mixed)
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await pickType(user, /^Achat/)
+    await pickType(user, 'Achat')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(40))
 
     await user.click(
@@ -950,12 +817,12 @@ describe('deleting the ticked rows (#1113)', () => {
     expect(screen.getByText('2 sélectionnés')).toBeInTheDocument()
 
     // Row 2 is the deposit; filtering on purchases hides it.
-    await pickType(user, /^Achat/)
+    await pickType(user, 'Achat')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
     expect(screen.getByText('1 sélectionné')).toBeInTheDocument()
 
     // Cancelled here: what is sent is checked in the next case.
-    await pickType(user, /^Tous les types/)
+    await pickType(user, 'Tous les types')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(4))
     expect(rowBox(ledger(), 2)).toBeChecked()
     expect(screen.getByText('2 sélectionnés')).toBeInTheDocument()
@@ -974,7 +841,7 @@ describe('deleting the ticked rows (#1113)', () => {
     )
 
     await user.click(rowBox(ledger(), 2))
-    await pickType(user, /^Achat/)
+    await pickType(user, 'Achat')
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(2))
     // The deposit is ticked but hidden: nothing shown is ticked.
     expect(
@@ -984,20 +851,19 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(rowBox(ledger(), 0))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }),
     )
     await waitFor(() => expect(asked).toEqual({ ids: ['1'] }))
   })
 
-  it('says “filtered” and never “reduction” under a filter, in English too', async () => {
+  it('says nothing of a “reduction” under a filter, in English too', async () => {
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload())))
     const { user } = renderApp({ url: '/ledger', browserLanguages: ['en-GB'] })
     await screen.findByRole('table', { name: 'Your events' })
 
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
-    await pickType(user, /^Buy/)
-    expect(await screen.findByText('2 filtered events')).toBeInTheDocument()
-    expect(screen.getByText('End of the results')).toBeInTheDocument()
+    await pickType(user, 'Buy')
+    await waitFor(() => expect(rowsOf(screen.getByRole('table'))).toHaveLength(2))
     expect(document.body.textContent).not.toMatch(/reduction/i)
   })
 
@@ -1017,9 +883,9 @@ describe('deleting the ticked rows (#1113)', () => {
       screen.getByRole('checkbox', { name: 'Sélectionner les 4 événements filtrés' }),
     )
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(within(box).queryByText(/Vider le grand livre/)).not.toBeInTheDocument()
-    await user.click(within(box).getByRole('button', { name: 'Les supprimer' }))
+    await user.click(within(box).getByRole('button', { name: 'Supprimer' }))
 
     await waitFor(() => expect(asked).toEqual({ ids: ['1', '2', '3', 'typed-1'] }))
   })
@@ -1044,10 +910,10 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(rowBox(ledger(), 1))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }),
     )
 
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(await within(box).findByRole('status')).toHaveTextContent(
       'L’application a refusé la requête faite par cette page.',
     )
@@ -1092,10 +958,10 @@ describe('deleting the ticked rows (#1113)', () => {
     await user.click(rowBox(ledger(), 1))
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }),
     )
 
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(await within(box).findByRole('status')).toHaveTextContent(
       'L’application a refusé et n’a rien retiré : une vente postérieure de AAPL repose ' +
         'dessus — elle vend 10 parts, et il n’en resterait que 0.',
@@ -1127,8 +993,8 @@ describe('the editor, and where it does not appear', () => {
 
     // A grant: a quantity, an optional price, and no fee field at all.
     expect(await screen.findByLabelText('Quantité')).toHaveValue('2')
-    expect(screen.getByRole('radio', { name: 'Attribution' })).toHaveAttribute(
-      'aria-checked',
+    expect(screen.getByRole('tab', { name: 'Attribution' })).toHaveAttribute(
+      'aria-selected',
       'true',
     )
     expect(screen.queryByLabelText('Frais')).not.toBeInTheDocument()
@@ -1142,12 +1008,12 @@ describe('the editor, and where it does not appear', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    const row = within(ledger()).getByText('ZZC').closest('tr') as HTMLElement
+    const row = within(ledger()).getByText('Zeta Gamma').closest('tr') as HTMLElement
     await user.click(within(row).getAllByRole('cell')[1])
 
     expect(await screen.findByLabelText('Quantité')).toHaveValue('2')
-    expect(screen.getByRole('radio', { name: 'Attribution' })).toHaveAttribute(
-      'aria-checked',
+    expect(screen.getByRole('tab', { name: 'Attribution' })).toHaveAttribute(
+      'aria-selected',
       'true',
     )
   })
@@ -1158,7 +1024,7 @@ async function askToRemove(user: ReturnType<typeof renderApp>['user'], name = 'Z
   await user.click(within(ledger()).getByRole('button', { name }))
   const sheet = await screen.findByRole('dialog')
   await user.click(within(sheet).getByRole('button', { name: 'Supprimer cet événement' }))
-  return screen.findByRole('dialog', { name: 'Supprimer cet événement ?' })
+  return screen.findByRole('alertdialog', { name: 'Supprimer cet événement ?' })
 }
 
 describe('a row is removed at the unit', () => {
@@ -1172,7 +1038,7 @@ describe('a row is removed at the unit', () => {
     ).toBeInTheDocument()
     // What names a row is what the row shows — its type, its identity, its day
     // — and never its key: a ledger row has no address.
-    expect(within(box).getByText(/Attribution · ZZC · 24 déc\. 2025/)).toBeInTheDocument()
+    expect(within(box).getByText(/24 déc\. 2025 · Attribution ZZC/)).toBeInTheDocument()
   })
 
   it('sends the row’s own key and says what left', async () => {
@@ -1193,9 +1059,7 @@ describe('a row is removed at the unit', () => {
       }),
     )
 
-    await user.click(
-      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
-    )
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Supprimer' }))
 
     await waitFor(() => expect(asked).toBe('typed-1'))
     expect(await screen.findByText('1 événement supprimé.')).toBeInTheDocument()
@@ -1211,14 +1075,10 @@ describe('a row is removed at the unit', () => {
         HttpResponse.json({ id: String(params.id), removed: true }),
       ),
     )
-    await user.click(
-      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
-    )
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Supprimer' }))
 
     await waitFor(() =>
-      expect(
-        screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' }),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByRole('tablist', { name: 'Ce qui s’est passé' })).not.toBeInTheDocument(),
     )
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -1227,11 +1087,9 @@ describe('a row is removed at the unit', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Le garder' }))
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Annuler' }))
 
-    expect(
-      await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('tablist', { name: 'Ce qui s’est passé' })).toBeInTheDocument()
   })
 
   it('offers no deletion in the sheet of a new event', async () => {
@@ -1239,7 +1097,7 @@ describe('a row is removed at the unit', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Achat' }))
+    await user.click(screen.getByRole('tab', { name: 'Achat' }))
 
     expect(screen.getByRole('button', { name: 'Annuler' })).toBeInTheDocument()
     expect(
@@ -1269,11 +1127,9 @@ describe('a row is removed at the unit', () => {
       ),
     )
 
-    await user.click(
-      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
-    )
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Supprimer' }))
 
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(await within(box).findByRole('status')).toHaveTextContent(/une vente postérieure de ZZC/)
     expect(
       within(box).getByRole('heading', { name: 'Supprimer cet événement ?' }),
@@ -1303,11 +1159,9 @@ describe('a row is removed at the unit', () => {
       }),
     )
 
-    await user.click(
-      within(await askToRemove(user)).getByRole('button', { name: 'Supprimer cet événement' }),
-    )
+    await user.click(within(await askToRemove(user)).getByRole('button', { name: 'Supprimer' }))
 
-    const box = await screen.findByRole('dialog')
+    const box = await screen.findByRole('alertdialog')
     expect(await within(box).findByRole('status')).toHaveTextContent(
       'Cet événement n’est plus dans le grand livre : il a été supprimé ailleurs, ' +
         'et rien n’a été modifié ici.',
@@ -1318,7 +1172,7 @@ describe('a row is removed at the unit', () => {
     // The table is `aria-hidden` under the overlay, so what the re-read bought
     // is read where the reader reads it: the box comes down on a ledger that
     // no longer shows the row it was about.
-    await user.click(within(box).getByRole('button', { name: 'Le garder' }))
+    await user.click(within(box).getByRole('button', { name: 'Annuler' }))
     // The sheet the box was asked from is still up, and modal.
     await user.click(await screen.findByRole('button', { name: 'Annuler' }))
     await waitFor(() => expect(rowsOf(ledger())).toHaveLength(3))
@@ -1326,23 +1180,28 @@ describe('a row is removed at the unit', () => {
 })
 
 describe('the create form, which is the onboarding', () => {
-  it('asks the type first, with six labels that state their effect', async () => {
+  it('opens on Achat, with six tabs that state their effect', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     const types = await openTheForm(user)
 
     expect(
       within(types)
-        .getAllByRole('radio')
-        .map((radio) => radio.textContent),
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
     ).toEqual(['Achat', 'Vente', 'Attribution', 'Dividende', 'Versement', 'Retrait'])
+    expect(within(types).getByRole('tab', { name: 'Achat' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
     // Six codes are a decoding exercise at the exact moment nothing is there to
     // decode them against.
     for (const code of ['BUY', 'SELL', 'GRANT', 'DIVIDEND', 'DEPOSIT', 'WITHDRAWAL']) {
-      expect(within(types).queryByRole('radio', { name: code })).not.toBeInTheDocument()
+      expect(within(types).queryByRole('tab', { name: code })).not.toBeInTheDocument()
     }
-    // And nothing else is on screen until the question is answered.
-    expect(screen.queryByLabelText('Date')).not.toBeInTheDocument()
+    // The fields of an Achat are already there, and the date is today's.
+    expect(screen.getByLabelText('Quantité')).toBeInTheDocument()
+    expect((screen.getByLabelText('Date') as HTMLInputElement).value).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
   it('changes shape with the type, which a row edited in place cannot', async () => {
@@ -1350,24 +1209,24 @@ describe('the create form, which is the onboarding', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
 
-    await user.click(screen.getByRole('radio', { name: 'Achat' }))
-    expect(await screen.findByLabelText('Ticker')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Achat' }))
+    expect(await screen.findByLabelText('Titre')).toBeInTheDocument()
     expect(screen.getByLabelText('Quantité')).toBeInTheDocument()
     expect(screen.getByLabelText('Prix unitaire')).toBeInTheDocument()
     expect(screen.getByLabelText('Frais')).toBeInTheDocument()
     expect(screen.queryByLabelText('Montant')).not.toBeInTheDocument()
 
     // A transfer names no security at all — not a missing one, none.
-    await user.click(screen.getByRole('radio', { name: 'Versement' }))
+    await user.click(screen.getByRole('tab', { name: 'Versement' }))
     expect(await screen.findByLabelText('Montant')).toBeInTheDocument()
     expect(screen.getByLabelText('Frais')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Ticker')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Titre')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Quantité')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Prix unitaire')).not.toBeInTheDocument()
 
     // A dividend: an amount and a fee, on a security.
-    await user.click(screen.getByRole('radio', { name: 'Dividende' }))
-    expect(await screen.findByLabelText('Ticker')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Dividende' }))
+    expect(await screen.findByLabelText('Titre')).toBeInTheDocument()
     expect(screen.getByLabelText('Montant')).toBeInTheDocument()
     expect(screen.queryByLabelText('Quantité')).not.toBeInTheDocument()
   })
@@ -1381,46 +1240,32 @@ describe('the create form, which is the onboarding', () => {
     await openTheForm(user)
     const panel = screen.getByRole('dialog')
     expect(panel).toHaveAttribute('data-slot', 'sheet-content')
-    expect(
-      within(panel).getByRole('radiogroup', { name: 'Ce qui s’est passé' }),
-    ).toBeInTheDocument()
+    expect(within(panel).getByRole('tablist', { name: 'Ce qui s’est passé' })).toBeInTheDocument()
   })
 
-  it('carries the two icons of the page, and the table carries none', async () => {
+  it('carries no ⓘ: the sheet states its fields and explains none', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
 
-    // Zero in a table — the rule of the page (#684 D7).
-    expect(within(ledger()).queryAllByRole('button', { name: /^Ce que veut dire/ })).toHaveLength(0)
-
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+    await user.click(screen.getByRole('tab', { name: 'Attribution' }))
 
-    const bubbles = await screen.findAllByRole('button', { name: /^Ce que veut dire/ })
-    expect(bubbles.map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Ce que veut dire Date',
-      'Ce que veut dire Prix unitaire',
-    ])
-
-    // On the date, the sentence arrives while it can still change a behaviour.
-    await user.click(bubbles[0])
-    expect(await screen.findByText(/se calculent à partir de ces dates/)).toBeInTheDocument()
+    await screen.findByLabelText('Prix unitaire')
+    expect(screen.queryAllByRole('button', { name: /^Ce que veut dire/ })).toHaveLength(0)
+    expect(screen.queryByText(/se calculent à partir de ces dates/)).not.toBeInTheDocument()
   })
 
-  it('says what an empty grant price means, where the reader is leaving it empty', async () => {
+  it('marks a grant’s price as optional, in the label and with no sentence', async () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+    await user.click(screen.getByRole('tab', { name: 'Attribution' }))
 
-    // A purchase's price is required, a grant's is not — and its emptiness is a
-    // statement rather than a blank.
+    // A purchase's price is required, a grant's is not.
     const panel = screen.getByRole('dialog')
     const label = await within(panel).findByText('Prix unitaire')
     expect(label.parentElement).toHaveTextContent('facultatif')
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire Prix unitaire' }))
-    expect(await screen.findByText(/ajoute seulement des titres/)).toBeInTheDocument()
-    expect(screen.getByText(/vos versements et dans votre base de coût/)).toBeInTheDocument()
+    expect(screen.queryByText(/ajoute seulement des titres/)).not.toBeInTheDocument()
   })
 
   it('suggests the grant price off the closest close, and names the day it came from', async () => {
@@ -1432,12 +1277,12 @@ describe('the create form, which is the onboarding', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+    await user.click(screen.getByRole('tab', { name: 'Attribution' }))
 
     fireEvent.change(await screen.findByLabelText('Date'), {
       target: { value: '2026-02-28' },
     })
-    await user.type(screen.getByLabelText('Ticker'), 'ZZA')
+    await user.type(screen.getByLabelText('Titre'), 'ZZA')
 
     const price = screen.getByLabelText('Prix unitaire')
     await waitFor(() => expect(price).toHaveValue('126'))
@@ -1471,12 +1316,12 @@ describe('the create form, which is the onboarding', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+    await user.click(screen.getByRole('tab', { name: 'Attribution' }))
 
     fireEvent.change(await screen.findByLabelText('Date'), {
       target: { value: '2026-02-28' },
     })
-    await user.type(screen.getByLabelText('Ticker'), 'ZZA')
+    await user.type(screen.getByLabelText('Titre'), 'ZZA')
 
     const price = screen.getByLabelText('Prix unitaire')
     await waitFor(() => expect(price).toHaveValue('49.27'))
@@ -1528,12 +1373,12 @@ describe('the create form, which is the onboarding', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+    await user.click(screen.getByRole('tab', { name: 'Attribution' }))
 
     fireEvent.change(await screen.findByLabelText('Date'), {
       target: { value: '2026-02-28' },
     })
-    const ticker = screen.getByLabelText('Ticker')
+    const ticker = screen.getByLabelText('Titre')
     await user.type(ticker, 'ZZA')
     await waitFor(() => expect(screen.getByLabelText('Prix unitaire')).toHaveValue('126'))
 
@@ -1550,12 +1395,12 @@ describe('the create form, which is the onboarding', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Achat' }))
+    await user.click(screen.getByRole('tab', { name: 'Achat' }))
 
     fireEvent.change(await screen.findByLabelText('Date'), {
       target: { value: '2026-02-28' },
     })
-    await user.type(screen.getByLabelText('Ticker'), 'ZZA')
+    await user.type(screen.getByLabelText('Titre'), 'ZZA')
 
     await waitFor(() => expect(screen.getByLabelText('Quantité')).toHaveValue(''))
     expect(screen.getByLabelText('Prix unitaire')).toHaveValue('')
@@ -1609,7 +1454,7 @@ describe('the create form, which is the onboarding', () => {
 
     await user.click(within(ledger()).getByRole('button', { name: 'Zeta Gamma' }))
     expect(await screen.findByLabelText('Quantité')).toHaveValue('2')
-    await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
 
     const panel = screen.getByRole('dialog')
     expect(await within(panel).findByRole('status')).toHaveTextContent(
@@ -1631,7 +1476,7 @@ describe('the create form, which is the onboarding', () => {
     // the next row opened — and *this event is no longer in the ledger* over a
     // row that is perfectly alive is a precise untruth, which is worse than the
     // vague one it replaced.
-    const alive = within(ledger()).getByText('Versement programmé mensuel').closest('tr')
+    const alive = within(ledger()).getByTitle('ZZA · Versement programmé mensuel').closest('tr')
     await user.click(within(alive as HTMLElement).getAllByRole('cell')[1])
     expect(await screen.findByLabelText('Quantité')).toHaveValue('3')
     expect(screen.queryByText(/n’est plus dans le grand livre/)).not.toBeInTheDocument()
@@ -1656,17 +1501,15 @@ describe('the create form, which is the onboarding', () => {
     )
 
     await user.click(within(ledger()).getByRole('button', { name: 'Zeta Gamma' }))
-    await user.click(await screen.findByRole('button', { name: 'Enregistrer cet événement' }))
+    await user.click(await screen.findByRole('button', { name: 'Enregistrer' }))
     expect(await screen.findByText(/n’est plus dans le grand livre/)).toBeInTheDocument()
 
     const sheet = screen.getByRole('dialog')
     await user.click(within(sheet).getByRole('button', { name: 'Supprimer cet événement' }))
-    const box = await screen.findByRole('dialog', { name: 'Supprimer cet événement ?' })
-    await user.click(within(box).getByRole('button', { name: 'Supprimer cet événement' }))
+    const box = await screen.findByRole('alertdialog', { name: 'Supprimer cet événement ?' })
+    await user.click(within(box).getByRole('button', { name: 'Supprimer' }))
     await waitFor(() =>
-      expect(
-        screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' }),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByRole('tablist', { name: 'Ce qui s’est passé' })).not.toBeInTheDocument(),
     )
 
     await user.click(within(ledger()).getAllByRole('button', { name: 'Zeta Alpha' })[0])
@@ -1679,7 +1522,7 @@ describe('the create form, which is the onboarding', () => {
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
 
-    await user.click(screen.getByRole('radio', { name: 'Versement' }))
+    await user.click(screen.getByRole('tab', { name: 'Versement' }))
     // A date input takes its value whole — typing into one is the browser's own
     // widget, not a sequence of characters.
     fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
@@ -1710,7 +1553,7 @@ describe('the create form, which is the onboarding', () => {
       ),
     )
 
-    await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
     expect(await screen.findByText('Virement de février')).toBeInTheDocument()
   })
 
@@ -1718,7 +1561,7 @@ describe('the create form, which is the onboarding', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Versement' }))
+    await user.click(screen.getByRole('tab', { name: 'Versement' }))
     await user.type(await screen.findByLabelText('Montant'), '250')
 
     // `31/02/2026` is what a reader types where the widget degrades to text, and
@@ -1726,7 +1569,7 @@ describe('the create form, which is the onboarding', () => {
     // indistinguishable from *left blank*. The form says so beside the field and
     // records nothing, rather than posting an event with no date.
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: '31/02/2026' } })
-    await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
 
     expect(await screen.findByText(/Sans date lisible, rien n’est enregistré/)).toBeInTheDocument()
     expect(screen.getByLabelText('Date')).toHaveAttribute('aria-invalid', 'true')
@@ -1738,11 +1581,11 @@ describe('the create form, which is the onboarding', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Versement' }))
+    await user.click(screen.getByRole('tab', { name: 'Versement' }))
 
     fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
     await user.type(screen.getByLabelText('Montant'), 'deux cents')
-    await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
     expect(await screen.findByText('Ce n’est pas un nombre.')).toBeInTheDocument()
   })
 
@@ -1750,11 +1593,11 @@ describe('the create form, which is the onboarding', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Versement' }))
+    await user.click(screen.getByRole('tab', { name: 'Versement' }))
 
     fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
     await user.type(screen.getByLabelText('Montant'), '-100')
-    await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
     expect(
       await screen.findByText('Ce champ attend un nombre supérieur à zéro.'),
     ).toBeInTheDocument()
@@ -1779,12 +1622,12 @@ describe('the create form, which is the onboarding', () => {
       ),
     )
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Versement' }))
+    await user.click(screen.getByRole('tab', { name: 'Versement' }))
 
     fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-20' } })
     await user.selectOptions(screen.getByLabelText('Compte'), 'alpha')
     await user.type(screen.getByLabelText('Montant'), '100')
-    await user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
     expect(await screen.findByText('L’application a refusé cette valeur.')).toBeInTheDocument()
     expect(screen.getByLabelText('Montant')).toHaveAttribute('aria-invalid', 'true')
     expect(
@@ -1813,16 +1656,17 @@ describe('the ledger at zero', () => {
     // **Both entrances are gestures now** (#811): the file one is a real target
     // rather than the name of a folder, so the pair is two doors and not a
     // door beside an instruction.
-    expect(within(file).getByLabelText('Parcourir…')).toBeInTheDocument()
+    expect(within(file).getByRole('button', { name: 'Importer' })).toBeInTheDocument()
+    expect(
+      within(file).getByRole('link', { name: 'Le format, colonne par colonne' }),
+    ).toBeInTheDocument()
 
     // Neither entry is the recommended one.
     const action = within(manual).getByRole('button', { name: 'Saisir un événement' })
     expect(action).toHaveAttribute('data-variant', 'outline')
 
     await user.click(action)
-    expect(
-      await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('tablist', { name: 'Ce qui s’est passé' })).toBeInTheDocument()
   })
 })
 
@@ -1862,10 +1706,9 @@ describe('the page in English', () => {
       '',
       'Date',
       'Type',
-      'What it is',
+      'Event',
       'Quantity',
       'Unit price',
-      'Fee',
       'Amount',
       'Account',
     ])
@@ -1873,10 +1716,8 @@ describe('the page in English', () => {
     // difference of case.
     expect(within(table).getByText('Cash in')).toBeInTheDocument()
     expect(within(table).getByText('Free shares')).toBeInTheDocument()
-    // The reveal speaks English too, and the English is the source.
-    expect(await openMenu(user, 'Type')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'All types · 4 events' })).toBeInTheDocument()
-    expect(screen.getByText('The end of the ledger')).toBeInTheDocument()
+    // The filters speak English too, and the English is the source.
+    expect(optionNames(await openMenu(user, 'Type'))[0]).toBe('All types')
   })
 })
 
@@ -1897,8 +1738,8 @@ function lines() {
 /** Le panneau ouvert sur un achat, et son champ Titre. */
 async function openOnABuy(user: ReturnType<typeof renderApp>['user']) {
   await openTheForm(user)
-  await user.click(screen.getByRole('radio', { name: 'Achat' }))
-  return screen.getByLabelText('Ticker')
+  await user.click(screen.getByRole('tab', { name: 'Achat' }))
+  return screen.getByLabelText('Titre')
 }
 
 describe('le champ Titre suggère', () => {
@@ -2060,8 +1901,8 @@ describe('le champ Titre suggère', () => {
     const { user } = renderApp({ url: '/ledger?open=event' })
 
     await screen.findByRole('dialog')
-    await user.click(screen.getByRole('radio', { name: 'Achat' }))
-    const field = screen.getByLabelText('Ticker')
+    await user.click(screen.getByRole('tab', { name: 'Achat' }))
+    const field = screen.getByLabelText('Titre')
     await user.type(field, 'NVDA')
 
     // Ni liste, ni entrée « utiliser », ni phrase de quasi-collision : trois
@@ -2090,7 +1931,7 @@ describe('le champ Titre suggère', () => {
     expect(screen.getByText(/nomme déjà ZZA/)).toBeInTheDocument()
     // Named, never refused: the value stands and the save is not withheld.
     expect(field).toHaveValue('zza')
-    expect(screen.getByRole('button', { name: 'Enregistrer cet événement' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Enregistrer' })).toBeEnabled()
 
     await user.clear(field)
     await user.type(field, 'ZZQ')
@@ -2128,10 +1969,10 @@ describe('le champ Titre suggère', () => {
     const { user } = renderData()
     await waitFor(() => expect(ledger()).toBeInTheDocument())
     await openTheForm(user)
-    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
+    await user.click(screen.getByRole('tab', { name: 'Attribution' }))
 
     fireEvent.change(await screen.findByLabelText('Date'), { target: { value: '2026-02-28' } })
-    const field = screen.getByLabelText('Ticker')
+    const field = screen.getByLabelText('Titre')
     await user.type(field, 'zza')
     await user.keyboard('{ArrowDown}{Enter}')
 
@@ -2146,8 +1987,8 @@ describe('le champ Titre suggère', () => {
     await openTheForm(user)
 
     for (const type of ['Achat', 'Vente', 'Attribution', 'Dividende']) {
-      await user.click(screen.getByRole('radio', { name: type }))
-      const field = screen.getByLabelText('Ticker')
+      await user.click(screen.getByRole('tab', { name: type }))
+      const field = screen.getByLabelText('Titre')
       await user.clear(field)
       await user.type(field, 'zzc')
       expect(within(suggestions()).getAllByRole('option')).toHaveLength(1)
@@ -2346,7 +2187,7 @@ describe('le champ Titre se conduit', () => {
 
     await user.click(within(ledger()).getByRole('button', { name: 'Zeta Gamma' }))
 
-    expect(await screen.findByLabelText('Ticker')).toHaveValue('ZZC')
+    expect(await screen.findByLabelText('Titre')).toHaveValue('ZZC')
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
     expect(screen.queryByText(/nomme déjà/)).not.toBeInTheDocument()
   })
@@ -2363,8 +2204,8 @@ describe('le champ Titre se conduit', () => {
 
     await screen.findByRole('table', { name: 'Your events' })
     await user.click(await screen.findByRole('button', { name: 'Enter an event' }))
-    await user.click(screen.getByRole('radio', { name: 'Buy' }))
-    const field = screen.getByLabelText('Ticker')
+    await user.click(screen.getByRole('tab', { name: 'Buy' }))
+    const field = screen.getByLabelText('Security')
 
     await user.type(field, 'zza')
     expect(
@@ -2423,7 +2264,7 @@ async function fillABuy(user: ReturnType<typeof renderApp>['user']) {
 }
 
 function save(user: ReturnType<typeof renderApp>['user']) {
-  return user.click(screen.getByRole('button', { name: 'Enregistrer cet événement' }))
+  return user.click(screen.getByRole('button', { name: 'Enregistrer' }))
 }
 
 /** Every POST the form makes, as the body it sent. */
@@ -2503,12 +2344,13 @@ describe('a refusal brought into view', () => {
     await openOnABuy(user)
 
     await save(user)
-    expect(await screen.findByLabelText('Date')).toHaveFocus()
+    // The date is today's from the start, so the account is the first to answer.
+    expect(await screen.findByLabelText('Compte')).toHaveFocus()
 
-    // The date and the account answered: the next one in the order drawn.
+    // The account answered: the next one in the order drawn.
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-02-20' } })
     await user.selectOptions(screen.getByLabelText('Compte'), 'alpha')
-    await user.type(screen.getByLabelText('Ticker'), 'ZZA')
+    await user.type(screen.getByLabelText('Titre'), 'ZZA')
     await save(user)
     expect(screen.getByLabelText('Quantité')).toHaveFocus()
   })
@@ -2742,13 +2584,8 @@ describe('the ledger on a phone (#1339)', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(items()).toHaveLength(40)
     expect(list().closest('[data-slot="card"]')).toBeNull()
-    // Only the account chip and the ticker beside a name (#1433) are set in
-    // Geist Mono; the amount is Geist, tabular.
-    expect(
-      Array.from(list().querySelectorAll('.font-mono')).every(
-        (node) => node.hasAttribute('title') || /^ZZ[A-Z]$/.test(node.textContent ?? ''),
-      ),
-    ).toBe(true)
+    // Every figure is `fig` (Geist Mono, tabular): no stray `font-mono` is left.
+    expect(list().querySelectorAll('.font-mono')).toHaveLength(0)
 
     reachTheEnd()
     expect(items()).toHaveLength(80)
@@ -2768,11 +2605,10 @@ describe('the ledger on a phone (#1339)', () => {
     const item = items()[0]
     expect(within(item).getByRole('button', { name: 'Zeta Alpha' })).toBeInTheDocument()
     // The ticker beside the name, outside the button (#1433).
-    expect(within(item).getByText('ZZA')).toHaveClass('font-mono')
+    expect(within(item).getByText('ZZA')).toHaveClass('fig')
     expect(within(item).getByText('Dividende')).toBeInTheDocument()
-    expect(within(item).getByText('alpha')).toHaveClass('font-mono')
-    expect(within(item).getByText(/480/)).toHaveClass('tabular')
-    expect(within(item).getByText(/480/)).not.toHaveClass('font-mono')
+    expect(within(item).getByText('Alpha')).toHaveAttribute('title', 'Alpha')
+    expect(within(item).getByText(/480/)).toHaveClass('fig')
     expect(within(item).getByText(/2026/)).toBeInTheDocument()
     // Quantity, price, fee and the label under a ticker live in the form.
     expect(within(item).queryByText(/Ordre au marché/)).not.toBeInTheDocument()
@@ -2790,6 +2626,26 @@ describe('the ledger on a phone (#1339)', () => {
     expect(within(grant).queryByText('—')).not.toBeInTheDocument()
     expect(within(deposit).getByText(/\+100,00/)).toBeInTheDocument()
     expect(within(buy).getByText(/481,50/)).toBeInTheDocument()
+  })
+
+  it('says quantity × price on a trade, and a chevron says the row opens (persona pass)', async () => {
+    await renderPhone([anEvent({ id: 'c', quantity: 4, unit_price: 120, fee: 1.5 })])
+
+    const [buy] = items()
+    expect(within(buy).getByText(/4\s×\s120,00/)).toHaveClass('fig')
+    expect(buy.querySelector('svg.lucide-chevron-right')).not.toBeNull()
+  })
+
+  it('hands the focus back to the row when Escape closes the sheet', async () => {
+    const { user } = await renderPhone()
+    const open = within(items()[0]).getByRole('button', { name: 'Zeta Alpha' })
+
+    await user.click(open)
+    await screen.findByRole('dialog')
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(open).toHaveFocus()
   })
 
   it('opens the editor from the identity, and not from the checkbox', async () => {
@@ -2828,20 +2684,9 @@ describe('the ledger on a phone (#1339)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Supprimer' }))
     await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Les supprimer' }),
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }),
     )
     await waitFor(() => expect(asked?.ids).toHaveLength(120))
-  })
-
-  it('sticks the summary line only while a row is ticked', async () => {
-    const { user } = await renderPhone()
-    const line = () => screen.getByRole('status')
-
-    expect(line()).not.toHaveClass('sticky')
-    await user.click(within(items()[0]).getByRole('checkbox'))
-    expect(line()).toHaveClass('sticky', 'top-14', 'z-20', 'bg-background')
-    await user.click(screen.getByRole('button', { name: 'Désélectionner' }))
-    expect(line()).not.toHaveClass('sticky')
   })
 
   it('carries two ticked rows from the phone to the table', async () => {
@@ -2890,13 +2735,6 @@ describe('the ledger on a phone (#1339)', () => {
     expect(screen.getByRole('checkbox', { name: 'Sélectionner l’événement filtré' })).toBeDisabled()
   })
 
-  it('keeps the summary line unstuck on the table, rows ticked or not', async () => {
-    const { user } = renderData()
-    await waitFor(() => expect(ledger()).toBeInTheDocument())
-    await user.click(within(rowsOf(ledger())[0]).getByRole('checkbox'))
-    expect(screen.getByRole('status')).not.toHaveClass('sticky')
-  })
-
   it('starts useIsMobile on the real width, before any effect', () => {
     setViewportWidth(390)
     const seen: boolean[] = []
@@ -2906,16 +2744,6 @@ describe('the ledger on a phone (#1339)', () => {
       return value
     })
     expect(seen[0]).toBe(true)
-  })
-
-  it('puts the gestures above the reduction, in the tab order as on screen', async () => {
-    await renderPhone(aLongLedger(120))
-
-    const enter = screen.getByRole('button', { name: 'Saisir un événement' })
-    const search = screen.getByLabelText('Rechercher')
-    expect(enter.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // The verb alone where the line is narrow; the whole action from 28 rem up.
-    expect(within(enter).getByText('Saisir')).toHaveClass('@md/toolbar:hidden')
   })
 })
 
@@ -2960,15 +2788,44 @@ describe('EventFigure (#1355, #1425)', () => {
   })
 })
 
-describe('the cash the form says it will move (#1461)', () => {
+describe('the effect line, which the server writes (#1461)', () => {
   /** The line, its spaces folded: `Intl` separates thousands with a narrow no-break space. */
   const said = () =>
     screen
-      .queryByText(/(Débité du compte|Crédité au compte|Mouvement sur le compte)/)
+      .queryByText(/liquidités/)
+      ?.closest('p')
       ?.textContent?.replace(/\s/g, ' ')
 
+  /** The dry run, answering `answer` and recording every body it was asked. */
+  function previewing(answer: {
+    cash_after: number
+    amount: number
+    fees: number
+    realised?: number
+  }) {
+    const asked: Record<string, unknown>[] = []
+    server.use(
+      http.post(ROUTES.eventsPreview, async ({ request }) => {
+        asked.push((await request.json()) as Record<string, unknown>)
+        // The cases below state the move signed; the server answers a magnitude
+        // and a direction.
+        return HttpResponse.json({
+          account: 'alpha',
+          cash_before: answer.cash_after - answer.amount,
+          cash_after: answer.cash_after,
+          amount: Math.abs(answer.amount),
+          fee: answer.fees,
+          direction: answer.amount < 0 ? 'debit' : answer.amount > 0 ? 'credit' : 'none',
+          realised_gain: answer.realised ?? null,
+        })
+      }),
+    )
+    return asked
+  }
+
   async function fill(user: User, type: string, values: Record<string, string>) {
-    await user.click(screen.getByRole('radio', { name: type }))
+    await user.click(screen.getByRole('tab', { name: type }))
+    await user.selectOptions(await screen.findByLabelText('Compte'), 'alpha')
     for (const [label, value] of Object.entries(values)) {
       await user.type(await screen.findByLabelText(label), value)
     }
@@ -2981,76 +2838,100 @@ describe('the cash the form says it will move (#1461)', () => {
     return user
   }
 
-  it.each([
-    [
-      'Achat',
-      { Quantité: '5', 'Prix unitaire': '541,20', Frais: '1,35' },
-      'Débité du compte : 2 707,35 €',
-    ],
-    [
-      'Vente',
-      { Quantité: '10', 'Prix unitaire': '47,814', Frais: '0,48' },
-      'Crédité au compte : 477,66 €',
-    ],
-    ['Vente', { Quantité: '1', 'Prix unitaire': '1', Frais: '2' }, 'Débité du compte : 1,00 €'],
-    ['Dividende', { Montant: '12', Frais: '1,80' }, 'Crédité au compte : 10,20 €'],
-    [
-      'Vente',
-      { Quantité: '1', 'Prix unitaire': '2', Frais: '2' },
-      'Mouvement sur le compte : 0,00 €',
-    ],
-    ['Retrait', { Montant: '100', Frais: '1' }, 'Débité du compte : 101,00 €'],
-    ['Versement', { Montant: '500' }, 'Crédité au compte : 500,00 €'],
-  ])('%s %j reads « %s »', async (type, values, line) => {
+  it('says a credit, with the cash left on the account', async () => {
+    previewing({ cash_after: 1990, amount: 500, fees: 0 })
     const user = await openFresh()
-    await fill(user, type, values)
-    await waitFor(() => expect(said()).toBe(line))
+    await fill(user, 'Versement', { Montant: '500' })
+    await waitFor(() =>
+      expect(said()).toBe('500,00 € arrivent sur le compte Alpha · liquidités 1 990,00 €'),
+    )
   })
 
-  it('says nothing without a type, for a grant, or while a figure is missing or unreadable', async () => {
+  it('says a debit, the fees in it, and the cash left', async () => {
+    previewing({ cash_after: 1040, amount: -2707.35, fees: 1.35 })
     const user = await openFresh()
-    expect(said()).toBeUndefined()
+    await fill(user, 'Achat', {
+      Titre: 'ZZA',
+      Quantité: '5',
+      'Prix unitaire': '541,20',
+      Frais: '1,35',
+    })
+    await waitFor(() =>
+      expect(said()).toBe(
+        '2 707,35 € quittent le compte Alpha, dont 1,35 € de frais · liquidités 1 040,00 €',
+      ),
+    )
+  })
 
-    await user.click(screen.getByRole('radio', { name: 'Attribution' }))
-    await user.type(await screen.findByLabelText('Quantité'), '2')
+  it('says only the cash when the write moves none', async () => {
+    previewing({ cash_after: 1040, amount: 0, fees: 0 })
+    const user = await openFresh()
+    await fill(user, 'Attribution', { Titre: 'ZZA', Quantité: '2' })
+    await waitFor(() =>
+      expect(said()).toBe('+2 titres de ZZA sur le compte Alpha · liquidités 1 040,00 €'),
+    )
+  })
+
+  it('shows what the server said and computes nothing itself', async () => {
+    // The figures typed say 500, the server says 1: the line is the server's.
+    previewing({ cash_after: 7, amount: 1, fees: 0 })
+    const user = await openFresh()
+    await fill(user, 'Versement', { Montant: '500' })
+    await waitFor(() =>
+      expect(said()).toBe('1,00 € arrivent sur le compte Alpha · liquidités 7,00 €'),
+    )
+  })
+
+  it('asks nothing while a figure is missing or unreadable, and the typed fields once they read', async () => {
+    const asked = previewing({ cash_after: 1000, amount: -20, fees: 0 })
+    const user = await openFresh()
+    await user.selectOptions(await screen.findByLabelText('Compte'), 'alpha')
+    await user.type(screen.getByLabelText('Titre'), 'ZZA')
+    await user.type(screen.getByLabelText('Quantité'), 'abc')
     await user.type(screen.getByLabelText('Prix unitaire'), '10')
+    await new Promise((resolve) => setTimeout(resolve, 450))
+    expect(asked).toEqual([])
     expect(said()).toBeUndefined()
 
-    await user.click(screen.getByRole('radio', { name: 'Achat' }))
-    const quantity = screen.getByLabelText('Quantité')
-    await user.clear(quantity)
-    await user.type(quantity, 'abc')
-    expect(said()).toBeUndefined()
-
-    // An empty price hides it as well, and an unreadable fee alone does not.
-    await user.clear(quantity)
-    await user.type(quantity, '2')
-    const price = screen.getByLabelText('Prix unitaire')
-    await user.clear(price)
-    expect(said()).toBeUndefined()
-    await user.type(price, '10')
-    await user.type(screen.getByLabelText('Frais'), 'abc')
-    expect(said()).toBe('Débité du compte : 20,00 €')
+    await user.clear(screen.getByLabelText('Quantité'))
+    await user.type(screen.getByLabelText('Quantité'), '2')
+    await waitFor(() => expect(asked).toHaveLength(1))
+    expect(asked[0]).toMatchObject({
+      event_type: 'BUY',
+      account: 'alpha',
+      symbol: 'ZZA',
+      quantity: 2,
+      unit_price: 10,
+    })
+    expect(asked[0]).not.toHaveProperty('id')
   })
 
-  it('follows each keystroke, and is filled when a row is opened for edit', async () => {
+  it('asks once the reader pauses, not at every keystroke', async () => {
+    const asked = previewing({ cash_after: 1000, amount: 50, fees: 0 })
     const user = await openFresh()
-    await user.click(screen.getByRole('radio', { name: 'Versement' }))
-    const amount = await screen.findByLabelText('Montant')
-    await user.type(amount, '5')
-    expect(said()).toBe('Crédité au compte : 5,00 €')
-    await user.type(amount, '0')
-    expect(said()).toBe('Crédité au compte : 50,00 €')
+    await fill(user, 'Versement', {})
+    await user.type(await screen.findByLabelText('Montant'), '5')
+    await user.type(screen.getByLabelText('Montant'), '0')
 
-    cleanup()
-    const edit = renderData([anEvent({ quantity: 5, unit_price: 541.2, fee: 1.35 })])
+    await waitFor(() => expect(asked).toHaveLength(1))
+    expect(asked[0]).toMatchObject({ event_type: 'DEPOSIT', amount: 50 })
+  })
+
+  it('is filled when a row is opened for edit, and names the row it replaces', async () => {
+    const asked = previewing({ cash_after: 1040, amount: -2707.35, fees: 1.35 })
+    const { user } = renderData([
+      anEvent({ id: 'row-7', quantity: 5, unit_price: 541.2, fee: 1.35 }),
+    ])
     await waitFor(() => expect(ledger()).toBeInTheDocument())
-    await edit.user.click(within(ledger()).getByRole('button', { name: 'Zeta Alpha' }))
+    await user.click(within(ledger()).getByRole('button', { name: 'Zeta Alpha' }))
     await screen.findByLabelText('Quantité')
-    expect(said()).toBe('Débité du compte : 2 707,35 €')
+
+    await waitFor(() => expect(said()).toMatch(/^2 707,35 € quittent le compte Alpha/))
+    expect(asked[0]).toMatchObject({ id: 'row-7', quantity: 5, unit_price: 541.2, fee: 1.35 })
   })
 
   it('is a bare number while the base currency is unknown', async () => {
+    previewing({ cash_after: 1990, amount: 500, fees: 0 })
     server.use(
       problemHandler(ROUTES.portfolioTotals, {
         status: 503,
@@ -3060,14 +2941,113 @@ describe('the cash the form says it will move (#1461)', () => {
     )
     const user = await openFresh()
     await fill(user, 'Versement', { Montant: '500' })
-    await waitFor(() => expect(said()).toBe('Crédité au compte : 500,00'))
+    await waitFor(() =>
+      expect(said()).toBe('500,00 arrivent sur le compte Alpha · liquidités 1 990,00'),
+    )
+  })
+
+  it('says the loss a sale realises, before the save', async () => {
+    previewing({ cash_after: 1500, amount: 492.06, fees: 0, realised: -50.49 })
+    const user = await openFresh()
+    await fill(user, 'Vente', { Titre: 'ZZA', Quantité: '1', 'Prix unitaire': '492,06' })
+    await waitFor(() => expect(said()).toMatch(/moins-value de 50,49 €/))
+  })
+
+  /** The refusal the server gives the dry run, as `problem+json`. */
+  function refusing(body: Record<string, unknown>, status: number) {
+    server.use(
+      http.post(ROUTES.eventsPreview, () =>
+        HttpResponse.json(body, {
+          status,
+          headers: { 'Content-Type': 'application/problem+json' },
+        }),
+      ),
+    )
+  }
+
+  it('refuses a sale of shares the account does not hold, before « Enregistrer »', async () => {
+    refusing(
+      {
+        status: 409,
+        type: PROBLEM_TYPES.unreplayableLedger,
+        title: 'Ledger does not replay',
+        symbol: 'ZZA',
+        wanted: 100,
+        owned: 26,
+        account: 'alpha',
+      },
+      409,
+    )
+    const user = await openFresh()
+    await fill(user, 'Vente', { Titre: 'ZZA', Quantité: '100', 'Prix unitaire': '10' })
+
+    expect(await screen.findByText(/n’en porte que 26/)).toBeInTheDocument()
+  })
+
+  it('refuses a withdrawal larger than the cash, before « Enregistrer »', async () => {
+    refusing(
+      {
+        status: 422,
+        type: PROBLEM_TYPES.badRequest,
+        title: 'Invalid request',
+        key: 'amount',
+        code: 'overdraft',
+      },
+      422,
+    )
+    const user = await openFresh()
+    await fill(user, 'Retrait', { Montant: '99999' })
+
+    expect(
+      await screen.findByText(/dépasse les liquidités que le compte détient/),
+    ).toBeInTheDocument()
+  })
+
+  it('names an amount that is not a number, or not above zero, as it is typed', async () => {
+    const user = await openFresh()
+    await user.click(screen.getByRole('tab', { name: 'Versement' }))
+    const amount = await screen.findByLabelText('Montant')
+
+    await user.type(amount, 'abc')
+    expect(await screen.findByText('Ce n’est pas un nombre.')).toBeInTheDocument()
+    await user.clear(amount)
+    await user.type(amount, '-50')
+    expect(await screen.findByText(/supérieur à zéro/)).toBeInTheDocument()
+    await user.clear(amount)
+    await user.type(amount, '0')
+    expect(await screen.findByText(/supérieur à zéro/)).toBeInTheDocument()
+  })
+
+  it('warns about a future date and a date before the account opened, and still allows both', async () => {
+    server.use(
+      http.get(ROUTES.accounts, () =>
+        HttpResponse.json(
+          anAccountsPayload(
+            defaultAccounts().map((one) =>
+              one.id === 'alpha' ? { ...one, opened_on: '2019-10-30' } : one,
+            ),
+          ),
+        ),
+      ),
+    )
+    const user = await openFresh()
+    await user.click(screen.getByRole('tab', { name: 'Versement' }))
+    await user.selectOptions(await screen.findByLabelText('Compte'), 'alpha')
+    const date = screen.getByLabelText('Date')
+
+    fireEvent.change(date, { target: { value: '2099-01-01' } })
+    expect(await screen.findByText(/pas encore passée/)).toBeInTheDocument()
+    fireEvent.change(date, { target: { value: '2019-01-01' } })
+    expect(await screen.findByText(/Le compte est ouvert depuis le/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Enregistrer' })).toBeEnabled()
   })
 
   it('has no colour and is not announced', async () => {
+    previewing({ cash_after: 1040, amount: -10, fees: 0 })
     const user = await openFresh()
-    await fill(user, 'Achat', { Quantité: '1', 'Prix unitaire': '10' })
-    const line = await screen.findByText(/Débité du compte/)
-    expect(line.className).not.toMatch(/text-(gain|loss|destructive)/)
+    await fill(user, 'Achat', { Titre: 'ZZA', Quantité: '1', 'Prix unitaire': '10' })
+    const line = (await screen.findByText(/liquidités/)).closest('p') as HTMLElement
+    expect(line.innerHTML).not.toMatch(/text-(gain|loss|destructive)/)
     // Explicit live regions, and the roles that imply one.
     expect(line.closest('[aria-live], [role="status"], [role="alert"], [role="log"]')).toBeNull()
     expect(line.closest('output')).toBeNull()

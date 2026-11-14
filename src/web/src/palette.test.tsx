@@ -15,7 +15,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import { aLedgerPayload, anEvent, anInstallationFact, ledgerEvents } from '@/test/factories'
+import { aLedgerPayload, anEvent, ledgerEvents } from '@/test/factories'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
@@ -35,7 +35,7 @@ function render(url = '/') {
 
 /** The field is the palette: it is what both ways in have to produce. */
 function field() {
-  return screen.getByRole('searchbox', { name: 'Rechercher dans votre portefeuille' })
+  return screen.getByRole('searchbox', { name: 'Rechercher' })
 }
 
 async function open(user: ReturnType<typeof renderApp>['user']) {
@@ -87,13 +87,14 @@ describe('what the palette costs a page that never opens it', () => {
   })
 })
 
-describe('the three sections that read', () => {
-  it('opens without them, and each one absent removes a section', async () => {
-    // All three left hanging: the palette is whole without any of them.
+describe('the groups that read', () => {
+  it('opens without them, and each one absent removes a group', async () => {
+    // All of them left hanging: the palette is whole without any.
     server.use(
       http.get(ROUTES.positions, () => new Promise<never>(() => {})),
       http.get(ROUTES.accounts, () => new Promise<never>(() => {})),
       http.get(ROUTES.events, () => new Promise<never>(() => {})),
+      http.get(ROUTES.agentThreads, () => new Promise<never>(() => {})),
     )
     const { user } = render()
     await open(user)
@@ -101,29 +102,70 @@ describe('the three sections that read', () => {
     // The pages and the actions are there at once — they read nothing.
     expect(within(section('Pages') as HTMLElement).getAllByRole('listitem')).toHaveLength(8)
     expect(section('Actions')).not.toBeNull()
-    // And the three that read are **gone**, not empty, and not holding the rest.
-    expect(section('Titres détenus')).toBeNull()
+    // And the groups that read are **gone**, not empty, and not holding the rest.
+    await user.type(field(), 'zeta')
+    expect(section('Titres')).toBeNull()
     expect(section('Comptes')).toBeNull()
     expect(section('Événements')).toBeNull()
+    expect(section('Fils de l’agent')).toBeNull()
 
     // Nor is anything claimed about a portfolio nobody has read: the sentence
     // about nothing matching is a claim, so it waits like any other.
-    await user.type(field(), 'zeta')
-    expect(screen.queryByText(/Aucun résultat/)).toBeNull()
+    expect(screen.queryByText(/Rien pour/)).toBeNull()
   })
 
-  it('draws each section as its own read lands', async () => {
+  it('draws each group as its own read lands, and says nothing until something is typed', async () => {
     const { user } = render()
     await open(user)
 
-    await waitFor(() => expect(section('Titres détenus')).not.toBeNull())
-    expect(section('Comptes')).not.toBeNull()
-    // The events say nothing at all until something is typed: a section of the
-    // five newest rows of a ledger nobody asked about is a table in a palette.
+    // Untouched: the actions and the pages, and no table of the portfolio.
+    expect(section('Actions')).not.toBeNull()
+    expect(section('Titres')).toBeNull()
     expect(section('Événements')).toBeNull()
 
+    await user.type(field(), 'zeta')
+    await waitFor(() => expect(section('Titres')).not.toBeNull())
+    await user.clear(field())
+    await user.type(field(), 'beta')
+    await waitFor(() => expect(section('Comptes')).not.toBeNull())
+    await user.clear(field())
     await user.type(field(), 'virement')
     await waitFor(() => expect(section('Événements')).not.toBeNull())
+  })
+
+  it('names the match in 600 and says what each result is', async () => {
+    const { user } = render()
+    await open(user)
+    await user.type(field(), 'zeta')
+
+    const titles = within(await screen.findByRole('list', { name: 'Titres' }))
+    const first = titles.getAllByRole('button')[0]
+    expect(first.querySelector('mark')).toHaveTextContent(/^zeta$/i)
+    // The symbol and the account under the name, the value on the right.
+    expect(first).toHaveTextContent(/ZZA/)
+  })
+
+  it('offers the agent’s threads that match', async () => {
+    server.use(
+      http.get(ROUTES.agentThreads, () =>
+        HttpResponse.json([
+          {
+            id: 't1',
+            title: 'Et si je renforçais Air Liquide ?',
+            created_at: '2026-11-06T09:00:00Z',
+            updated_at: '2026-11-06T09:30:00Z',
+          },
+        ]),
+      ),
+    )
+    const { user } = render()
+    await open(user)
+    await user.type(field(), 'renfor')
+
+    const threads = within(await screen.findByRole('list', { name: 'Fils de l’agent' }))
+    expect(
+      threads.getByRole('button', { name: /Et si je renforçais Air Liquide/ }),
+    ).toHaveTextContent('6 nov. 2026')
   })
 })
 
@@ -168,9 +210,10 @@ describe('results you can tell apart', () => {
     const events = within(await screen.findByRole('list', { name: 'Événements' }))
     const names = events.getAllByRole('button').map((button) => button.textContent)
     expect(new Set(names).size).toBe(3)
-    expect(names[0]).toMatch(/Dividende · 12,50\s€ · Alpha · /)
-    expect(names[1]).toMatch(/7,00\s€ · Beta/)
-    expect(names[2]).not.toMatch(/€|· ·/)
+    // Label · type, then the day and the account, then the signed amount.
+    expect(names[0]).toMatch(/Air Liquide · Dividende.*Alpha.*\+12,50\s€/)
+    expect(names[1]).toMatch(/Beta.*\+7,00\s€/)
+    expect(names[2]).not.toMatch(/€/)
     // The ticker stays whole: no four-character slice of it as a mark.
     expect(screen.queryByText('AI.P')).toBeNull()
   })
@@ -178,24 +221,29 @@ describe('results you can tell apart', () => {
   it('offers every page the sidebar has', async () => {
     const { user } = render()
     await open(user)
-    await user.type(field(), 'Réf')
-    expect(within(section('Pages') as HTMLElement).getByText('Référence')).toBeInTheDocument()
+    await user.type(field(), 'Comp')
+    const pages = within(section('Pages') as HTMLElement)
+    expect(pages.getByRole('button', { name: /^Comparaison/ })).toBeInTheDocument()
     await user.clear(field())
     await user.type(field(), 'Agent')
-    expect(within(section('Pages') as HTMLElement).getByText('Agent')).toBeInTheDocument()
+    expect(
+      within(section('Pages') as HTMLElement).getByRole('button', { name: /^Agent/ }),
+    ).toBeInTheDocument()
   })
 })
 
 describe('where an entry leads', () => {
-  it('reaches a held title on its own sheet', async () => {
+  it('reaches a held title on its own page', async () => {
     const { user } = render()
     await open(user)
     await user.type(field(), 'zeta alpha')
-    await user.click(await screen.findByRole('button', { name: /Zeta Alpha/ }))
+    const titles = within(await screen.findByRole('list', { name: 'Titres' }))
+    await user.click(titles.getAllByRole('button')[0])
 
-    // The sheet is a URL since this ticket, which is what lets anything outside
-    // the shares page lead to it.
-    expect(await screen.findByRole('dialog', { name: /Zeta Alpha/ })).toBeInTheDocument()
+    // The sheet became the page `/shares/<symbol>` (« Relevé »); the palette's
+    // `?symbol=` address is handed over to it.
+    expect(await screen.findByRole('heading', { level: 1, name: 'Zeta Alpha' })).toBeInTheDocument()
+    expect(await screen.findByText('Valorisation de la ligne')).toBeInTheDocument()
   })
 
   it('reaches an account on its own detail', async () => {
@@ -216,14 +264,21 @@ describe('where an entry leads', () => {
 
     // Not the data page with the form shut, which would be a page entry wearing
     // an action's name.
-    expect(
-      await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' }),
-    ).toBeInTheDocument()
+    expect(await screen.findByRole('tablist', { name: 'Ce qui s’est passé' })).toBeInTheDocument()
   })
 })
 
+/** The three controls an event result sets, let go of one by one. */
+async function liftTheReduction(user: ReturnType<typeof render>['user']) {
+  await user.clear(screen.getByRole('searchbox'))
+  await user.click(screen.getByRole('button', { name: /^Type :/ }))
+  await user.click(await screen.findByRole('option', { name: 'Tous les types' }))
+  await user.click(screen.getByRole('button', { name: /^Compte :/ }))
+  await user.click(await screen.findByRole('option', { name: 'Tous les comptes' }))
+}
+
 describe('the ledger an event result lands on', () => {
-  it('is reduced, says what it retains, and offers the way out', async () => {
+  it('is reduced, shows it in its controls, and offers the way out', async () => {
     server.use(http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))))
     const { user } = render()
     await open(user)
@@ -234,19 +289,15 @@ describe('the ledger an event result lands on', () => {
     const table = await screen.findByRole('table', { name: 'Vos événements' })
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(2))
 
-    // **It names itself**, in the terms of what it retains — a type, a word and
-    // an account — and never in terms of the one row it was asked about: a
-    // ledger row has no address.
-    expect(
-      screen.getByText(
-        /Réduit aux événements de type Versement portant « Virement entrant depuis le compte courant », sur le compte alpha\./,
-      ),
-    ).toBeInTheDocument()
+    // **It names itself in its controls**: the type, the account and the word
+    // typed are each a control showing its own value, never a row's address.
+    expect(screen.getByRole('button', { name: 'Type : Versement' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Compte : Alpha' })).toBeInTheDocument()
+    expect(screen.getByRole('searchbox')).toHaveValue('Virement entrant depuis le compte courant')
 
-    // And it offers the way out, which restores the ledger entire.
-    await user.click(screen.getByRole('button', { name: 'Afficher tout le grand livre' }))
+    // And each one offers the way out, which restores the ledger entire.
+    await liftTheReduction(user)
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(5))
-    expect(screen.queryByText(/Réduit aux événements/)).toBeNull()
   })
 
   it('says nothing matched only once every read has landed', async () => {
@@ -254,7 +305,7 @@ describe('the ledger an event result lands on', () => {
     await open(user)
     await user.type(field(), 'introuvable')
 
-    expect(await screen.findByText(/Aucun résultat pour « introuvable »/)).toBeInTheDocument()
+    expect(await screen.findByText('Rien pour « introuvable »')).toBeInTheDocument()
   })
 })
 
@@ -267,17 +318,17 @@ describe('a gesture the palette armed is spent once', () => {
     await open(user)
     await user.type(field(), 'saisir')
     await user.click(await screen.findByRole('button', { name: 'Saisir un événement' }))
-    await screen.findByRole('radiogroup', { name: 'Ce qui s’est passé' })
+    await screen.findByRole('tablist', { name: 'Ce qui s’est passé' })
 
     await user.keyboard('{Escape}')
     await waitFor(() =>
-      expect(screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' })).toBeNull(),
+      expect(screen.queryByRole('tablist', { name: 'Ce qui s’est passé' })).toBeNull(),
     )
 
     await user.click(await screen.findByRole('link', { name: 'Réglages' }))
     await user.click(await screen.findByRole('link', { name: 'Grand livre' }))
     await screen.findByRole('table', { name: 'Vos événements' })
-    expect(screen.queryByRole('radiogroup', { name: 'Ce qui s’est passé' })).toBeNull()
+    expect(screen.queryByRole('tablist', { name: 'Ce qui s’est passé' })).toBeNull()
   })
 
   it('does not bring back a reduction the reader has lifted', async () => {
@@ -289,41 +340,17 @@ describe('a gesture the palette armed is spent once', () => {
 
     const table = await screen.findByRole('table', { name: 'Vos événements' })
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(2))
-    await user.click(screen.getByRole('button', { name: 'Afficher tout le grand livre' }))
+    await liftTheReduction(user)
     await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(5))
 
-    // The address went with it, so a remount cannot restore it: a sentence
-    // naming a reduction over a table nobody reduced is two truths.
+    // The address went with it, so a remount cannot restore it: controls naming
+    // a reduction over a table nobody reduced are two truths.
     await user.click(await screen.findByRole('link', { name: 'Réglages' }))
     await user.click(await screen.findByRole('link', { name: 'Grand livre' }))
     const back = await screen.findByRole('table', { name: 'Vos événements' })
     await waitFor(() => expect(within(back).getAllByRole('row')).toHaveLength(5))
-    expect(screen.queryByText(/Réduit aux événements/)).toBeNull()
-  })
-
-  it('hands the address over when a notification reduces the ledger its own way', async () => {
-    server.use(
-      http.get(ROUTES.events, () => HttpResponse.json(aLedgerPayload(ledgerEvents()))),
-      http.get(ROUTES.installationFacts, () => HttpResponse.json([anInstallationFact()])),
-    )
-    const view = render()
-    const { user } = view
-    await open(user)
-    await user.type(field(), 'virement')
-    await user.click(await screen.findByRole('button', { name: /Virement entrant/ }))
-    await screen.findByRole('table', { name: 'Vos événements' })
-
-    // **The card's link lands on the figure** (#829), and it does it
-    // from the shell — so the set of securities became addressable, and the
-    // reduction that arrived before it is replaced rather than added to: two
-    // reductions cannot both be the table's.
-    await user.click(screen.getByRole('button', { name: /^Notifications/ }))
-    const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    await user.click(within(panel).getByRole('link', { name: 'Voir les événements concernés' }))
-    await screen.findByText(/Réduit à 3 titres/)
-
-    expect(view.router.state.location.search).toEqual({ symbol: ['ZZA', 'ZZB', 'ZZC'] })
-    expect(screen.queryByText(/Réduit aux événements de type/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Type : Tous les types' })).toBeInTheDocument()
+    expect(screen.getByRole('searchbox')).toHaveValue('')
   })
 })
 
@@ -331,7 +358,7 @@ describe('what the palette does with a keystroke and with a failure', () => {
   it('does nothing on Enter over an untouched field', async () => {
     const view = render()
     await open(view.user)
-    await waitFor(() => expect(section('Titres détenus')).not.toBeNull())
+    await waitFor(() => expect(section('Pages')).not.toBeNull())
 
     // An empty query matches everything, so the first title the owner holds is
     // one reflex away from being navigated to. The palette stays where it is,
@@ -358,6 +385,32 @@ describe('what the palette does with a keystroke and with a failure', () => {
     // blank body, which reads as a broken palette rather than a failed read.
     expect(await screen.findByText(/erreur qu’elle n’attendait pas/)).toBeInTheDocument()
     // And nothing is claimed about a portfolio one read of which never landed.
-    expect(screen.queryByText(/Aucun résultat/)).toBeNull()
+    expect(screen.queryByText(/Rien pour/)).toBeNull()
+  })
+})
+
+describe('the keyboard', () => {
+  it('walks the rows with the arrows and runs the highlighted one on Enter', async () => {
+    const view = render()
+    await open(view.user)
+    await view.user.type(field(), 'g')
+    await view.user.keyboard('{ArrowDown}{Enter}')
+
+    // Whatever the second row is, Enter ran it: the palette is gone.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+})
+
+describe('what was reached last', () => {
+  it('comes back as Récents, resolved against the portfolio', async () => {
+    const view = render()
+    await open(view.user)
+    await view.user.type(field(), 'beta')
+    await view.user.click(await screen.findByRole('button', { name: /^Beta/ }))
+    await screen.findByRole('heading', { level: 1, name: 'Comptes' })
+
+    await open(view.user)
+    const recent = within(await screen.findByRole('list', { name: 'Récents' }))
+    expect(recent.getByRole('button', { name: /^Beta/ })).toBeInTheDocument()
   })
 })

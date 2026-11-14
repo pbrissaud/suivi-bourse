@@ -18,7 +18,7 @@
  * **The series is the chart's own read**, and its failure is named by the
  * chart, in its own slot (#829): the value above it stays.
  */
-import { PortfolioChart } from '@/features/dashboard/components/PortfolioChart'
+import { ChartInFlight, PortfolioChart } from '@/features/dashboard/components/PortfolioChart'
 import { Unreadable } from '@/components/Unreadable'
 import type { PerfPoint } from '@/features/accounts/lib/api'
 import type { ValuationPoint } from '@/features/dashboard/lib/api'
@@ -49,7 +49,7 @@ export function HeroChart({
   // is in flight, and only the failure when it did not answer — a range
   // control over an empty slot sets nothing.
   if ((ledger ? performance : valuation) === null) {
-    return failure === null ? null : <Unreadable failure={failure} />
+    return failure === null ? <ChartInFlight /> : <Unreadable failure={failure} />
   }
 
   return (

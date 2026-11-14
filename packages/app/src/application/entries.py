@@ -1,7 +1,7 @@
 """The one writer of the ledger, and the gestures a row earns (issues #764, #816)."""
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import AbstractSet, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import AbstractSet, Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from logfmt_logger import getLogger
 
@@ -11,7 +11,7 @@ from application import settings_registry
 from application import uploads
 from application.events.aggregator import EventAggregator
 from application.events.validator import EventValidator
-from application.events.schemas import DEFAULT_ACCOUNT, Event, canonical_symbol
+from application.events.schemas import DEFAULT_ACCOUNT, Event, EventType, canonical_symbol
 from application.incoming import INCOMING
 
 logger = getLogger("entries")
@@ -47,9 +47,13 @@ class UnknownEntry(Exception):
 class InvalidEntry(Exception):
     """The event is well formed and the rules refuse it."""
 
-    def __init__(self, message: str, field: Optional[str] = None):
+    def __init__(self, message: str, field: Optional[str] = None,
+                 **extra: Any):
         super().__init__(message)
         self.field = field
+        #: Members the route adds to the problem, so the front can say the
+        #: refusal in its own words (``code``, ``balance``).
+        self.extra = extra
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,7 @@ def create(store, draft: Event) -> Event:
     with store.transaction():
         event = _settled(store, draft)
         _refuse(store, event)
+        _refuse_overdraft(store, event)
         account = event.account or DEFAULT_ACCOUNT
 
         next_id = store.reserve('event')
@@ -92,6 +97,90 @@ def create(store, draft: Event) -> Event:
         logger.info(f"Recorded event {next_id}: {event.event_type.value} "
                     f"{event.symbol or account} on {event.date}")
     return replace(event, id=next_id, account=account)
+
+
+@dataclass(frozen=True)
+class Effect:
+    """What a candidate event would do to its account's cash (nothing written)."""
+
+    account: str
+    cash_before: float
+    cash_after: float
+    amount: float
+    fee: float
+    direction: str
+    #: For a sale: the gain (positive) or loss (negative) it realises on the
+    #: line's average cost. ``None`` for every other event.
+    realised_gain: Optional[float] = None
+
+
+def _realised_by(rows: List[Event], candidate: Event, account: str) -> float:
+    """What ``candidate`` realises: the line's realised gain with it, minus without."""
+    at = next(i for i, row in enumerate(rows) if row is candidate)
+
+    def realised(upto: List[Event]) -> float:
+        states = EventAggregator().replay(upto).snapshots.get(
+            (account, candidate.symbol))
+        return states[-1][1].realized_gain if states else 0.0
+
+    return realised(rows[:at + 1]) - realised(rows[:at])
+
+
+def _would_be(store, event: Event, account: str, replacing: Optional[int]):
+    """``(candidate, timeline, rows)``: the replay of the ledger the write would leave."""
+    if replacing is not None:
+        _require_known(store, replacing)
+    held = [row for row in ledger.read_events(store) if row.id != replacing]
+    candidate = replace(event, account=account, id=replacing)
+    # The write gives a new row the highest id, and an edited one keeps its own:
+    # the replay order is (day, id), so a new row sorts after its day's rows.
+    would_be = sorted(held + [candidate], key=lambda row: (
+        row.date, float('inf') if row.id is None else row.id))
+    return candidate, EventAggregator().replay(would_be), would_be
+
+
+def _refuse_overdraft(store, event: Event, replacing: Optional[int] = None,
+                      timeline=None) -> None:
+    """A withdrawal larger than the account's cash is refused, like a short sale.
+
+    Judged on the day of the withdrawal, in the replay the write would leave: a
+    later deposit does not make the money exist on the day it leaves.
+    """
+    if event.event_type != EventType.WITHDRAWAL:
+        return
+    account = event.account or DEFAULT_ACCOUNT
+    if timeline is None:
+        _, timeline, _ = _would_be(store, event, account, replacing)
+    held = [balance for day, balance in
+            timeline.cash_snapshots.get(account, []) if day <= event.date]
+    if held and held[-1].cash_balance < -0.005:
+        raise InvalidEntry(
+            f"Cannot withdraw {event.amount:.2f}: the account would hold "
+            f"{held[-1].cash_balance:.2f} on {event.date}", field='amount',
+            code='overdraft', balance=round(held[-1].cash_balance, 2))
+
+
+def effect(store, draft: Event, replacing: Optional[int] = None) -> Effect:
+    """The dry run of :func:`create` (or, with ``replacing``, of :func:`update`).
+
+    Judged exactly as the write is: the same settling, the same validator, the
+    same replay of the ledger the write would leave. ``cash_after`` is the
+    account's balance at the end of that replay; ``cash_before`` is what it
+    would be without the candidate (for an edit, without the row it replaces).
+    """
+    event = _settled(store, draft)
+    _refuse(store, event)
+    account = event.account or DEFAULT_ACCOUNT
+    candidate, timeline, rows = _would_be(store, event, account, replacing)
+    _refuse_overdraft(store, event, replacing, timeline)
+    snapshots = timeline.cash_snapshots.get(account)
+    after = snapshots[-1][1].cash_balance if snapshots else 0.0
+    moved = EventAggregator.cash_effect(candidate)
+    return Effect(account=account, cash_before=after - moved, cash_after=after,
+                  amount=abs(moved), fee=event.fee or 0.0,
+                  direction='credit' if moved > 0 else 'debit' if moved < 0 else 'none',
+                  realised_gain=(_realised_by(rows, candidate, account)
+                                 if event.event_type == EventType.SELL else None))
 
 
 def create_many(store, drafts: Sequence[Event], *,
@@ -178,6 +267,7 @@ def update(store, event_id: int, draft: Event) -> Event:
         _require_known(store, event_id)
         event = _settled(store, draft)
         _refuse(store, event)
+        _refuse_overdraft(store, event, event_id)
         account = event.account or DEFAULT_ACCOUNT
 
         declare_symbol(store, event.symbol)
@@ -449,6 +539,6 @@ def _replays(store) -> None:
 __all__ = [
     'DUPLICATE_KEY_COLUMNS', 'AMOUNT_PRECISION',
     'UnknownEntry', 'InvalidEntry', 'Duplicate',
-    'create', 'create_many', 'record_many', 'update', 'remove', 'remove_keys',
+    'Effect', 'effect', 'create', 'create_many', 'record_many', 'update', 'remove', 'remove_keys',
     'content_key', 'split_duplicates', 'judge', 'cap_dividend_fees',
 ]

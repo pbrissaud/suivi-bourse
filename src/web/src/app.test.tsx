@@ -31,17 +31,12 @@ function nav() {
   return screen.getByRole('navigation', { name: 'Sections' })
 }
 
-/** One option of a preference on the settings page: a select for the language, a segmented control otherwise. */
+/** One option of a preference on the settings page, a segmented control. */
 async function chooseInSettings(
   user: ReturnType<typeof renderApp>['user'],
   control: string,
   option: string,
 ) {
-  if (control === 'Langue' || control === 'Language') {
-    await user.click(await screen.findByRole('combobox', { name: control }))
-    await user.click(screen.getByRole('option', { name: option }))
-    return
-  }
   const group = await screen.findByRole('radiogroup', { name: control })
   await user.click(within(group).getByRole('radio', { name: option }))
 }
@@ -73,7 +68,7 @@ describe('the walking skeleton', () => {
     for (const entry of [
       'Shares',
       'Accounts',
-      'Reference',
+      'Comparison',
       'Agent',
       'Ledger',
       'System',
@@ -158,7 +153,7 @@ describe('the reader preferences', () => {
     expect(within(nav()).getByRole('link', { name: 'Shares' })).toBeInTheDocument()
     // The chrome follows too: the control that was `Langue` a moment ago is now
     // `Language`, so nothing is left in the other language on screen.
-    expect(screen.getByRole('combobox', { name: 'Language' })).toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'Language' })).toBeInTheDocument()
     expect(document.documentElement).toHaveAttribute('lang', 'en')
   })
 
@@ -254,10 +249,10 @@ describe('when the app is not answering', () => {
     await waitFor(() => expect(bell).toHaveAccessibleName(/ne répond pas/))
 
     // And it *leads* somewhere rather than indicating without pointing: the
-    // panel's health card offers a link to where one repairs.
+    // panel's footer links to where one repairs.
     await user.click(bell)
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
-    expect(within(panel).getByRole('link', { name: 'Voir dans Système' })).toHaveAttribute(
+    expect(within(panel).getByRole('link', { name: 'Système' })).toHaveAttribute(
       'href',
       expect.stringContaining('/system'),
     )
@@ -284,7 +279,7 @@ describe('the content header', () => {
       expect.arrayContaining(['Afficher ou masquer la navigation', 'Tableau de bord']),
     )
     expect(within(header()).getByRole('button', { name: /^Notifications/ })).toBeInTheDocument()
-    for (const preference of ['Densité des tableaux', 'Langue', 'Apparence']) {
+    for (const preference of ['Densité des tables', 'Langue', 'Apparence']) {
       expect(within(header()).queryByRole('button', { name: preference })).not.toBeInTheDocument()
     }
 

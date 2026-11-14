@@ -32,13 +32,17 @@
  * level with the header bar.
  */
 import { useEffect } from 'react'
+import { toast } from 'sonner'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
+  BookOpen,
+  ScrollText,
   Server,
   CircleDollarSign,
   Database,
   LayoutDashboard,
+  Lock,
   Scale,
   Settings,
   Sparkles,
@@ -59,8 +63,11 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { useAgentChat } from '@/features/agent/lib/agentChatProvider'
+import { useAuth } from '@/features/auth/components/AuthBoot'
+import { authApi } from '@/features/auth/lib/api'
 import { api } from '@/lib/api'
-import { useT, type MessageKey } from '@/lib/i18n'
+import { useDocs } from '@/lib/docs'
+import { useI18n, useT, type MessageKey } from '@/lib/i18n'
 
 interface Entry {
   to: '/' | '/shares' | '/accounts' | '/benchmark' | '/agent' | '/ledger' | '/system' | '/settings'
@@ -92,6 +99,7 @@ export const ADMINISTRATION: Entry[] = [
 
 export function AppSidebar() {
   const t = useT()
+  const auth = useAuth()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   // The phone drawer is a modal over the page: once a page is chosen — by an
   // entry or by Back — it has done its job (#1375).
@@ -146,6 +154,24 @@ export function AppSidebar() {
               {ADMINISTRATION.map((entry) => (
                 <NavEntry key={entry.to} entry={entry} pathname={pathname} />
               ))}
+              {/* Locking exists only while a code does (#1203), and it is a
+                  button in plain sight: the palette was the one way to it. */}
+              {auth.status.enabled ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip={t('palette.action.logout')}
+                    onClick={() =>
+                      void authApi
+                        .logout()
+                        .then(auth.signedOut)
+                        .catch(() => toast.error(t('palette.action.logout.failed')))
+                    }
+                  >
+                    <Lock />
+                    <span>{t('palette.action.logout')}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : null}
             </SidebarMenu>
           </nav>
         </SidebarGroup>
@@ -174,26 +200,67 @@ function BuildLine() {
   const shown = build?.version ?? build?.revision?.slice(0, 7)
   if (!build || !shown) return null
   return (
-    <div className="mx-3 space-y-1 border-t px-2 pt-3 pb-4 text-2xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-      <p
-        title={[t('installation.build.source', { source: build.source }), build.revision]
-          .filter(Boolean)
-          .join(' · ')}
-      >
-        {t('nav.version')} <span className="tabular">{shown}</span>
-      </p>
+    <div className="mx-3 space-y-1 border-t px-2 pt-3 pb-4 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+      <div className="flex items-center justify-between gap-2">
+        <p
+          title={[t('installation.build.source', { source: build.source }), build.revision]
+            .filter(Boolean)
+            .join(' · ')}
+        >
+          {/* A release reads as a version, a build from a commit as a build. */}
+          {build.version ? t('nav.version') : t('nav.build')}{' '}
+          <span className="font-mono">{shown}</span>
+        </p>
+        <span className="flex items-center gap-1">
+          <HelpLinks
+            icons
+            className="inline-flex size-7 items-center justify-center rounded-md transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+          />
+        </span>
+      </div>
       {latest ? (
         <a
           href={latest.url}
           target="_blank"
           rel="noreferrer"
           aria-label={t('nav.release.label', { version: latest.version })}
-          className="tabular block w-fit rounded-sm font-medium text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="fig block w-fit rounded-sm font-medium text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           {t('nav.release', { version: latest.version })} <span aria-hidden="true">↗</span>
         </a>
       ) : null}
     </div>
+  )
+}
+
+/** The documentation and every release's notes: the sidebar's foot and Système › Installation. */
+export function HelpLinks({ className, icons = false }: { className: string; icons?: boolean }) {
+  const t = useT()
+  const { language } = useI18n()
+  const { docsRootHref } = useDocs()
+  // As icons (the sidebar's foot) each keeps its words as its name and tooltip.
+  const named = (label: string) => (icons ? { 'aria-label': label, title: label } : {})
+  return (
+    <>
+      <a
+        href={docsRootHref(language)}
+        target="_blank"
+        rel="noreferrer"
+        className={className}
+        {...named(t('nav.docs'))}
+      >
+        {icons ? <BookOpen aria-hidden className="size-4" /> : t('nav.docs')}
+      </a>
+      <a
+        href="https://github.com/pbrissaud/suivi-bourse/releases"
+        target="_blank"
+        rel="noreferrer"
+        className={className}
+        {...named(t('nav.releases'))}
+      >
+        {icons ? <ScrollText aria-hidden className="size-4" /> : t('nav.releases')}
+      </a>
+    </>
   )
 }
 

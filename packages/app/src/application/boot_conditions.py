@@ -45,7 +45,7 @@ def observe(base_currency: Optional[str], recorded_events: int,
             level=logging.INFO,
             message=(
                 f"No event recorded yet: open http://localhost:{web_port}/ and "
-                f"record a first position, or hand the app a .csv/.xlsx of your "
+                f"record a first event, or hand the app a .csv/.xlsx of your "
                 f"events from the same page."),
             context={'condition': NO_PORTFOLIO},
         ))

@@ -45,7 +45,7 @@ but that zero is *the model saying so*, not an arithmetic result, and the two
 must not be told apart by their value.
 """
 from datetime import date
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from application import taxation
 
@@ -105,26 +105,46 @@ def projected_tax(*, kind: str, parameters: Mapping[str, Any],
     return _bracketed(checked, latent_gain)
 
 
+def projected_split(*, kind: str, parameters: Mapping[str, Any],
+                    latent_gain: Optional[float],
+                    opened_on: Optional[date] = None,
+                    first_payment: Optional[date] = None,
+                    now: date) -> Optional[Tuple[float, float]]:
+    """:func:`projected_tax` as ``(income tax, social levy)``, or ``None``.
+
+    The two are owed to different authorities and the screen names them
+    separately; their sum is :func:`projected_tax` to the cent. The levy is
+    ``social_rate`` on the same floored assiette, whatever the kind, so the
+    income part is the projection of the model **without** it.
+    """
+    checked = _checked(kind, parameters) if kind in PROJECTED_KINDS else None
+    if checked is None:
+        return None
+    facts = dict(kind=kind, latent_gain=latent_gain, opened_on=opened_on,
+                 first_payment=first_payment, now=now)
+    income = projected_tax(
+        parameters={k: v for k, v in checked.items() if k != 'social_rate'},
+        **facts)
+    if income is None:
+        return None
+    return income, _positive(latent_gain) * checked.get('social_rate', 0.0)
+
+
 def age_date(parameters: Mapping[str, Any],
              opened_on: Optional[date],
              first_payment: Optional[date]) -> Optional[date]:
     """The day the threshold is counted from — and ``age_basis`` is what says it.
 
     Under ``opening`` it is the declared date alone. Under ``first_payment`` it
-    is the declared date where there is one and the ledger's earliest payment
-    otherwise, **and that fallback is what makes the feature reachable at all**:
-    a PEA counts from ``age_basis: FIRST_PAYMENT``, and the form renders and
-    sends ``opened_on`` only under ``opening``. Read the declared date alone and
-    every such PEA projects nothing, for ever, with no repair reachable from
-    the screen.
-
-    This is not #918's bug returning. #918 is a *declared* date overwritten by a
-    derived one; here there is no declaration to overwrite, and a declared date
-    still wins wherever one exists.
+    is the ledger's earliest payment, which is what the model says (a PEA's five
+    years run from its first deposit, not from the day the account was opened),
+    and the declared date only where the ledger has no payment yet. The form
+    renders and sends ``opened_on`` only under ``opening``, so the fallback is
+    what keeps a payment-less wrapper from projecting nothing.
     """
     if parameters.get('age_basis') == taxation.OPENING:
         return opened_on
-    return opened_on or first_payment
+    return first_payment or opened_on
 
 
 def threshold_day(parameters: Mapping[str, Any],
@@ -232,7 +252,7 @@ def _bracketed(parameters: Mapping[str, Any],
     # at zero is this module's stated rule, and a walk that could return a
     # negative under *any* ladder would leave that rule resting on a validator
     # one import away.
-    return _positive(tax)
+    return _positive(tax) + _positive(gain) * parameters.get('social_rate', 0.0)
 
 
 def _positive(gain: float) -> float:
@@ -268,7 +288,7 @@ def applied_rates(*, kind: str, parameters: Mapping[str, Any],
         rate = _aged_rate(checked, start, now)
         return None if rate is None else [rate]
     if kind == taxation.BRACKETED_REALISED:
-        return [rung['rate'] for rung in checked['brackets']]
+        return [_with_levy(rung['rate'], checked) for rung in checked['brackets']]
     return None
 
 
@@ -296,5 +316,6 @@ def rate_changes_on(*, kind: str, parameters: Mapping[str, Any],
     return day
 
 
-__all__ = ['PROJECTED_KINDS', 'age_date', 'applied_rates', 'projected_tax',
+__all__ = ['PROJECTED_KINDS', 'age_date', 'applied_rates', 'projected_split',
+           'projected_tax',
            'rate_changes_on', 'threshold_day']

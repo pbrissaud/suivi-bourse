@@ -1,84 +1,58 @@
 /**
  * The ledger — the journal, its reduction and its two destructive gestures
- * (#723, #794, #834).
+ * (#723, #794, #834, « Relevé »).
  *
- * The page was a **repair** surface and became a **revocation** one: #662's
- * whole apparatus — the inline editor, the opaque token over `(file, sheet,
- * row)`, the content fingerprint as an `ETag`, its `409` and the *invalid →
- * invalid allowed* rule — existed because the faulty line lived *in* the truth.
- * With the store as the truth a bad file is not imported at all, so the
- * apparatus lost its subject in one go, and none of it has a row-by-row
- * successor: the unit of the *import* gesture is the file (#728), never the
- * line.
+ * The page is a **revocation** surface more than a repair one: #662's apparatus
+ * (the inline editor, the opaque row token, the content fingerprint) existed
+ * because the faulty line lived *in* the truth. With the store as the truth a bad
+ * file is not imported at all, so what this surface owes is the journal itself,
+ * its reduction, the sheet that records an event, and the way in and out of files.
  *
- * What this surface owes is the journal itself, its reduction, the create form
- * that is the onboarding, and the way in and out of files. The declaration of
- * the accounts left at #793: a declaration is made where its subject is looked
- * at.
+ * **The control line** (mockup `GrandLivre-Refonte.dc.html`) holds, on the left,
+ * the search and the three filters (Type, Compte, Période) and, on the right,
+ * the page's actions — *Importer*, *Exporter*, then the one filled
+ * *Saisir un événement*. The actions of the ticked rows appear on that line only
+ * while rows are ticked. The table sits on the ground under it; there is no
+ * summary line, no pill and no count: a filter shows its own value.
  *
- * **A table page has no side panel** (#1278): above the table a toolbar holds
- * the search, the three filter menus and the page's gestures (*Importer*,
- * *Exporter*, *Saisir un événement*), and under it **one summary line, always
- * there** — the count, the pastilles, the way out, and the actions of the
- * ticked rows only while there are some. Importing a file is a button of the
- * toolbar or a drop on the table; the dashed band is the empty ledger's own
- * entry and nothing else.
- *
- * Rows are deleted in bulk by **ticking them** (#1113), not by the reduction.
- *
- * **The reduction is laid out in three places since #834**, and they are three
- * questions: the **menus** of the toolbar, where an axis is chosen and every
- * option carries the count it would leave (`LedgerFacets.tsx`); the **search**
- * beside them, the one dimension with no vocabulary to lay out; and the
- * **pastilles** on the summary line, where the reduction is read back and let
- * go of. What lives here is the state they all write to, so a reduction that
- * moves starts its reveal over wherever it was moved from.
- *
- * Since #795 the table is **revealed forty rows at a time**, and the budget
+ * **Infinite scroll.** The table is revealed forty rows at a time, and the budget
  * lives here rather than in the table because it is a property of the
- * *reduction*: the two sentences under the table count what survives it, and
- * say — since #834 — that it *is* a reduction they are counting. Nothing about
- * that is a fetch — `GET /api/events` answered once and handed back the ledger
- * entire — which is why the control may speak while the read never could.
+ * *reduction*. Nothing about it is a fetch — `GET /api/events` answered once and
+ * handed back the ledger entire — so a sentinel under the table raises the budget
+ * as it comes into view, with no button, no wait and no spinner.
  *
  * **A read that did not answer is said where the journal would have been**
- * (#829). The banner and the band are retired and not replaced, so a surface
- * that stayed silent over a `503` would make *the store is unreadable* and *you
- * have recorded nothing yet* the same screen, in its worst form, a blank one.
- * `/api/runtime` left the reads here with the band that consulted it — it
- * answers from process memory and never opens the store (#668), so it was in
- * the list to be short-circuited on and nothing else.
+ * (#829), so a `503` and *you have recorded nothing yet* are never the same
+ * screen. Rows are deleted in bulk by **ticking them** (#1113).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link, useNavigate } from '@tanstack/react-router'
 import type { RowSelectionState } from '@tanstack/react-table'
+import { Upload } from 'lucide-react'
 
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { EntryPair } from '@/components/EntryPair'
 import { BulkDelete } from '@/features/data/components/BulkDelete'
+import { FormatDocsButton } from '@/features/data/components/FormatDocsButton'
 import { ExportMenu } from '@/features/data/components/ExportMenu'
 import { EventForm } from '@/features/data/components/EventForm'
-import { ImportPreview } from '@/features/data/components/ImportPreview'
+import { ProposalReview } from '@/features/data/components/ProposalReview'
 import { LedgerFacets } from '@/features/data/components/LedgerFacets'
-import { LedgerChips, LedgerSearch } from '@/features/data/components/LedgerFilters'
+import { LedgerSearch, SymbolsReduction } from '@/features/data/components/LedgerFilters'
 import { LedgerList } from '@/features/data/components/LedgerList'
-import { LedgerTable, TYPE_LABEL } from '@/features/data/components/LedgerTable'
+import { LedgerTable } from '@/features/data/components/LedgerTable'
 import { RowDelete } from '@/features/data/components/RowDelete'
-import {
-  UploadReceipt,
-  UploadZone,
-  useEventUpload,
-  useFileDrop,
-} from '@/features/data/components/UploadZone'
 import { Button } from '@/components/ui/button'
 import { accountsApi } from '@/features/accounts/lib/api'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
 import { useProposalImport } from '@/features/data/lib/proposalImport'
-import { EVENT_FILE_COLUMNS, exportable } from '@/features/data/lib/imports'
+import { handOver } from '@/features/data/lib/handoff'
+import { exportable } from '@/features/data/lib/imports'
+import { useAccountNames } from '@/hooks/use-account-names'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { useDocs } from '@/lib/docs'
 import { useI18n } from '@/lib/i18n'
 import {
   accountsNamed,
@@ -86,13 +60,10 @@ import {
   filterEvents,
   NO_FILTERS,
   PAGE,
-  reduces,
-  reveal,
   titlesNamed,
   type LedgerFilters as Filters,
   type Title,
 } from '@/features/data/lib/ledger'
-import { cn } from '@/lib/utils'
 import { oneFailure, readConditions } from '@/lib/status'
 
 export interface LedgerFocus {
@@ -103,22 +74,13 @@ export interface LedgerFocus {
    * reader on fewer rows than the sentence they have just read announced.
    */
   filters: Filters
-  /**
-   * Whether the reduction has to **name itself** here.
-   *
-   * `false` for the notice's set of securities, which draws its own line in the
-   * bar below (#724). `true` for one that arrived by the **address** (#797):
-   * nothing on screen would otherwise say that a ledger the reader has just
-   * landed on is shorter than their ledger.
-   */
-  named: boolean
 }
 
 interface LedgerProps {
   /**
-   * A reduction asked for from elsewhere: the assumed-currency notice of the
-   * other tab, which **names the events it was made about** (#724), and since
-   * #797 an event result of the ⌘K palette, which arrives by the address.
+   * A reduction asked for from elsewhere: the assumed-currency notice, which
+   * **names the events it was made about** (#724), and since #797 an event
+   * result of the ⌘K palette, which arrives by the address.
    *
    * A fresh object per gesture rather than a bare value: the reader may have
    * cleared the reduction in between, and asking twice for the same events has
@@ -128,23 +90,16 @@ interface LedgerProps {
   /**
    * The reader moved the reduction themselves — so an **address** that
    * delivered one has stopped describing this table, and the page that owns it
-   * says so (#797). Fired by every gesture of the bar, the way out included.
+   * says so (#797). Fired by every gesture of the control line.
    */
   onReduced?: () => void
   /**
    * *Record an event*, armed from elsewhere — the ⌘K palette's own action
    * (#797). A fresh object per gesture, the `focus` prop's rule: a reader who
-   * closed the form and asks again has to see it open again.
+   * closed the sheet and asks again has to see it open again.
    */
   compose?: object
-  /**
-   * The arming has been **made**, and the page that armed it drops it.
-   *
-   * Without this the gesture outlives itself: Radix unmounts the inactive tab,
-   * so a reader who closed the form and came back through *the notices* would
-   * find it open again — the effect below firing on the remount, on a gesture
-   * made two tabs ago. A gesture is spent once, and this is where it is spent.
-   */
+  /** The arming has been **made**, and the page that armed it drops it. */
   onComposed?: () => void
   /**
    * An agent proposal to review (#1119): its id, from the address. The window
@@ -167,18 +122,12 @@ export function Ledger({
   proposal,
   onProposalClosed,
 }: LedgerProps = {}) {
-  const { t, language } = useI18n()
-  const { docsPageHref } = useDocs()
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const chooser = useRef<HTMLInputElement>(null)
   const isMobile = useIsMobile()
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
-  // **The gesture is held here and nowhere lower** (#811): the first import
-  // fills an empty ledger, which unmounts the entry pair the zone was in and
-  // mounts the bar's own — so a receipt held by the zone would be destroyed by
-  // the write it announces, for the one reader who has never seen this work.
-  const upload = useEventUpload()
-  // The drop half of it, taken by the table's card once the ledger has rows.
-  const drop = useFileDrop(upload.hand)
-  // The same window over the agent's proposal (#1119), and the rows its merge
+  // The window over the agent's proposal (#1119), and the rows its merge
   // wrote, marked for a moment so the reader sees where they landed.
   const [fresh, setFresh] = useState<ReadonlySet<string>>(NO_ROWS)
   const reviewed = useProposalImport(proposal, {
@@ -193,31 +142,10 @@ export function Ledger({
 
   useEffect(() => {
     if (!focus) return
-    // Radix unmounts the inactive tab, so nothing survives the switch today and
-    // this is not repairing an observed defect; it is what keeps the property
-    // from depending on that.
     setFilters(focus.filters)
   }, [focus])
 
-  // **The reduction is named while it is the one that was delivered**, and the
-  // identity is the test: the reader's first gesture on the bar hands back a
-  // fresh object, and the sentence goes with the reduction it described.
-  //
-  // The sentence is composed **here**, off the reduction in force, rather than
-  // handed over by the page: it is a rendering of the three dimensions, and the
-  // language it is read in is this component's own. The two members it names are
-  // required — an address carrying one dimension of the three is named by the
-  // chip or the field it presses, each of which is on screen with its own way
-  // out — so the line appears for the shape the palette sends and for no other.
-  const delivered =
-    focus?.named === true &&
-    filters === focus.filters &&
-    filters.type !== null &&
-    filters.account !== null
-      ? { type: filters.type, account: filters.account, query: filters.query }
-      : null
-
-  /** Every reduction the reader makes by hand — the way out being one of them. */
+  /** Every reduction the reader makes by hand. */
   const reduce = (next: Filters) => {
     setFilters(next)
     onReduced?.()
@@ -228,6 +156,24 @@ export function Ledger({
   // The row a removal was asked for, or `null`. Held here rather than in the
   // table, because the box that asks is mounted once for all the rows.
   const [removing, setRemoving] = useState<LedgerEvent | null>(null)
+  // The row the sheet was opened on, so that closing it hands the focus back to
+  // that row and not to the page.
+  const opener = useRef<string | null>(null)
+  // Stable: the table's columns close over it, and rebuilding them remounts
+  // the header's checkbox.
+  const openSheet = useCallback((event: LedgerEvent) => {
+    opener.current = event.id ?? null
+    setEditing(event)
+  }, [])
+  const restoreFocus = () => {
+    const id = opener.current
+    if (id === null) return
+    const row = [...document.querySelectorAll<HTMLElement>('[data-row-id]')].find(
+      (candidate) => candidate.dataset.rowId === id,
+    )
+    row?.querySelector<HTMLElement>('[data-row-open]')?.focus()
+  }
+  const accountName = useAccountNames()
 
   useEffect(() => {
     if (!compose) return
@@ -246,11 +192,9 @@ export function Ledger({
   const all = useMemo(() => byDateDescending(events.data ?? []), [events.data])
   const files = exportable(all)
   /**
-   * The titles the create form suggests (#1036) — **`null` until the ledger has
+   * The titles the sheet suggests (#1036) — **`null` until the ledger has
    * answered**, and never `?? []`: an empty list and an unread one are two
    * different sentences, and only one of them is about the reader's portfolio.
-   * It is folded here rather than read again, the events carrying the symbol
-   * and the name that `/api/positions` would have carried.
    */
   const titles: readonly Title[] | null = useMemo(
     () => (events.data === undefined ? null : titlesNamed(events.data)),
@@ -259,15 +203,15 @@ export function Ledger({
   const shown = useMemo(() => filterEvents(all, filters), [all, filters])
 
   // **The ticked rows, by id** (#1113). Held here because the button that
-  // deletes them sits above the table, and kept across reductions: a row a
-  // chip hides comes back ticked when the chip is let go of. What is deleted
+  // deletes them sits on the control line, and kept across reductions: a row a
+  // filter hides comes back ticked when the filter is let go of. What is deleted
   // is only what the reduction still shows — ids hidden by it stay ticked here
   // and are never sent.
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
-  // An id the ledger no longer holds — deleted from its sheet, or in
-  // another tab — leaves the selection with the re-read: the store may reissue
-  // a freed key, and a new row must not arrive ticked. Adjusted during the
-  // render, the budget's own pattern below.
+  // An id the ledger no longer holds — deleted from its sheet, or in another tab
+  // — leaves the selection with the re-read: the store may reissue a freed key,
+  // and a new row must not arrive ticked. Adjusted during the render, the
+  // budget's own pattern below.
   const [held, setHeld] = useState(all)
   if (held !== all) {
     setHeld(all)
@@ -287,56 +231,45 @@ export function Ledger({
   // **The selection's actions take the focus they were pressed with** (#1278).
   // *Désélectionner* and *Supprimer* sit in a group that unmounts the moment the
   // selection is spent, so a keyboard reader would be dropped on `<body>`; the
-  // summary line, which is always there, takes the focus instead. It is done
+  // status region, which is always there, takes the focus instead. It is done
   // after the commit, because the confirmation box still traps focus while the
   // delete resolves, and only for these two gestures: a filter that hides the
   // ticked rows empties the selection too, and must not move the reader's focus.
-  const summary = useRef<HTMLDivElement>(null)
-  const refocusSummary = useRef(false)
+  const status = useRef<HTMLDivElement>(null)
+  const refocusStatus = useRef(false)
   const clearSelection = () => {
-    refocusSummary.current = true
+    refocusStatus.current = true
     setRowSelection({})
   }
   useEffect(() => {
-    if (selected.length > 0 || !refocusSummary.current) return
-    refocusSummary.current = false
-    summary.current?.focus()
+    if (selected.length > 0 || !refocusStatus.current) return
+    refocusStatus.current = false
+    status.current?.focus()
   }, [selected.length])
 
-  // **The rendering budget**. It is a number of rows and not a page
-  // index, and the difference is the whole record: `GET /api/events` answered
-  // once, from the published snapshot in process memory, and handed back the
-  // ledger entire — so raising this asks nobody anything.
+  // **The rendering budget**. It is a number of rows and not a page index, and
+  // the difference is the whole record: `GET /api/events` answered once and
+  // handed back the ledger entire — so raising this asks nobody anything.
   const [budget, setBudget] = useState(PAGE)
   // A reduction that moved is a different table, and it starts at its own first
-  // row: a reader who revealed a hundred and sixty rows and then pressed a type
-  // chip would otherwise get every event of that type at once, which is the
-  // budget silently not applying at the exact moment the reader asked a
-  // question. `filters` is a fresh object per gesture, which is what makes this
-  // fire on the gesture and not on the value.
-  //
-  // Adjusted **during the render** and not in an effect, which is React's own
-  // pattern for a state derived from a prop that changed and is the difference
-  // between resetting and *flashing*: an effect runs after the commit, so the
-  // render that first sees the new reduction would draw it at the old budget —
-  // a hundred rows and « 100 sur 100 affichés » painted for one frame, on every
-  // keystroke in the search field, before the reset lands.
+  // row. Adjusted **during the render** and not in an effect, which is the
+  // difference between resetting and *flashing*: an effect runs after the
+  // commit, so the render that first sees the new reduction would draw it at the
+  // old budget for one frame, on every keystroke in the search field.
   const [reduced, setReduced] = useState(filters)
   if (reduced !== filters) {
     setReduced(filters)
     setBudget(PAGE)
   }
-  const page = reveal(shown, budget)
+  const atEnd = budget >= shown.length
   const more = useCallback(() => setBudget((current) => current + PAGE), [])
 
-  // **The next forty arrive as the tail comes into view** — on a phone, where
-  // the page scrolls. On a desktop the table scrolls in its own box, so the table
-  // watches its own last row (`onNearEnd`) and this tail is always on screen.
-  // The rows are in memory: no button, no wait, a `setState` and a render.
+  // **The next forty arrive as the tail comes into view.** The page scrolls, the
+  // rows are in memory: no button, no wait, a `setState` and a render.
   const tail = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const node = tail.current
-    if (!isMobile || page.atEnd || !node) return
+    if (atEnd || !node || typeof IntersectionObserver === 'undefined') return
     const watch = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) more()
@@ -345,20 +278,12 @@ export function Ledger({
     )
     watch.observe(node)
     return () => watch.disconnect()
-  }, [isMobile, page.atEnd, budget, more])
+  }, [atEnd, budget, more])
 
-  // **The tab is its ledger, and only its ledger** (#829). There is no
-  // band left to raise for the second read: `/api/accounts` failing costs this
-  // tab the *choice of account* inside the form, and the form says so itself —
-  // `accountChoice`'s `failed` branch, one prop below. Naming it again over a
-  // journal that has everything to show is the white screen #718 mounted
-  // refusal to abolish, arrived from the other side: `GET /api/events` answers
-  // from process memory and has no `503` (#764), so the two reads part company
-  // in exactly the state that matters.
-  //
-  // The events failing is the other news, and it empties the journal — so it is
-  // said there, in the space the table would have filled, rather than in a
-  // strip above a page that has nothing under it.
+  // **The tab is its ledger, and only its ledger** (#829). `/api/accounts`
+  // failing costs the sheet the *choice of account*, and the sheet says so
+  // itself. The events failing is the other news, and it empties the journal —
+  // so it is said there, in the space the table would have filled.
   const ledgerFailure = oneFailure(readConditions({ queries: [events] }))
   const currency = totals.data?.base_currency ?? null
   const view = {
@@ -367,206 +292,109 @@ export function Ledger({
     currency,
     rowSelection,
     onRowSelectionChange: setRowSelection,
-    onEdit: setEditing,
+    onEdit: openSheet,
     fresh,
+    accountName,
   }
-
-  // The page's gestures on the ledger: placed by the toolbar below.
-  const gestures = (
-    <div className="flex flex-wrap items-center gap-2 max-md:basis-full md:ml-auto">
-      <UploadZone upload={upload} compact label={t('data.toolbar.import')} />
-      {files.events ? (
-        <ExportMenu
-          files={files}
-          // The chips, at the instant the menu is clicked (#796). They
-          // live here because they reduce the table, and the export's
-          // third entry is the same reduction asked of the store —
-          // which is why what travels is the five parameters and never
-          // the rows they retain.
-          selection={filters}
-          selected={shown.length}
-          // The ledger entire, for the two entries whose perimeter it
-          // is: the count is a note on what the file will hold.
-          total={all.length}
-        />
-      ) : null}
-      <Button
-        type="button"
-        size="sm"
-        className="pointer-coarse:min-h-11 max-md:ml-auto"
-        // Where the line is too narrow for the three, the visible label is the
-        // verb; the name stays the whole action.
-        aria-label={isMobile ? t('data.new') : undefined}
-        onClick={() => setEditing(null)}
-      >
-        {isMobile ? (
-          <>
-            <span className="@md/toolbar:hidden">{t('data.new.short')}</span>
-            <span className="hidden @md/toolbar:inline">{t('data.new')}</span>
-          </>
-        ) : (
-          t('data.new')
-        )}
-      </Button>
-    </div>
-  )
 
   return (
     <div className="space-y-6">
-      {/* The receipt of the import gesture, mounted **outside** both surfaces
-          that offer it: the empty state's band and the toolbar's button are two
-          mounts of one control, and the first import swaps one for the other. */}
-      {ledgerFailure ? null : <UploadReceipt upload={upload} />}
-
-      {/* And the window the forecast is read in (#835), mounted here for the
-          same reason: it is open across the swap the first import makes, and
-          the three answers it collects are held by the hook above it. */}
-      {ledgerFailure ? null : <ImportPreview upload={proposal ? reviewed : upload} />}
+      {/* The window the agent's proposal is read in. A file is imported on its
+          own page (`/ledger/import`). */}
+      {ledgerFailure ? null : <ProposalReview upload={reviewed} />}
 
       {/* A read that has not landed is not a fact: nothing is claimed — and
           above all not *you have recorded nothing* — while it is in flight. */}
       {ledgerFailure !== null ? (
         <Unreadable failure={ledgerFailure} />
       ) : !events.data ? null : all.length === 0 ? (
-        <EntryPair
-          empty
-          entries={[
-            {
-              title: t('data.empty.file.title'),
-              body: t('data.empty.file.body'),
-              // `EntryPair`'s *an unavailable entry keeps its place and says
-              // why* loses its one case with it: there is no mount left to be
-              // missing.
-              // The band, here and only here: it is the empty ledger's state,
-              // and a populated one imports from the toolbar.
-              //
-              // **It says what a file looks like** (#1266): the columns, from the
-              // constant the docs example is tested against, the one thing the
-              // header does not say about `account`, and the docs page, quietly:
-              // one gesture per door (#1435), so no template link. The picker
-              // stays last, lined up with *Saisir un événement*.
-              action: (
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      {t('data.empty.file.columns')}
-                    </p>
-                    <p className="font-mono text-xs break-words">{EVENT_FILE_COLUMNS.join(', ')}</p>
-                    <p className="text-xs text-muted-foreground">{t('data.empty.file.account')}</p>
-                  </div>
-                  <UploadZone upload={upload} />
-                  <a
-                    href={docsPageHref(language, 'import-your-events', 'format')}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm text-muted-foreground underline underline-offset-4"
-                  >
-                    {t('data.empty.file.docs')}
-                  </a>
-                </div>
-              ),
-            },
-            {
-              title: t('data.empty.manual.title'),
-              body: t('data.empty.manual.body'),
-              action: (
-                <Button type="button" variant="outline" onClick={() => setEditing(null)}>
-                  {t('data.new')}
-                </Button>
-              ),
-            },
-          ]}
-        />
-      ) : (
         <>
-          {/* **A reduction that came from an address names itself and offers the
-              way out** (#797, the clause #724 wrote for the notice's own). What
-              it states is what it *retains* — a type, a word and an account —
-              and never the row it was asked about: a ledger row has no address,
-             so a sentence naming one would promise a reduction the
-              product cannot make. */}
-          {delivered === null ? null : (
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-              <p>
-                {t('data.reduced', {
-                  named: delivered.query.trim() === '' ? 'no' : 'yes',
-                  subject: delivered.query,
-                  type: t(TYPE_LABEL[delivered.type]),
-                  account: delivered.account,
-                })}
-              </p>
-              <button
-                type="button"
-                onClick={() => reduce(NO_FILTERS)}
-                className="text-muted-foreground underline underline-offset-4"
-              >
-                {t('data.reduced.undo')}
-              </button>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            {/* **The toolbar** (#1278): a plain row in the tab order, and no
-                `role="toolbar"`, which would owe the reader arrow-key roving
-                focus. The search and the three menus lead; the page's gestures
-                ride at the right and wrap to a line of their own, still
-                right-aligned, when the row is full. No control is hidden at any
-                width.
-
-                **On a phone the gestures come first**, on a line of their own,
-                and the reduction is one line: the search, Type, Période.
-                Nothing stretches: both lines start on the left edge.
-                The order is the DOM's, so the tab order follows the eye. */}
-            <div className="@container/toolbar flex flex-wrap items-center gap-2">
-              {isMobile ? gestures : null}
-              <LedgerSearch filters={filters} onChange={reduce} />
+          <EntryPair
+            empty
+            entries={[
+              {
+                title: t('data.empty.file.title'),
+                body: t('data.empty.file.body'),
+                // The door, here and on the control line: the import page. The
+                // format's page quietly under it.
+                action: (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* One gesture: the chosen file goes straight to the preview. */}
+                    <input
+                      ref={chooser}
+                      type="file"
+                      accept=".csv,.xlsx"
+                      className="sr-only"
+                      tabIndex={-1}
+                      aria-label={t('import.choose')}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        event.target.value = ''
+                        if (!file) return
+                        handOver(file)
+                        void navigate({ to: '/ledger/import', search: {} })
+                      }}
+                    />
+                    <Button type="button" onClick={() => chooser.current?.click()}>
+                      {t('data.toolbar.import')}
+                    </Button>
+                    <FormatDocsButton />
+                  </div>
+                ),
+              },
+              {
+                title: t('data.empty.manual.title'),
+                body: t('data.empty.manual.body'),
+                action: (
+                  <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                    {t('data.new')}
+                  </Button>
+                ),
+              },
+            ]}
+          />
+          <p className="text-sm">
+            <Link to="/" search={{ open: 'first-run' }} className="underline underline-offset-4">
+              {t('empty.resumeSetup')}
+            </Link>
+          </p>
+        </>
+      ) : (
+        <div>
+          {/* **The control line**: the search and the filters on the left, the
+              page's actions on the right (outline buttons, then the one filled
+              one). A plain row in the tab order, and no `role="toolbar"`, which
+              would owe the reader arrow-key roving focus. It wraps; no control
+              is hidden at any width. */}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b pb-4">
+            <LedgerSearch filters={filters} onChange={reduce} />
+            <div
+              role="group"
+              aria-label={t('data.filters.label')}
+              className="flex flex-wrap items-center gap-x-5 gap-y-2"
+            >
               <LedgerFacets
                 filters={filters}
                 onChange={reduce}
-                // The ledger entire, never the rows on screen: a facet count is
-                // *what would be left*, which is a question about the whole.
                 events={all}
                 accounts={accountsNamed(all)}
+                accountName={accountName}
               />
-              {isMobile ? null : gestures}
+              <SymbolsReduction filters={filters} onChange={reduce} />
             </div>
 
-            {/* **The summary line, always there** (#1278): the count, what the
-                reduction retains with its way out, and — at the right, only
-                while rows are ticked — what can be done with them. It is there
-                with or without a selection, so ticking a box moves nothing
-                under the pointer. It is what the reader hears when a filter
-                moves. */}
+            {/* The ticked rows' actions, only while there are some. The region is
+                always there: it is what the reader hears when the selection
+                moves, and where the focus lands when it is spent. */}
             <div
-              ref={summary}
+              ref={status}
               tabIndex={-1}
               role="status"
               aria-live="polite"
-              className={cn(
-                'flex min-h-8 flex-wrap items-center gap-2 text-sm outline-none',
-                // On a phone the list is long and the page scrolls: the ticked
-                // rows' actions stay under the thumb while there are some.
-                isMobile && selected.length > 0 && 'sticky top-14 z-20 bg-background',
-              )}
+              className="flex flex-wrap items-center gap-2 text-sm outline-none"
             >
-              <p className="text-muted-foreground">
-                {t('data.filter.count', {
-                  count: shown.length,
-                  reduced: reduces(filters) ? 'yes' : 'no',
-                })}
-              </p>
-              <LedgerChips filters={filters} onChange={reduce} />
-              {reduces(filters) ? (
-                <button
-                  type="button"
-                  onClick={() => reduce(NO_FILTERS)}
-                  className="text-xs text-muted-foreground underline underline-offset-4 pointer-coarse:min-h-11"
-                >
-                  {t('data.facets.reset')}
-                </button>
-              ) : null}
               {selected.length === 0 ? null : (
-                <div className="flex flex-wrap items-center gap-2 max-sm:basis-full sm:ml-auto">
+                <>
                   <span className="font-medium">
                     {t('data.selection.count', { count: selected.length })}
                   </span>
@@ -576,90 +404,71 @@ export function Ledger({
                   <BulkDelete selected={selected} onDeleted={clearSelection} />
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="sm"
+                    variant="outline"
                     className="pointer-coarse:min-h-11"
                     onClick={clearSelection}
                   >
                     {t('data.selection.clear')}
                   </Button>
-                </div>
+                </>
               )}
             </div>
 
-            {shown.length === 0 ? (
-              <EmptyState
-                title={t('data.filter.none.title')}
-                description={t('data.filter.none.body')}
-              />
-            ) : (
-              // **The table and its footing sit on the page's background**
-              // (#1273), with no plane and no frame: the sentence under the
-              // table — *fin de la réduction*, or the count and the reveal —
-              // is its footing, under a rule.
-              //
-              // It is also **where a file is dropped** once the ledger has
-              // rows (#1278): the band is gone, and a file over the table
-              // draws the outline and says what dropping it does. The overlay
-              // is `aria-hidden` — the picker is the accessible way in.
-              <div
-                {...drop.handlers}
-                data-drop="ledger"
-                className={cn(
-                  // The shell's bottom padding, given back: on a desktop the
-                  // tail is the window's last line (the table scrolls inside).
-                  '@container/ledger relative md:-mb-5 lg:-mb-6',
-                  drop.over && 'outline-[1.5px] -outline-offset-1 outline-primary outline-dashed',
-                )}
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <Button asChild variant="outline" className="pointer-coarse:h-11">
+                <Link to="/ledger/import">
+                  <Upload aria-hidden />
+                  {t('data.toolbar.import')}
+                </Link>
+              </Button>
+              {files.events ? (
+                <ExportMenu
+                  files={files}
+                  // The filters, at the instant the menu is clicked (#796). They
+                  // live here because they reduce the table, and the export's
+                  // third entry is the same reduction asked of the store —
+                  // which is why what travels is the parameters and never the
+                  // rows they retain.
+                  selection={filters}
+                  selected={shown.length}
+                  // The ledger entire, for the two entries whose perimeter it is.
+                  total={all.length}
+                />
+              ) : null}
+              <Button
+                type="button"
+                variant="primary"
+                className="pointer-coarse:min-h-11"
+                onClick={() => setEditing(null)}
               >
-                {drop.over ? (
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/80 px-6 text-center text-sm font-medium"
-                  >
-                    {t('data.drop.over')}
-                  </div>
-                ) : null}
-                {/* Below 768 px the table is a list (#1339): same props, same
-                    wrapper, so the drop and the reveal tail are shared. */}
-                {isMobile ? <LedgerList {...view} /> : <LedgerTable {...view} onNearEnd={more} />}
-
-                {/* **The reveal speaks, and the read did not**.
-                      Both sentences below describe rows the app already holds —
-                      one of them counts what is drawn against what the
-                      reduction holds, the other says the last of them is drawn
-                      — so neither is a claim made on a silence, and the
-                      in-flight rule is not in contention here: this whole
-                      branch sits behind `events.data`.
-
-                      And there is **no spinner**, in this state or in any
-                      other. There is not even a wait to dress: the next forty
-                      rows are in memory, and scrolling to them is a
-                      `setState` and a render. */}
-                <div
-                  ref={tail}
-                  aria-live="polite"
-                  className="flex flex-wrap items-center justify-center gap-3 border-t px-4 py-3.5"
-                >
-                  {page.atEnd ? (
-                    <p className="text-xs text-muted-foreground">
-                      {/* **True of the reduction, and not of the store**:
-                           *the end of the ledger*, said over a
-                            reduced table, is the sentence that record refuses
-                            by name. */}
-                      {/* The count is the toolbar's, said once (#1412). */}
-                      {t('data.ledger.end', { reduced: reduces(filters) ? 'yes' : 'no' })}
-                    </p>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      {t('data.ledger.shown', { shown: page.shown, total: page.total })}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
+                {t('data.new')}
+              </Button>
+            </div>
           </div>
-        </>
+
+          {shown.length === 0 ? (
+            <EmptyState
+              title={t('data.filter.none.title')}
+              description={t('data.filter.none.body')}
+              action={
+                <Button type="button" variant="outline" onClick={() => reduce(NO_FILTERS)}>
+                  {t('data.facets.reset')}
+                </Button>
+              }
+            />
+          ) : (
+            // **The table sits on the page's background** (#1273), with no plane
+            // and no frame.
+            <div className="@container/ledger relative">
+              {/* Below 768 px the table is a list (#1339): same props, same
+                  wrapper, so the reveal tail is shared. */}
+              {isMobile ? <LedgerList {...view} /> : <LedgerTable {...view} />}
+
+              {/* The reveal's sentinel: nothing is said under the table. */}
+              <div ref={tail} aria-hidden className="h-px" />
+            </div>
+          )}
+        </div>
       )}
 
       <EventForm
@@ -670,6 +479,7 @@ export function Ledger({
         titles={titles}
         currency={currency}
         onClose={() => setEditing(undefined)}
+        onRestoreFocus={restoreFocus}
         onDelete={() => setRemoving(editing ?? null)}
       />
 

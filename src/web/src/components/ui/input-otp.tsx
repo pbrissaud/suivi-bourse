@@ -2,6 +2,7 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 import { OTPInput, OTPInputContext } from 'input-otp'
 import { MinusIcon } from 'lucide-react'
+import { noPasswordManager } from '@/components/ui/input'
 
 function InputOTP({
   className,
@@ -18,6 +19,7 @@ function InputOTP({
         containerClassName,
       )}
       spellCheck={false}
+      {...noPasswordManager(props.autoComplete)}
       className={cn('disabled:cursor-not-allowed', className)}
       {...props}
     />

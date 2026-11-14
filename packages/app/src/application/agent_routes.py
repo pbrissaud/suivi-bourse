@@ -26,6 +26,7 @@ from starlette.routing import Route
 from application import accounts as accounts_module
 from application import agent
 from application import agent_threads
+from application import agent_usage
 from application import event_proposals
 from application import instants
 from application import market
@@ -128,6 +129,10 @@ def build_app(runtime, mcp) -> Starlette:
         """The row, read on a worker thread's own cursor."""
         return agent.read(runtime.store.reader())
 
+    def providers():
+        """Every provider, read on a worker thread's own cursor."""
+        return agent.providers(runtime.store.reader())
+
     async def turn(request):
         """One turn: the user's last message, the thread's history, a stream."""
         settings = await anyio.to_thread.run_sync(config)
@@ -151,6 +156,10 @@ def build_app(runtime, mcp) -> Starlette:
         thread_id = raw.get('id')
         if not agent_threads.valid_id(thread_id):
             return _error(400, "'id' is 1 to 64 letters, digits, '_' or '-'.")
+        asked_id, asked_model = raw.get('provider_id'), raw.get('model')
+        for name, value in (('provider_id', asked_id), ('model', asked_model)):
+            if value is not None and not isinstance(value, str):
+                return _error(400, f"'{name}' is a string.")
         try:
             run_input = VercelAIAdapter.build_run_input(body)
         except (ValueError, ValidationError) as exc:
@@ -172,25 +181,16 @@ def build_app(runtime, mcp) -> Starlette:
             return _error(409, BUSY)
         running.add(thread_id)
         try:
-            return await _start(request, settings, thread_id, run_input)
+            return await _start(
+                request, settings, thread_id, run_input, asked_id, asked_model)
         except BaseException:
             running.discard(thread_id)
             raise
 
-    async def _start(request, settings, thread_id, run_input):
+    async def _start(request, settings, thread_id, run_input,
+                     asked_id=None, asked_model=None):
         """Keep the question, then hand the turn to the adapter."""
         directory = root()
-        # Off the loop: the first build imports a provider SDK (half a second),
-        # and the history is validated whole.
-        assistant = await anyio.to_thread.run_sync(
-            lambda: agent.build_agent(
-                agent.build_model(settings), mcp, thinking=settings['thinking']))
-        adapter = _Adapter(
-            agent=assistant,
-            run_input=run_input, accept=request.headers.get('accept'),
-            sdk_version=AI_SDK_VERSION,
-            provider_label=agent.PROVIDERS[settings['provider']],
-            secret=settings['api_key'])
 
         def stored_history():
             """The file, and its history without a turn that has no answer."""
@@ -207,6 +207,25 @@ def build_app(runtime, mcp) -> Starlette:
             logger.error(f"agent thread {directory / thread_id}.json: {exc}")
             running.discard(thread_id)
             return _error(409, UNREADABLE.format(exc))
+        try:
+            chosen = agent.choose(
+                await anyio.to_thread.run_sync(providers), asked_id,
+                asked_model, stored)
+        except agent.InvalidAgentConfig as exc:
+            running.discard(thread_id)
+            return _error(422, str(exc))
+        # The provider this turn runs on, with the agent's own settings.
+        settings = {**settings, **chosen}
+        # Off the loop: the first build imports a provider SDK (half a second).
+        assistant = await anyio.to_thread.run_sync(
+            lambda: agent.build_agent(
+                agent.build_model(settings), mcp, thinking=settings['thinking']))
+        adapter = _Adapter(
+            agent=assistant,
+            run_input=run_input, accept=request.headers.get('accept'),
+            sdk_version=AI_SDK_VERSION,
+            provider_label=agent.label_of(settings),
+            secret=settings['api_key'])
         title = agent_threads.title_of(' '.join(
             getattr(part, 'text', '') for part in run_input.messages[0].parts))
 
@@ -214,8 +233,10 @@ def build_app(runtime, mcp) -> Starlette:
             """The thread holding ``messages``, written whole."""
             kept = agent_threads.saved(
                 thread, thread_id, title, messages,
-                settings['provider'], settings['model'], failed)
+                settings['provider'], settings['model'], failed,
+                settings['id'])
             agent_threads.write(directory, kept)
+            _index(thread_id, messages)
             return kept
 
         # Before the provider is called: a failed turn leaves the question.
@@ -290,11 +311,34 @@ def build_app(runtime, mcp) -> Starlette:
 
         return adapter.streaming_response(released())
 
+    def _index(thread_id, messages):
+        """Re-index the thread's token usage. The index is derived from the
+        file already written: its failure is said, and never fails the turn."""
+        try:
+            with runtime.config_manager.writing() as opened:
+                agent_usage.record(opened, thread_id, messages)
+        except Exception as exc:
+            logger.error(f"agent usage of {thread_id} not indexed: {exc}")
+
+    def _remove(thread_id):
+        """The file, then its usage rows."""
+        removed = agent_threads.remove(root(), thread_id)
+        try:
+            with runtime.config_manager.writing() as opened:
+                agent_usage.forget(opened, thread_id)
+        except Exception as exc:
+            logger.error(f"agent usage of {thread_id} not dropped: {exc}")
+        return removed
+
     async def threads(request):
-        """Every conversation, the most recent first."""
+        """Every conversation, the most recent first.
+
+        An agent that is off has no conversation to list: an empty list, not a
+        404 the console logs on every page that asks.
+        """
         settings = await anyio.to_thread.run_sync(config)
         if not settings['enabled']:
-            return _error(404, OFF)
+            return JSONResponse([])
         return JSONResponse(
             await anyio.to_thread.run_sync(agent_threads.listing, root()))
 
@@ -316,6 +360,9 @@ def build_app(runtime, mcp) -> Starlette:
                 agent_threads.messages(stored), sdk_version=AI_SDK_VERSION)
             return {'id': thread_id, 'title': stored.get('title'),
                     'failed': bool(stored.get('failed')),
+                    'provider_id': stored.get('provider_id'),
+                    'provider': stored.get('provider'),
+                    'model': stored.get('model'),
                     'messages': [m.model_dump(mode='json', by_alias=True,
                                               exclude_none=True)
                                  for m in messages]}
@@ -344,7 +391,7 @@ def build_app(runtime, mcp) -> Starlette:
         running.add(thread_id)
         try:
             removed = await anyio.to_thread.run_sync(
-                agent_threads.remove, root(), thread_id)
+                _remove, thread_id)
         except OSError as exc:
             logger.error(f"agent thread {root() / thread_id}.json: {exc}")
             return _error(500, NOT_REMOVED.format(_reason(exc)))
@@ -394,10 +441,16 @@ def build_app(runtime, mcp) -> Starlette:
         account = raw.get('account')
         if not isinstance(account, str):
             return _error(400, "'account' is an account id.")
-        if raw.get('provider') != settings['provider']:
-            return _error(
-                409, 'The configured provider is no longer the one this '
-                     'statement was to be sent to.')
+        asked_id = raw.get('provider_id')
+        if asked_id is not None and not isinstance(asked_id, str):
+            return _error(400, "'provider_id' is a string.")
+        try:
+            chosen = agent.choose(
+                await anyio.to_thread.run_sync(providers), asked_id, None, None)
+        except agent.InvalidAgentConfig as exc:
+            # A provider named and gone is the page's stale answer, not a typo.
+            return _error(409 if asked_id else 422, str(exc))
+        settings = {**settings, **chosen}
         if thread_id in running:
             return _error(409, BUSY)
         running.add(thread_id)
@@ -410,7 +463,7 @@ def build_app(runtime, mcp) -> Starlette:
     async def _read_statement(settings, thread_id, account, name, text):
         """The held-thread half of :func:`statement`, off the loop where it blocks."""
         directory = root()
-        label = agent.PROVIDERS[settings['provider']]
+        label = agent.label_of(settings)
 
         def known():
             """The account must exist and the thread must be readable."""
@@ -470,7 +523,8 @@ def build_app(runtime, mcp) -> Starlette:
             kept = agent_threads.saved(
                 stored, thread_id, agent_threads.title_of(asked),
                 history + _statement_messages(card, asked, now),
-                settings['provider'], settings['model'])
+                settings['provider'], settings['model'],
+                provider_id=settings['id'])
             agent_threads.write(directory, kept)
             logger.info(
                 f"agent statement: {settings['provider']} {settings['model']} "

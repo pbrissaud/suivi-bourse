@@ -32,11 +32,9 @@
  * #757 or #758 gives that page a second occupant.
  */
 import { EmptyState } from '@/components/EmptyState'
-import { Stat } from '@/components/Stat'
 import { Unreadable } from '@/components/Unreadable'
 import { Section } from '@/components/ui/section'
 import type { InvestmentRhythmResponse, RhythmMonth } from '@/features/dashboard/lib/api'
-import type { RenderState } from '@/features/dashboard/lib/dashboardLayout'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import type { ReadFailure } from '@/lib/status'
@@ -46,27 +44,43 @@ interface InvestmentRhythmProps {
   failure?: ReadFailure | null
 }
 
-/** What this block renders: the block's own `null` and the grid's, one rule. */
-export function investmentRhythmRenderState({
-  rhythm,
-  failure = null,
-}: InvestmentRhythmProps): RenderState {
-  return rhythm === null && failure === null ? 'pending' : 'renders'
-}
-
 export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmProps) {
   const { t } = useI18n()
   const f = useFormatters()
 
-  if (rhythm === null) return failure === null ? null : <Unreadable failure={failure} />
+  // In flight the block holds its place as an empty plane (#795); refused, it
+  // says so where its content would have been (#829).
+  if (rhythm === null) {
+    return failure === null ? (
+      <div aria-hidden className="min-h-60 rounded-section bg-muted" />
+    ) : (
+      <Section fill title={t('dashboard.rhythm.title')}>
+        <Unreadable failure={failure} />
+      </Section>
+    )
+  }
 
-  return <Section title={t('dashboard.rhythm.title')}>{body()}</Section>
+  return (
+    <Section
+      fill
+      title={t('dashboard.rhythm.title')}
+      aside={
+        rhythm.months_observed === 0 ? null : (
+          <span className="text-sm text-muted-foreground">
+            {t('dashboard.rhythm.window', { observed: rhythm.months_observed })}
+          </span>
+        )
+      }
+    >
+      {body(rhythm)}
+    </Section>
+  )
 
-  function body() {
+  function body(rhythm: InvestmentRhythmResponse) {
     // **Two absences, two sentences.** Nothing observed at all is a ledger with
     // no past; observed and uncovered is an owner who did not buy — and the
     // second is a statement about the rhythm rather than the lack of one.
-    if (rhythm === null || rhythm.months_observed === 0) {
+    if (rhythm.months_observed === 0) {
       return (
         <EmptyState
           title={t('dashboard.rhythm.unobserved')}
@@ -80,33 +94,44 @@ export function InvestmentRhythm({ rhythm, failure = null }: InvestmentRhythmPro
       )
     }
 
+    const total = rhythm.months.reduce((sum, one) => sum + (one.amount ?? 0), 0)
+    const skipped = rhythm.months
+      .filter((one) => one.amount === null)
+      .map((one) => {
+        const [year, month] = one.month.split('-')
+        return f.month(year, Number(month))
+      })
+
     return (
-      // The figure above the twelve months, at every width: the card is
-      // half-width only (dashboard grid, 11/10/2026 — across the full width
-      // the twelve columns spread too far apart to read), and on half a width
-      // a figure beside them would take a third of the room they need. The
-      // amount is still read first.
-      <div className="flex flex-1 flex-col gap-5">
-        <div className="shrink-0">
-          {/* The pair, and it is **one** group: the coverage is a child of the
-            amount, so no reading of this markup detaches them. */}
-          <Stat
-            label={t('dashboard.rhythm.amount')}
-            value={f.currency(rhythm.monthly_amount, rhythm.base_currency)}
-          >
-            <p className="text-xs text-muted-foreground">
-              {t('dashboard.rhythm.coverage', {
-                covered: rhythm.months_covered,
-                observed: rhythm.months_observed,
-              })}
-            </p>
-          </Stat>
-        </div>
+      // The figure above the twelve months, then the sentence that says how
+      // much went in over them and which months nothing did: the amount never
+      // stands without its coverage (#751).
+      <div className="flex flex-1 flex-col gap-3">
+        <p className="flex flex-wrap items-baseline gap-x-2.5">
+          <span className="fig text-4xl font-medium">
+            {f.currency(rhythm.monthly_amount, rhythm.base_currency)}
+          </span>
+          <span className="text-muted-foreground">{t('dashboard.rhythm.amount')}</span>
+        </p>
         <MonthStrip
           months={rhythm.months}
           median={rhythm.monthly_amount}
           currency={rhythm.base_currency}
         />
+        <p className="text-sm text-muted-foreground">
+          {skipped.length === 0
+            ? t('dashboard.rhythm.caption', {
+                total: f.currency(total, rhythm.base_currency),
+                observed: rhythm.months_observed,
+              })
+            : t('dashboard.rhythm.captionSkipped', {
+                total: f.currency(total, rhythm.base_currency),
+                observed: rhythm.months_observed,
+                months: f.list(skipped),
+                // A list ending on an abbreviated month (« nov. ») already
+                // carries the sentence's full stop.
+              }).replace(/\.\.$/, '.')}
+        </p>
       </div>
     )
   }
@@ -195,7 +220,7 @@ function MonthStrip({
                   <Bar amount={one.amount} scaleTop={scaleTop} current={one.month === current} />
                 )}
               </span>
-              <span aria-hidden className="h-4 whitespace-nowrap text-2xs text-muted-foreground">
+              <span aria-hidden className="h-4 whitespace-nowrap text-xs text-muted-foreground">
                 {slot % 3 === 0 ? label(one.month, false) : null}
               </span>
             </li>

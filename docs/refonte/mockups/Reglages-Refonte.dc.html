@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Réglages — refonte</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.sec{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0 40px;box-sizing:border-box;border-radius:18px;background:var(--muted);padding:20px 24px 24px;margin-top:20px}
+.sec:first-of-type{margin-top:0}
+.sec h2{margin:0;font-size:20px;line-height:28px;font-weight:600}
+.sec .lead{margin:6px 0 0;font-size:13px;line-height:18px;color:var(--muted-foreground)}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 24px;align-items:center;min-height:48px;padding:8px 0;border-bottom:1px solid var(--border)}
+.row:last-child{border-bottom:0}
+.row .name{font-size:14px;line-height:20px}
+.row .desc{margin:2px 0 0;font-size:13px;line-height:18px;color:var(--muted-foreground)}
+.btn{display:inline-flex;height:32px;align-items:center;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--background)}
+.lnk{padding:0;border:0;background:none;font:inherit;color:var(--muted-foreground);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border)}
+.lnk:hover{color:var(--foreground)}
+.num{display:inline-flex;align-items:center;gap:8px}
+.num input{width:72px;height:32px;box-sizing:border-box;padding:0 10px;border:1px solid var(--input);border-radius:8px;background:var(--background);color:var(--foreground);font-family:var(--font-mono);font-size:13px;text-align:right}
+.num .unit{width:36px;font-size:13px;color:var(--muted-foreground)}
+.sw{position:relative;display:inline-block;width:36px;height:20px;border-radius:10px;background:var(--border)}
+.sw[data-on]{background:var(--primary)}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--background)}
+.sw[data-on]::after{left:18px}
+.state{font-size:13px;color:var(--muted-foreground)}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; flex-wrap: wrap; align-items: stretch; min-height: 900px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="settings" hint-size="200px,900px"></dc-import>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Réglages" subtitle="" hint-size="100%,56px"></dc-import>
+
+<div style="width: 100%; max-width: 1040px; box-sizing: border-box; display: flex; flex-direction: column; padding: 32px 32px 56px; font-size: 14px; line-height: 20px">
+
+<!-- Sécurité -->
+<section class="sec" aria-labelledby="s-secu">
+<div><h2 id="s-secu">Sécurité</h2></div>
+<div>
+<div class="row">
+<div><p class="name" style="margin: 0">Code d’accès</p><p class="desc">Actif depuis le <span class="fig">12 oct. 2026</span></p></div>
+<div style="display: flex; gap: 8px"><button type="button" class="btn">Changer le code</button><button type="button" class="btn">Désactiver</button></div>
+</div>
+<div class="row">
+<p class="name" style="margin: 0">Verrouillage automatique</p>
+<x-import component-from-global-scope="SuiviBourse.Segmented" label="Verrouillage automatique" mode="radio" size="compact" bordered="{{yes}}" options="{{lockOpts}}" value="1h"></x-import>
+</div>
+<div class="row" style="grid-template-columns: 1fr; align-items: start; padding: 14px 0 16px">
+<p class="name" style="margin: 0 0 8px">Jetons d’accès <span style="color: var(--muted-foreground)">· API et MCP</span></p>
+<div style="padding: 0">
+<sc-for list="{{tokens}}" as="tk" hint-placeholder-count="2">
+<div style="display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border)">
+<span style="display: flex; flex-direction: column; min-width: 0"><span>{{tk.name}}</span><span style="font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{tk.scope}} · <span class="fig">{{tk.prefix}}</span> · {{tk.used}}</span></span>
+<span style="display: flex; align-items: center; gap: 16px"><button type="button" class="lnk" style="font-size: 13px">Régénérer</button><button type="button" class="lnk" style="font-size: 13px">Révoquer</button></span>
+</div>
+</sc-for>
+<div style="display: flex; align-items: center; min-height: 40px">
+<a href="Reglages-Jeton-Refonte.dc.html" style="display: inline-flex; align-items: center; gap: 8px; color: var(--foreground); text-decoration: none; font-size: 14px"><x-import component-from-global-scope="SuiviBourse.Icons.Plus" class-name="size-4" aria-hidden="true"></x-import>Créer un jeton</a>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- Portefeuille -->
+<section class="sec" aria-labelledby="s-pf">
+<div><h2 id="s-pf">Portefeuille</h2></div>
+<div>
+<div class="row">
+<p class="name" style="margin: 0">Devise de référence</p>
+<span class="state"><span class="fig" style="color: var(--foreground)">EUR</span> · fixée au premier lancement</span>
+</div>
+<div class="row" style="grid-template-columns: 1fr; align-items: start; padding: 14px 0 16px">
+<p class="name" style="margin: 0 0 8px">Fonds de comparaison</p>
+<div style="padding: 0">
+<sc-for list="{{refs}}" as="rf" hint-placeholder-count="2">
+<div style="display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; align-items: center; min-height: 40px; border-bottom: 1px solid var(--border)">
+<span><span>{{rf.name}}</span> <span class="fig" style="font-size: 12px; color: var(--muted-foreground)">{{rf.ticker}}</span></span>
+<span style="display: flex; align-items: center; gap: 16px"><span class="state">{{rf.state}}</span><button type="button" class="lnk" style="font-size: 13px">Ne plus suivre</button></span>
+</div>
+</sc-for>
+<div style="display: flex; align-items: center; min-height: 40px">
+<a href="Reglages-Reference-Refonte.dc.html" style="display: inline-flex; align-items: center; gap: 8px; color: var(--foreground); text-decoration: none; font-size: 14px"><x-import component-from-global-scope="SuiviBourse.Icons.Plus" class-name="size-4" aria-hidden="true"></x-import>Ajouter un fonds</a>
+</div>
+</div>
+</div>
+<div class="row" style="grid-template-columns: 1fr; align-items: start; padding: 14px 0 16px">
+<p class="name" style="margin: 0 0 8px">Modèles d’imposition</p>
+<div style="padding: 0">
+<sc-for list="{{taxes}}" as="tx" hint-placeholder-count="2">
+<div style="display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; align-items: center; min-height: 52px; border-bottom: 1px solid var(--border)">
+<span style="display: flex; flex-direction: column; min-width: 0"><span>{{tx.name}}</span><span style="font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{tx.rule}} · {{tx.accounts}}</span></span>
+<a href="Reglages-Fiscal-Refonte.dc.html" class="lnk">Modifier</a>
+</div>
+</sc-for>
+<div style="display: flex; align-items: center; min-height: 40px">
+<a href="Reglages-Fiscal-Ajout-Refonte.dc.html" style="display: inline-flex; align-items: center; gap: 8px; color: var(--foreground); text-decoration: none; font-size: 14px"><x-import component-from-global-scope="SuiviBourse.Icons.Plus" class-name="size-4" aria-hidden="true"></x-import>Ajouter un modèle</a>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- Agent -->
+<section class="sec" aria-labelledby="s-agent">
+<div><h2 id="s-agent">Agent</h2></div>
+<div>
+<div class="row">
+<p class="name" style="margin: 0">Agent activé</p>
+<span class="sw" data-on role="switch" aria-checked="true" aria-label="Agent activé"></span>
+</div>
+<div class="row" style="grid-template-columns: 1fr; align-items: start; padding: 14px 0 16px">
+<p class="name" style="margin: 0 0 8px">Fournisseurs</p>
+<div style="padding: 0">
+<sc-for list="{{providers}}" as="pv" hint-placeholder-count="3">
+<div style="display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; align-items: center; min-height: 40px; border-bottom: 1px solid var(--border)">
+<span>{{pv.name}}</span>
+<span style="display: flex; align-items: center; gap: 16px"><span class="state">{{pv.def}}</span><a href="Reglages-Fournisseur-Refonte.dc.html" class="lnk">Modifier</a></span>
+</div>
+</sc-for>
+<div style="display: flex; align-items: center; min-height: 40px">
+<a href="Reglages-Fournisseur-Ajout-Refonte.dc.html" style="display: inline-flex; align-items: center; gap: 8px; color: var(--foreground); text-decoration: none; font-size: 14px"><x-import component-from-global-scope="SuiviBourse.Icons.Plus" class-name="size-4" aria-hidden="true"></x-import>Ajouter un fournisseur</a>
+</div>
+</div>
+</div>
+<div class="row">
+<p class="name" style="margin: 0">Réflexion</p>
+<x-import component-from-global-scope="SuiviBourse.Segmented" label="Réflexion" mode="radio" size="compact" bordered="{{yes}}" options="{{thinkOpts}}" value="medium"></x-import>
+</div>
+</div>
+</section>
+
+<!-- Notifications -->
+<section class="sec" aria-labelledby="s-notif">
+<div><h2 id="s-notif">Notifications</h2></div>
+<div>
+<div class="row">
+<div><p class="name" style="margin: 0">Dans l’application</p><p class="desc">Cours en retard, imports, nouvelles versions</p></div>
+<span class="sw" data-on role="switch" aria-checked="true" aria-label="Dans l’application"></span>
+</div>
+<div class="row" style="grid-template-columns: 1fr; align-items: start; padding: 14px 0 16px">
+<p class="name" style="margin: 0 0 8px">Canaux</p>
+<div style="padding: 0">
+<div style="display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; align-items: center; min-height: 40px; border-bottom: 1px solid var(--border)">
+<span>ntfy <span class="state">· ntfy.sh/suivi-bourse-x8k2</span></span>
+<span style="display: flex; align-items: center; gap: 16px"><span class="state">Cours en retard, erreurs</span><button type="button" class="lnk">Tester</button><a href="#" class="lnk">Modifier</a></span>
+</div>
+<div style="display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; align-items: center; min-height: 40px; border-bottom: 1px solid var(--border)">
+<span>E-mail <span class="state">· paul@…</span></span>
+<span style="display: flex; align-items: center; gap: 16px"><span class="state">Nouvelles versions</span><button type="button" class="lnk">Tester</button><a href="#" class="lnk">Modifier</a></span>
+</div>
+<div style="display: flex; align-items: center; min-height: 40px">
+<a href="#" style="display: inline-flex; align-items: center; gap: 8px; color: var(--foreground); text-decoration: none; font-size: 14px"><x-import component-from-global-scope="SuiviBourse.Icons.Plus" class-name="size-4" aria-hidden="true"></x-import>Ajouter un canal <span class="state">· webhook, ntfy, Apprise, e-mail</span></a>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- Affichage -->
+<section class="sec" aria-labelledby="s-aff">
+<div><h2 id="s-aff">Affichage</h2></div>
+<div>
+<div class="row">
+<p class="name" style="margin: 0">Apparence</p>
+<x-import component-from-global-scope="SuiviBourse.Segmented" label="Apparence" mode="radio" size="compact" bordered="{{yes}}" options="{{appOpts}}" value="auto"></x-import>
+</div>
+<div class="row">
+<p class="name" style="margin: 0">Langue</p>
+<x-import component-from-global-scope="SuiviBourse.Segmented" label="Langue" mode="radio" size="compact" bordered="{{yes}}" options="{{langOpts}}" value="fr"></x-import>
+</div>
+<div class="row">
+<p class="name" style="margin: 0">Densité des tables</p>
+<x-import component-from-global-scope="SuiviBourse.Segmented" label="Densité" mode="radio" size="compact" bordered="{{yes}}" options="{{densOpts}}" value="comfortable"></x-import>
+</div>
+<div class="row">
+<div><p class="name" style="margin: 0">Thème</p><p class="desc">Atelier</p></div>
+<a href="Reglages-Theme-Refonte.dc.html" class="btn">Personnaliser</a>
+</div>
+</div>
+</section>
+
+<!-- Avancé -->
+<section class="sec" aria-labelledby="s-adv">
+<div><h2 id="s-adv">Avancé</h2></div>
+<div>
+<div class="row">
+<div><p class="name" style="margin: 0">Fréquence des cours</p><p class="desc">Rafraîchissement des cours, marchés ouverts. Par défaut <span class="fig">2 min</span></p></div>
+<span class="num"><input type="text" value="2" aria-label="Fréquence des cours"><span class="unit">min</span></span>
+</div>
+<div class="row">
+<div><p class="name" style="margin: 0">Fréquence de recalcul</p><p class="desc">Délai avant mise à jour de la valeur du portefeuille. Par défaut <span class="fig">1 min</span></p></div>
+<span class="num"><input type="text" value="1" aria-label="Fréquence de recalcul"><span class="unit">min</span></span>
+</div>
+<div class="row">
+<div><p class="name" style="margin: 0">Pause entre deux requêtes</p><p class="desc">Attente entre deux appels à la source des cours. Par défaut <span class="fig">10 sec</span></p></div>
+<span class="num"><input type="text" value="10" aria-label="Pause entre deux requêtes"><span class="unit">sec</span></span>
+</div>
+<div class="row">
+<div><p class="name" style="margin: 0">Profondeur d’historique</p><p class="desc">Jours de cours chargés par requête. Par défaut <span class="fig">365 jours</span></p></div>
+<span class="num"><input type="text" value="365" aria-label="Profondeur d’historique"><span class="unit">jours</span></span>
+</div>
+<div class="row">
+<div><p class="name" style="margin: 0">Seuil de cours figé</p><p class="desc">Cours inchangé signalé dans Système, 0 pour jamais. Par défaut <span class="fig">15 min</span> · <button type="button" class="lnk">Rétablir</button></p></div>
+<span class="num"><input type="text" value="30" aria-label="Seuil de cours figé"><span class="unit">min</span></span>
+</div>
+</div>
+</section>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":2000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = (name, model, tested, isDef) => ({ name, model, tested, def: isDef ? 'Par défaut' : '' });
+    return {
+      yes: true,
+      providers: [
+        P('Anthropic', 'claude-sonnet-4-5', '7 nov. 2026', true),
+        P('OpenAI', 'gpt-5.6-mini', '2 nov. 2026', false),
+        P('Ollama, ce serveur', 'qwen3:14b', '1ᵉʳ nov. 2026', false),
+      ],
+      refs: [
+        { name: 'MSCI World', ticker: 'CW8', state: 'historique complet' },
+        { name: 'CAC 40', ticker: 'C40', state: 'historique complet' },
+      ],
+      taxes: [
+        { name: 'Plan d’épargne en actions (PEA)', rule: '12,8 % puis 0 % après 5 ans · 18,6 % de prélèvements sociaux', accounts: 'PEA' },
+        { name: 'Compte-titres ordinaire (CTO)', rule: 'Prélèvement forfaitaire 31,4 %', accounts: 'Compte-titres' },
+      ],
+      lockOpts: [{ value: '15m', label: '15 min' }, { value: '1h', label: '1 h' }, { value: '1d', label: '1 jour' }, { value: '7d', label: '7 jours' }, { value: '30d', label: '30 jours' }],
+      tokens: [
+        { name: 'Claude Desktop', scope: 'MCP', prefix: 'sb_…LXC_MU', used: 'utilisé il y a 2 h' },
+        { name: 'Script de sauvegarde', scope: 'API', prefix: 'sb_…8Qf1', used: 'utilisé le 3 nov.' },
+      ],
+      thinkOpts: [{ value: 'low', label: 'Courte' }, { value: 'medium', label: 'Normale' }, { value: 'high', label: 'Longue' }],
+      appOpts: [{ value: 'auto', label: 'Automatique' }, { value: 'light', label: 'Clair' }, { value: 'dark', label: 'Sombre' }],
+      langOpts: [{ value: 'fr', label: 'Français' }, { value: 'en', label: 'English' }],
+      densOpts: [{ value: 'comfortable', label: 'Confortable' }, { value: 'compact', label: 'Compacte' }],
+    };
+  }
+}
+</script>
+</body>
+</html>

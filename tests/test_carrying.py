@@ -218,6 +218,24 @@ def test_stored_history_older_than_the_acquisition_is_terminal(store):
         store, windows, datetime(2024, 1, 15, tzinfo=UTC)) == {'AAPL'}
 
 
+def test_a_symbol_given_up_on_and_never_priced_is_terminal(store):
+    """PP-2: a ticker nobody answers for must not hold the dashboard back for ever.
+
+    The backward pass gives up after ``BACKWARD_GIVE_UP`` fruitless windows;
+    from then on the line is carried at cost, like any finished history.
+    """
+    _declare_symbol(store, 'ZZZZ9.PA')
+    windows = {'ZZZZ9.PA': (date(2024, 1, 15), None)}
+    now = datetime(2024, 3, 1, tzinfo=UTC)
+    assert quotes.terminal_symbols(store, windows, now) == set()
+    quotes.give_up('ZZZZ9.PA')
+    try:
+        assert quotes.terminal_symbols(store, windows, now) == {'ZZZZ9.PA'}
+    finally:
+        quotes.take_back('ZZZZ9.PA')
+    assert quotes.terminal_symbols(store, windows, now) == set()
+
+
 def test_a_symbol_the_ledger_never_acquired_is_not_in_the_answer(store):
     """No holding window, nothing to be finished with."""
     assert quotes.terminal_symbols(

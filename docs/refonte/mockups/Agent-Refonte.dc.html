@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Agent — refonte</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.lnk{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border)}
+.lnk:hover{color:var(--foreground);text-decoration-color:var(--foreground)}
+.act{display:inline-flex;align-items:center;gap:5px;padding:0;border:0;background:none;font:inherit;font-size:13px;color:var(--muted-foreground);cursor:pointer}
+.act:hover{color:var(--foreground)}
+.thread{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px;padding:0 10px;border-radius:8px;color:var(--foreground);text-decoration:none;font-size:14px;line-height:20px}
+.thread:hover{background:var(--muted)}
+.thread[aria-current="page"]{background:var(--muted);font-weight:500}
+.sug{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--border);background:none;border-left:0;border-right:0;border-bottom:0;font:inherit;font-size:14px;color:var(--foreground);text-align:left;cursor:pointer;width:100%}
+.sug:hover span[data-chev]{color:var(--foreground)}
+.sug:last-of-type{border-bottom:1px solid var(--border)}
+.hyp{display:inline-flex;align-items:baseline;gap:6px}
+.hyp .lnk{color:var(--foreground);word-spacing:normal;white-space:nowrap}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; align-items: stretch; min-height: 1280px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="agent" hint-size="200px,1280px"></dc-import>
+<main style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Agent" subtitle="{{subtitle}}" hint-size="100%,56px"></dc-import>
+
+<div style="flex: 1; min-height: 0; display: flex; font-size: 14px; line-height: 20px">
+
+<!-- Rail des fils -->
+<nav aria-label="Fils" style="width: 240px; flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; padding: 16px 12px; border-right: 1px solid var(--border)">
+<a href="Agent-Vide-Refonte.dc.html" class="thread" style="font-weight: 500"><span style="display: inline-flex; align-items: center; gap: 8px"><span style="display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center"><x-import component-from-global-scope="SuiviBourse.Icons.SquarePen" class-name="size-4" aria-hidden="true"></x-import></span><span style="line-height: 16px">Nouveau fil</span></span><span class="fig" style="font-size: 11px; line-height: 16px; color: var(--muted-foreground)">⌘N</span></a>
+<div style="position: relative; margin: 8px 0 12px">
+<span style="position: absolute; left: 10px; top: 8px; display: flex; color: var(--muted-foreground)"><x-import component-from-global-scope="SuiviBourse.Icons.Search" class-name="size-4" aria-hidden="true"></x-import></span>
+<input type="search" placeholder="Rechercher un fil" style="width: 100%; height: 32px; box-sizing: border-box; padding: 0 10px 0 32px; border: 1px solid var(--input); border-radius: 8px; background: var(--background); color: var(--foreground); font: inherit; font-size: 13px; outline: none">
+</div>
+<sc-for list="{{railRows}}" as="t" hint-placeholder-count="8">
+<sc-if value="{{t.isHead}}" hint-placeholder-val="{{false}}"><p style="margin: 8px 0 2px; padding: 0 10px; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{t.title}}</p></sc-if>
+<sc-if value="{{t.isItem}}" hint-placeholder-val="{{true}}"><a href="{{t.href}}" class="thread" aria-current="{{t.current}}"><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{t.title}}</span></a></sc-if>
+</sc-for>
+<div style="margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border)">
+<a href="Agent-Stats-Refonte.dc.html" class="thread"><span style="display: inline-flex; align-items: center; gap: 8px"><span style="display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span><span style="line-height: 16px">Statistiques</span></span></a>
+</div>
+</nav>
+
+<!-- Conversation -->
+<section aria-label="Conversation" style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+<div style="flex: 1; min-height: 0; display: flex; justify-content: center">
+<div style="width: 100%; max-width: 768px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px; padding: 28px 32px 16px">
+
+<!-- Tête du fil -->
+<sc-if value="{{hasThread}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 24px; padding-bottom: 12px; border-bottom: 1px solid var(--border)">
+<h2 style="margin: 0; font-size: 15px; line-height: 22px; font-weight: 500">{{threadTitle}}</h2>
+<p style="margin: 0; display: flex; gap: 16px; font-size: 13px; color: var(--muted-foreground)"><button type="button" class="act">Renommer</button><button type="button" class="act">Exporter</button><button type="button" class="act">Supprimer</button></p>
+</div>
+</sc-if>
+
+<!-- Nouveau fil -->
+<sc-if value="{{empty}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 20px; padding-top: 48px">
+<p style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Une question sur votre portefeuille ?</p>
+<p style="margin: 0; max-width: 60ch; color: var(--muted-foreground)">L’agent lit vos lignes, vos comptes et votre grand livre, simule une vente ou un impôt, et vous propose les écritures d’un relevé. Il ne conseille pas. Votre profil : <span class="fig" style="color: var(--foreground)">TMI 30 %</span> · Équilibré · Résidence principale en <span class="fig" style="color: var(--foreground)">2029</span> · <button type="button" class="lnk">2 autres</button>.</p>
+<div style="display: flex; flex-direction: column">
+<sc-for list="{{starters}}" as="s" hint-placeholder-count="4">
+<button type="button" class="sug"><span>{{s}}</span><span data-chev aria-hidden="true" style="display: inline-flex; color: var(--border)"><x-import component-from-global-scope="SuiviBourse.Icons.ChevronRight" class-name="size-4" aria-hidden="true"></x-import></span></button>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<!-- Message utilisateur -->
+<sc-if value="{{hasThread}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">Vous · <span class="fig">{{userWhen}}</span></p>
+<p style="margin: 0; font-size: 16px; line-height: 26px; font-weight: 500; white-space: pre-wrap">{{userText}}</p>
+<sc-if value="{{attachment}}" hint-placeholder-val="{{false}}">
+<p style="margin: 2px 0 0; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted-foreground)"><x-import component-from-global-scope="SuiviBourse.Icons.Upload" class-name="size-3.5" aria-hidden="true"></x-import>releve-octobre-2026.pdf · <span class="fig">2 pages</span></p>
+</sc-if>
+<p style="margin: 2px 0 0; display: flex; gap: 16px"><button type="button" class="act">Modifier et renvoyer</button><button type="button" class="act">Copier</button></p>
+</div>
+
+<!-- Réponse -->
+<div style="display: flex; flex-direction: column; gap: 14px">
+<p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">Agent · {{model}}</p>
+
+<!-- Trace : ce qui a été lu -->
+<details open style="font-size: 13px; line-height: 18px; color: var(--muted-foreground)">
+<summary style="display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none"><x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import>{{traceSummary}}</summary>
+<div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; padding: 8px 0 0 20px">
+<sc-for list="{{trace}}" as="s" hint-placeholder-count="4">
+<span>{{s.what}}</span><span class="fig" style="color: var(--foreground)">{{s.figure}}</span>
+</sc-for>
+</div>
+</details>
+
+<!-- Hypothèses, modifiables en place -->
+<sc-if value="{{hyps}}" hint-placeholder-val="{{true}}">
+<p style="margin: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: 13px; color: var(--muted-foreground)">
+<span>Hypothèses</span>
+<span class="hyp">TMI <button type="button" class="lnk fig">30 %</button></span>
+<span class="hyp">prélèvement forfaitaire <button type="button" class="lnk fig">31,4 %</button></span>
+<span class="hyp">frais <button type="button" class="lnk fig">0,10 %</button></span>
+<span class="hyp">cours du <button type="button" class="lnk fig">6 nov. 2026</button></span>
+</p>
+</sc-if>
+
+<!-- Corps -->
+<sc-if value="{{answer}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 14px; font-size: 16px; line-height: 26px">
+<p style="margin: 0">Vendre toute votre ligne TotalEnergies sur le compte-titres rapporterait <span class="fig" style="font-weight: 500">4 556,76 €</span> (<span class="fig">78</span> titres à <span class="fig">58,42 €</span>). Voici ce qui en sort et ce qui en reste :</p>
+<div role="table" style="font-size: 14px; line-height: 20px">
+<sc-for list="{{saleRows}}" as="r" hint-placeholder-count="5">
+<div role="row" style="display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--border); font-weight: {{r.fw}}"><span role="cell">{{r.label}}</span><span role="cell" class="fig">{{r.value}}</span></div>
+</sc-for>
+</div>
+<p style="margin: 0">L’impôt est le prélèvement forfaitaire de <span class="fig">31,4 %</span> sur la plus-value, calculée à partir de votre prix de revient de <span class="fig">55,10 €</span>. Avec une TMI de <span class="fig">30 %</span>, l’option pour le barème coûterait environ <span class="fig">120 €</span> : le forfait est plus avantageux.</p>
+</div>
+</sc-if>
+
+<sc-if value="{{events}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 14px; font-size: 16px; line-height: 26px">
+<p style="margin: 0">J’ai lu <span class="fig">3</span> dividendes dans ce relevé. Deux manquent à votre grand livre ; Air Liquide y est déjà au <span class="fig">15 oct.</span>, je ne le propose pas.</p>
+<div role="table" aria-label="Écritures proposées" style="font-size: 13px; line-height: 18px">
+<div role="row" style="display: grid; grid-template-columns: 24px 96px 90px minmax(0, 1fr) 110px 110px; gap: 0 12px; padding: 0 0 8px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted-foreground)">
+<span><input type="checkbox" checked aria-label="Tout sélectionner" style="width: 16px; height: 16px; margin: 0; accent-color: var(--primary)"></span><span>Date</span><span>Type</span><span>Événement</span><span style="text-align: right">Montant</span><span style="text-align: right">Déjà présent</span>
+</div>
+<sc-for list="{{proposed}}" as="e" hint-placeholder-count="3">
+<div role="row" style="display: grid; grid-template-columns: 24px 96px 90px minmax(0, 1fr) 110px 110px; gap: 0 12px; align-items: center; min-height: 40px; border-bottom: 1px solid var(--border); color: {{e.color}}">
+<span><input type="checkbox" checked="{{e.checked}}" disabled="{{e.dup}}" aria-label="Ajouter cet événement" style="width: 16px; height: 16px; margin: 0; accent-color: var(--primary)"></span>
+<span class="fig">{{e.date}}</span><span>{{e.type}}</span>
+<span style="display: flex; flex-direction: column"><span style="font-weight: 500">{{e.name}}</span><span style="font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{e.sub}}</span></span>
+<span class="fig" style="text-align: right">{{e.amount}}</span>
+<span class="fig" style="text-align: right; font-size: 12px; color: var(--muted-foreground)">{{e.dupText}}</span>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; align-items: center; gap: 16px; padding-top: 4px">
+<a href="GrandLivre-Refonte.dc.html" style="display: inline-flex; height: 32px; align-items: center; padding: 0 12px; border-radius: 8px; background: var(--primary); color: var(--primary-foreground); font-size: 13px; font-weight: 500; text-decoration: none">Ajouter 2 événements</a>
+</div>
+</div>
+</sc-if>
+
+<!-- Sources -->
+<p style="margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted-foreground)">
+<span>Sources</span>
+<sc-for list="{{sources}}" as="src" hint-placeholder-count="3">
+<a href="{{src.href}}" class="lnk" style="color: var(--muted-foreground)">{{src.label}}</a>
+</sc-for>
+</p>
+
+<!-- Actions -->
+<p style="margin: 0; display: flex; gap: 16px"><button type="button" class="act">Copier</button><button type="button" class="act">Régénérer</button><button type="button" class="act">Signaler une erreur</button></p>
+
+<!-- Suites -->
+<div style="display: flex; flex-direction: column; margin-top: 6px">
+<sc-for list="{{followups}}" as="f" hint-placeholder-count="3">
+<button type="button" class="sug"><span>{{f}}</span><span data-chev aria-hidden="true" style="display: inline-flex; color: var(--border)"><x-import component-from-global-scope="SuiviBourse.Icons.ChevronRight" class-name="size-4" aria-hidden="true"></x-import></span></button>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+</div>
+</div>
+
+<!-- Composer : une seule feuille -->
+<div style="display: flex; justify-content: center; padding: 8px 32px 20px">
+<div style="width: 100%; max-width: 704px; display: flex; flex-direction: column; gap: 8px">
+<form style="display: flex; flex-direction: column; gap: 8px; box-sizing: border-box; padding: 12px 12px 10px; border: 1px solid var(--input); border-radius: 12px; background: var(--background)">
+<label for="agent-q" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Votre question</label>
+<textarea id="agent-q" rows="2" placeholder="{{placeholder}}" style="width: 100%; box-sizing: border-box; padding: 0; border: 0; background: transparent; color: var(--foreground); font: inherit; font-size: 15px; line-height: 22px; resize: none; outline: none"></textarea>
+<div style="display: flex; align-items: center; gap: 16px; font-size: 13px; color: var(--muted-foreground)">
+<button type="button" class="act"><x-import component-from-global-scope="SuiviBourse.Icons.Upload" class-name="size-4" aria-hidden="true"></x-import>Joindre un relevé</button>
+<button type="button" class="act">@ une ligne ou un compte</button>
+<button type="button" class="act" style="margin-left: auto">{{model}}<x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></button>
+<button type="submit" aria-label="Envoyer" style="display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: {{sendBg}}; color: {{sendFg}}; cursor: pointer"><x-import component-from-global-scope="SuiviBourse.Icons.ArrowUp" class-name="size-4" aria-hidden="true"></x-import></button>
+</div>
+</form>
+<p style="margin: 0; text-align: center; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">Simulations à partir de vos données, jamais un conseil. Vos chiffres sont envoyés à {{provider}}.</p>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["answer","events","empty"],"default":"answer"},"$preview":{"width":1440,"height":1280}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mode = this.props.mode ?? 'answer';
+    const answer = mode === 'answer', events = mode === 'events', empty = mode === 'empty';
+    const model = 'claude-sonnet-4-5';
+    const current = answer ? 'Vente de la ligne TotalEnergies' : events ? 'Dividendes d’octobre' : '';
+    const groups = [
+      { name: 'Aujourd’hui', items: ['Vente de la ligne TotalEnergies', 'Dividendes d’octobre'] },
+      { name: 'Octobre', items: ['Rythme d’investissement en 2026', 'Où en est mon portefeuille', 'Frais du PEA depuis l’ouverture'] },
+      { name: 'Septembre', items: ['Tout vendre sur le compte-titres ?', 'Réinvestir les dividendes'] },
+    ];
+    const railRows = [];
+    for (const g of groups) {
+      railRows.push({ isHead: true, isItem: false, title: g.name, href: '#', current: 'false' });
+      for (const title of g.items) railRows.push({ isHead: false, isItem: true, title, href: title === 'Dividendes d’octobre' ? 'Agent-Evenements-Refonte.dc.html' : 'Agent-Refonte.dc.html', current: title === current ? 'page' : 'false' });
+    }
+    return {
+      railRows,
+      provider: 'Anthropic',
+      subtitle: '',
+      hasThread: !empty, empty, answer, events, hyps: answer,
+      threadTitle: current,
+      model,
+      userWhen: answer ? 'aujourd’hui, 01:48' : 'aujourd’hui, 09:12',
+      userText: answer
+        ? 'Si je vends toute ma ligne TotalEnergies sur le compte-titres, combien je paie et combien il me reste ?'
+        : 'Voici mon relevé de dividendes d’octobre, ajoute ce qui manque.',
+      attachment: events,
+      traceSummary: answer ? 'A lu 1 ligne, votre profil et les cours du 27 oct. · 4 étapes' : 'A lu le relevé joint et 57 événements du grand livre · 3 étapes',
+      trace: answer ? [
+        { what: 'Ligne TotalEnergies sur le compte-titres', figure: '78 titres · prix moyen d’achat 55,10 €' },
+        { what: 'Cours de clôture', figure: '58,42 € le 6 nov. 2026' },
+        { what: 'Modèle d’imposition', figure: 'TMI 30 %, confirmée le 12 oct.' },
+        { what: 'Règle appliquée', figure: 'Plus-value × prélèvement forfaitaire 31,4 %' },
+      ] : [
+        { what: 'Relevé joint', figure: '3 lignes de dividendes' },
+        { what: 'Grand livre', figure: '57 événements, du 4 mars 2021 au 1ᵉʳ oct. 2026' },
+        { what: 'Rapprochement', figure: '2 nouveaux · 1 déjà présent' },
+      ],
+      saleRows: [
+        { label: 'Produit de la vente', value: '4 556,76 €', fw: '400' },
+        { label: 'Plus-value, prix de revient 4 297,80 €', value: '258,96 €', fw: '400' },
+        { label: 'Impôt, prélèvement forfaitaire 31,4 %', value: '−81,31 €', fw: '400' },
+        { label: 'Frais estimés', value: '−4,56 €', fw: '400' },
+        { label: 'Il vous reste', value: '4 470,89 €', fw: '500' },
+      ],
+      proposed: [
+        { date: '3 nov. 2026', type: 'Dividende', name: 'Air Liquide', sub: 'AI · PEA · Solde du dividende', amount: '+18,40 €', dupText: '', checked: true, dup: false, color: 'var(--foreground)' },
+        { date: '2 nov. 2026', type: 'Dividende', name: 'TotalEnergies', sub: 'TTE · Compte-titres · Acompte sur dividende', amount: '+14,15 €', dupText: '', checked: true, dup: false, color: 'var(--foreground)' },
+        { date: '1ᵉʳ oct. 2026', type: 'Dividende', name: 'TotalEnergies', sub: 'TTE · Compte-titres · Acompte sur dividende', amount: '+79,30 €', dupText: 'déjà dans le grand livre', checked: false, dup: true, color: 'var(--muted-foreground)' },
+      ],
+      sources: answer ? [
+        { label: 'Titres · TotalEnergies', href: 'Titre-Fiche.dc.html' },
+        { label: 'Comptes · Compte-titres', href: 'Comptes-Refonte.dc.html' },
+        { label: 'Profil · TMI', href: '#' },
+        { label: 'Cours au 6 nov. 2026', href: '#' },
+      ] : [
+        { label: 'Pièce jointe · releve-octobre-2026.pdf', href: '#' },
+        { label: 'Grand livre · octobre 2026', href: 'GrandLivre-Refonte.dc.html' },
+      ],
+      followups: answer ? [
+        'Et si je ne vends que la moitié de la ligne ?',
+        'Combien de dividendes TotalEnergies ai-je touchés depuis l’achat ?',
+        'La même vente sur le PEA, ça donnerait quoi ?',
+      ] : [
+        'Combien de dividendes ai-je touchés en 2026 ?',
+        'Quelles lignes versent un dividende ce trimestre ?',
+      ],
+      starters: [
+        'Est-ce que j’investis régulièrement depuis douze mois ?',
+        'Si je vends toute ma ligne Amundi MSCI World sur le PEA, combien il me reste ?',
+        'Combien coûterait de tout vendre sur le compte-titres aujourd’hui ?',
+        'Qu’est-ce que mes frais m’ont coûté depuis l’ouverture du PEA ?',
+      ],
+      placeholder: empty ? 'Posez une question sur votre portefeuille…' : 'Continuer ce fil…',
+      sendBg: 'var(--muted)', sendFg: 'var(--muted-foreground)',
+    };
+  }
+}
+</script>
+</body>
+</html>

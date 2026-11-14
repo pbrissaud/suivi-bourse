@@ -11,6 +11,7 @@ kinds, and one module cannot be both.
 """
 import csv
 import json
+import re
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -209,6 +210,16 @@ def refuse_unaddressable_id(account_id: str) -> None:
             f"'..' there name a route that does not exist")
 
 
+class InvalidAccountId(AccountSourceError):
+    """An id typed in the app that is not letters, digits, ``-``, ``_`` or ``.``."""
+
+
+#: What an account id typed in the app may hold. Files may still *name* any
+#: account (an export keeps the ids it was written with); this is the rule of
+#: the one place an id is born.
+_ID_CHARSET = re.compile(r'[\w.-]+')
+
+
 def create_account(store, account_id: str,
                    label: Optional[str] = None) -> Account:
     """Declare an account. The app is where one is born, and the only place.
@@ -221,25 +232,33 @@ def create_account(store, account_id: str,
     if not account_id:
         raise AccountSourceError("id is required")
     refuse_unaddressable_id(account_id)
+    if not _ID_CHARSET.fullmatch(account_id):
+        raise InvalidAccountId(
+            f"{account_id!r} cannot be an account id: it holds letters, digits, "
+            f"'-', '_' and '.' only")
     if account_id in account_ids(store):
         raise DuplicateAccount(f"Account {account_id!r} already exists")
 
+    given = _text(label) or None
     store.execute(
-        'INSERT INTO account (id, label) VALUES (?, ?)',
-        [account_id, _text(label) or account_id])
+        'INSERT INTO account (id, label) VALUES (?, ?)', [account_id, given])
     logger.info(f"Declared account {account_id}")
-    return Account(id=account_id, label=_text(label) or account_id)
+    return Account(id=account_id, label=given)
 
 
-def update_account(store, account_id: str, *,
-                   label: Optional[str] = None) -> Account:
-    """Rename an account created in the app.
+#: ``update_account``'s default: the label was not mentioned, so it stays.
+KEEP = object()
 
-    Renaming is the whole of it since #916, and since #926 there is no second
-    column left to change at all. A blank keeps the name that is there.
+
+def update_account(store, account_id: str, *, label: Any = KEEP) -> Account:
+    """Relabel an account created in the app.
+
+    The label is optional, so a blank one **takes the label away** and the
+    account is shown by its identifiant; a caller that means *leave it alone*
+    does not call this.
     """
     current = _require(store, account_id)
-    new_label = _text(label) or current.label
+    new_label = current.label if label is KEEP else _text(label) or None
     store.execute('UPDATE account SET label = ? WHERE id = ?',
                   [new_label, account_id])
     return Account(id=account_id, label=new_label)
@@ -481,5 +500,5 @@ __all__ = [
     'default_is_declared', 'declared_portfolio',
     'is_named_by_events',
     'refuse_unaddressable_id',
-    'create_account', 'update_account', 'delete_account',
+    'create_account', 'update_account', 'delete_account', 'KEEP',
 ]

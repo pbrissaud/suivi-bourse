@@ -224,12 +224,18 @@ def test_a_declaration_is_recognised_in_a_workbook_too(store, tmp_path):
     assert accounts_module.is_accounts_file(events) is False
 
 
-def test_the_label_falls_back_to_the_id(store):
-    """``label`` is ``NOT NULL``: a row cannot decline to name itself."""
+def test_the_label_is_optional_and_blank_takes_it_away(store):
+    """A readers shows ``label ?? id``: the row holds no label rather than a copy of the id."""
     accounts_module.create_account(store, 'pea')
+    accounts_module.create_account(store, 'cto', '  Mon CTO ')
 
-    pea = next(a for a in accounts_module.read_accounts(store) if a.id == 'pea')
-    assert pea.label == 'pea'
+    def label(account_id):
+        return next(a for a in accounts_module.read_accounts(store) if a.id == account_id).label
+
+    assert (label('pea'), label('cto')) == (None, 'Mon CTO')
+    assert accounts_module.update_account(store, 'cto').label == 'Mon CTO'
+    assert accounts_module.update_account(store, 'cto', label='  ').label is None
+    assert label('cto') is None
 
 
 # --------------------------------------------------------------------------- #

@@ -115,11 +115,13 @@ def test_a_pea_counted_from_its_first_payment_still_projects():
     assert tax == pytest.approx(1_720.0)
 
 
-def test_a_declared_date_still_wins_over_the_derived_one():
-    """#918 is not reintroduced: the fallback fills an absence, it never
-    overwrites a declaration."""
-    assert projection.age_date(PEA, date(2020, 6, 1), date(2015, 3, 1)) \
-        == date(2020, 6, 1)
+def test_a_first_payment_basis_counts_from_the_first_payment_not_the_opening():
+    """Persona pass, bug 12: the model says « counted from the first payment »,
+    and the declared opening date used to win, 2 days off on Hélène's PEA. The
+    declared date is only the fallback of a ledger with no payment."""
+    assert projection.age_date(PEA, date(2022, 1, 10), date(2022, 1, 12)) \
+        == date(2022, 1, 12)
+    assert projection.age_date(PEA, date(2022, 1, 10), None) == date(2022, 1, 10)
 
 
 def test_under_opening_the_ledger_is_not_consulted_at_all():
@@ -415,3 +417,24 @@ def test_the_check_normalises_on_the_way_through():
     a hand edit left as a string is a rate, not a refusal and not a
     ``str * float``."""
     assert flat({'rate': '0.3'}, 10_000.0) == pytest.approx(3_000.0)
+
+
+def test_the_projection_is_split_into_income_tax_and_social_levy_that_add_up():
+    day = date(2026, 11, 9)
+    facts = dict(latent_gain=1_000.0, now=day)
+    flat = dict(kind='flat_realised', parameters={'rate': 0.128, 'social_rate': 0.186})
+    assert projection.projected_split(**flat, **facts) == pytest.approx((128.0, 186.0))
+    assert projection.projected_tax(**flat, **facts) == pytest.approx(314.0)
+    mature = dict(kind='aged_flat_realised', opened_on=date(2015, 1, 1), parameters={
+        'rate_before': 0.128, 'rate_after': 0.0, 'threshold_years': 5,
+        'age_basis': 'opening', 'social_rate': 0.186})
+    assert projection.projected_split(**mature, **facts) == pytest.approx((0.0, 186.0))
+    ladder = dict(kind='bracketed_realised', parameters={
+        'brackets': [{'upper_bound': 500, 'rate': 0.0}, {'upper_bound': None, 'rate': 0.1}],
+        'social_rate': 0.186})
+    assert projection.projected_split(**ladder, **facts) == pytest.approx((50.0, 186.0))
+    assert projection.projected_tax(**ladder, **facts) == pytest.approx(236.0)
+    assert projection.applied_rates(**ladder, now=day) == pytest.approx([0.186, 0.286])
+    assert projection.projected_split(**flat, latent_gain=None, now=day) is None
+    assert projection.projected_split(**flat, latent_gain=-5.0, now=day) == (0.0, 0.0)
+    assert projection.projected_split(kind='none', parameters={}, **facts) is None

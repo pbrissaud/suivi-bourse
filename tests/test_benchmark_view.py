@@ -1002,6 +1002,22 @@ def test_a_row_carries_the_gap_and_the_two_returns_of_its_own_account(named):
     assert row['reference_return'] == pytest.approx(0.0)
 
 
+def test_the_money_invested_is_published_on_the_head_and_on_each_row(named):
+    """« Même argent investi »: the denominator both returns are read on."""
+    _write_curve(named, 'pea', first='2024-01-01', last='2024-01-31',
+                 value=1000.0)
+
+    payload = benchmark_view.comparison(
+        named, _snapshot([_invest('2024-01-01', 'pea', 1000.0)]), NOW)
+
+    row, = payload['per_account']
+    assert payload['contributed'] == pytest.approx(1000.0)
+    assert row['contributed'] == pytest.approx(1000.0)
+    assert payload['portfolio_return'] == pytest.approx(
+        (payload['portfolio_value'] - payload['contributed'])
+        / payload['contributed'])
+
+
 # --------------------------------------------------------------------------- #
 # The head is the sum of the rows
 # --------------------------------------------------------------------------- #
@@ -1088,3 +1104,20 @@ def test_an_unfollowed_series_is_kept_until_the_owner_stops_keeping_it(named):
     assert (row['kept'], row['freed']) == (False, True)
     # Nothing downloaded, nothing to keep or to release.
     assert benchmark_view.references(named, snapshot, NOW)[1]['freed'] is False
+
+
+def test_a_fund_the_ledger_holds_is_not_announced_as_released(named, monkeypatch):
+    """PP-2: « Historique libéré » on a fund nobody chose to drop.
+
+    The purge spares a symbol an event names or a position holds, so the line
+    promising its removal at the next cleanup was false for exactly the
+    fund an owner holds and also offers as a reference.
+    """
+    from application import ledger
+    snapshot = _snapshot([_invest('2024-01-01', 'pea', 1000.0)])
+    named.execute("INSERT INTO setting (key, value) VALUES "
+                  "('benchmark_symbols', '')  ON CONFLICT (key) "
+                  "DO UPDATE SET value = excluded.value")
+    assert benchmark_view.references(named, snapshot, NOW)[0]['freed'] is True
+    monkeypatch.setattr(ledger, 'ledger_symbols', lambda store: {REFERENCE})
+    assert benchmark_view.references(named, snapshot, NOW)[0]['freed'] is False

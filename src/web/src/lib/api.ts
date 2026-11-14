@@ -88,15 +88,12 @@ export const ROUTES = {
   events: '/api/events',
   /** One row of it. A **pattern**, like {@link ROUTES.prices}. */
   event: '/api/events/:id',
-  /**
-   * A file handed over, read once, and written as ordinary events (#811).
-   *
-   * It is `/api/events/import` and not `/api/imports` because **an import is no
-   * longer a resource**: nothing persists that could be named, so it is a
-   * gesture on the collection it writes. What comes back is a receipt — what
-   * the gesture produced — and never an id to come back to.
-   */
-  eventsImport: '/api/events/import',
+  /** The dry run of a write: what an event would do to its account's cash (W3). */
+  eventsPreview: '/api/events/preview',
+  /** The same file read against one account's ledger, nothing written: rows with a status and a token. */
+  eventsImportPreview: '/api/events/import/preview',
+  /** The previewed rows written, by token, with the owner's resolutions. */
+  eventsImportCommit: '/api/events/import/commit',
   /**
    * The ledger back out, in the format it came in by (#710) — **the events, and
    * only them**. There was a second file, the declaration, because a
@@ -138,13 +135,20 @@ export const ROUTES = {
    * agent could not run on.
    */
   agentConfig: '/api/agent/config',
-  /** The provider's key: forgotten here (`DELETE`), never written (it is stored by a passed test) and never read back. */
-  agentKey: '/api/agent/key',
   /**
-   * *Tester la connexion* (#1115, #1269): the candidate's models, listed with
-   * its key; the candidate is stored only when the provider accepts it.
+   * The agent's providers (« Relevé » redesign): `GET` lists them (the default
+   * first), `POST` adds one. The `:id` ones are patterns: `PATCH`/`DELETE` the
+   * provider, `POST …/test` lists its models (`:id` is `new` for one not yet
+   * saved, the body naming the candidate), `PUT …/default` makes it the default.
+   * They replace `agentConfig`'s provider fields, `agentKey` and `agentTest`,
+   * which the page chantiers drop.
    */
-  agentTest: '/api/agent/test',
+  agentProviders: '/api/agent/providers',
+  agentProvider: '/api/agent/providers/:id',
+  agentProviderTest: '/api/agent/providers/:id/test',
+  agentProviderDefault: '/api/agent/providers/:id/default',
+  /** Tokens exchanged with the models since a date (`?range=1M|YTD|1Y|MAX`), no price. */
+  agentStats: '/api/agent/stats',
   /**
    * The agent's turn (#1114): a Vercel AI SDK UI stream, on the ASGI half
    * (`boot._is_agent`). The `/agent` page's `useChat` posts here (#1196).
@@ -184,7 +188,6 @@ export const ROUTES = {
   authEnable: '/auth/enable',
   authChange: '/auth/change',
   authDisable: '/auth/disable',
-  authToken: '/auth/token',
   authLifetime: '/auth/lifetime',
   /** What this install has been told and has not acknowledged (#709). */
   installationFacts: '/api/installation-facts',
@@ -203,6 +206,13 @@ export const ROUTES = {
    * the payload's business and not the route's.
    */
   advisoryAcknowledgement: '/api/advisories/:key/acknowledgement',
+  /**
+   * The outbound notification channels (§ 3.6): ntfy, e-mail, webhook, Apprise.
+   * `:id` is a pattern, like {@link ROUTES.prices}; `/test` sends a test notice.
+   */
+  notificationChannels: '/api/notification-channels',
+  notificationChannel: '/api/notification-channels/:id',
+  notificationChannelTest: '/api/notification-channels/:id/test',
   /** The store's own figures — size, last ledger write, orphans (#724). */
   store: '/api/store',
   /**
@@ -212,6 +222,12 @@ export const ROUTES = {
   jobsHistory: '/api/jobs/history',
   /** The jobs the process runs, in the server's order, with their labels (#1253). */
   jobs: '/api/jobs',
+  /** « Lancer »: one pass now. A **pattern**; answers 202, the history records it. */
+  jobRun: '/api/jobs/:job/run',
+  /** The journal, newest first; poll with `cursor` for what came after. */
+  logs: '/api/logs',
+  /** The file log, the last seven days, as one text. */
+  logsDownload: '/api/logs/download',
   /** The orphans as a collection: the only thing done to it is removing it. */
   storeOrphans: '/api/store/orphans',
   /** One account's perf series. A **pattern**, like {@link ROUTES.prices}. */
@@ -225,13 +241,6 @@ export const ROUTES = {
    */
   positionsHistory: '/api/positions/history',
   /**
-   * What moved since the last session close (#727).
-   *
-   * What the rule *"a resource carries the name of the store's table"* forbids
-   * is reusing a v4 name for a **different** payload, and this is the same one.
-   */
-  movers: '/api/portfolio/movers',
-  /**
    * How much the owner buys in a month, and how often (#751).
    *
    * Derived on every read and stored nowhere, like {@link ROUTES.advisories}:
@@ -240,11 +249,6 @@ export const ROUTES = {
    * describe one ledger.
    */
   investmentRhythm: '/api/investment-rhythm',
-  /**
-   * The dashboard's saved layout — one row of the store, its shape checked and
-   * its cards not: the registry of cards is the front's (`features/dashboard/lib/dashboardBlocks`).
-   */
-  dashboardLayout: '/api/dashboard/layout',
   /** The theme over the bundled Atelier — one row of the store, tweakcn's `cssVars` (#1248). */
   theme: '/api/theme',
   /** Fetch a tweakcn theme by id and keep it: the only call to tweakcn.com. */
@@ -267,12 +271,27 @@ export const ROUTES = {
   benchmarkReferences: '/api/benchmark/references',
   /** Keep or release an unfollowed ETF's series. */
   benchmarkReference: '/api/benchmark/references/:symbol',
+  /** The access tokens (#1313): list, make. The gate keeps a bearer out of these. */
+  tokens: '/api/tokens',
+  /** One token: delete it. A **pattern**, like {@link ROUTES.prices}. */
+  token: '/api/tokens/:id',
+  /** A new secret for one token. */
+  tokenRegenerate: '/api/tokens/:id/regenerate',
 } as const
 
 export type RouteName = keyof typeof ROUTES
 
 function installationFactAcknowledgementPath(key: string): string {
   return ROUTES.installationFactAcknowledgement.replace(':key', encodeURIComponent(key))
+}
+
+function tokenPath(id: string, suffix = ''): string {
+  return ROUTES.token.replace(':id', encodeURIComponent(id)) + suffix
+}
+
+function notificationChannelPath(id: string, test = false): string {
+  const route = test ? ROUTES.notificationChannelTest : ROUTES.notificationChannel
+  return route.replace(':id', encodeURIComponent(id))
 }
 
 function advisoryAcknowledgementPath(key: string): string {
@@ -558,6 +577,41 @@ export interface RuntimeAccount {
 export interface RuntimeStore {
   /** Where the file is; `null` when the process named no store (tests). */
   path: string | null
+  /** What the store occupies on disk, write-ahead log included. */
+  size_bytes: number | null
+}
+
+/** A followed security on the System page: `stale` when its price is frozen. */
+export interface RuntimeFollowed {
+  symbol: string
+  name: string | null
+  state: 'ok' | 'stale'
+  stale_since: string | null
+  stale_passes: number
+}
+
+export interface RuntimeQuoteSource {
+  name: string
+  /** How long the last scrape pass took, in seconds. */
+  response_seconds: number | null
+}
+
+export type JournalLevel = 'debug' | 'info' | 'warning' | 'error'
+export type JournalJob = 'scrape' | 'backfill' | 'performance' | 'ingestion' | 'system'
+
+/** One line of `GET /api/logs`; `detail` is the traceback, if any. */
+export interface JournalRow {
+  time: string
+  level: JournalLevel
+  job: JournalJob
+  message: string
+  detail: string | null
+}
+
+/** `cursor` is the last row seen: send it back to get only what came after. */
+export interface JournalPage {
+  rows: JournalRow[]
+  cursor: number
 }
 
 /**
@@ -648,6 +702,8 @@ export interface RuntimeState {
   perf: RuntimePerf | null
   symbols: RuntimeSymbol[]
   accounts: RuntimeAccount[]
+  followed: RuntimeFollowed[]
+  quote_source: RuntimeQuoteSource
 }
 
 // ------------------------------------------------------------------------- //
@@ -793,12 +849,56 @@ export interface Advisory {
   key: string
   kind: string
   subject: string
+  /**
+   * Who it is for (§ 3.6): `user` is the bell (a late price, an update),
+   * `system` the System page's. `GET /api/advisories?register=user` is the bell.
+   */
+  register: 'user' | 'system'
   message: string
+  /**
+   * The phrase, built by the server with the security's **name**, in both
+   * languages; `null` where the front still holds the phrase by `kind`.
+   */
+  texts: Record<'fr' | 'en', { title: string; sub: string }> | null
   detail: Record<string, unknown>
   observed_at: string
 }
 
 type AdvisoriesResponse = Advisory[]
+
+export type ChannelKind = 'ntfy' | 'email' | 'webhook' | 'apprise'
+/** What a channel may be sent: the `user` advisory kinds, and a failing job. */
+export type ChannelScope = 'late_price' | 'update_available' | 'job_failed'
+
+/**
+ * One outbound notification channel (§ 3.6). The secret (SMTP password, webhook
+ * or ntfy token) never comes back: only whether there is one and its `last4`.
+ * `options` is the SMTP server for e-mail (`host`, `port`, `username`,
+ * `sender`, `starttls`), and `lang` (`fr` | `en`) for any kind.
+ */
+export interface NotificationChannel {
+  id: string
+  kind: ChannelKind
+  target: string
+  options: Record<string, string | number | boolean>
+  scopes: ChannelScope[]
+  enabled: boolean
+  has_secret: boolean
+  secret_last4: string | null
+  /** `false` for `apprise` on an installation that does not ship the library. */
+  available: boolean
+  created_at: string
+}
+
+/** What `POST` takes; `PATCH` takes any of `target`, `secret`, `options`, `scopes`, `enabled`. */
+export interface NotificationChannelDraft {
+  kind: ChannelKind
+  target: string
+  secret?: string | null
+  options?: NotificationChannel['options']
+  scopes: ChannelScope[]
+  enabled?: boolean
+}
 
 /** What `GET /api/system/release` answers: `null` when up to date or unknown. */
 export interface ReleaseState {
@@ -810,7 +910,43 @@ interface AcknowledgedAdvisory extends Advisory {
   acknowledged_until: string
 }
 
+/** What a token opens: `/api` for a script, `/mcp` for Claude Desktop. */
+export type TokenScope = 'api' | 'mcp'
+
+/** How long a new token lives; `never` does not expire. */
+export type TokenExpiry = '90d' | '1y' | 'never'
+
+/** A row of `GET /api/tokens`. The secret is never in it, only its public `prefix`. */
+export interface AccessToken {
+  id: string
+  label: string
+  scopes: TokenScope[]
+  prefix: string
+  /** The choice made at creation, which a regeneration repeats. */
+  lifetime: TokenExpiry
+  created_at: string
+  expires_at: string | null
+  last_used_at: string | null
+}
+
+/** What making or regenerating a token answers: the secret is in it once. */
+export interface IssuedAccessToken {
+  token: AccessToken
+  secret: string
+}
+
+export interface NewAccessToken {
+  label: string
+  scopes: TokenScope[]
+  expires: TokenExpiry
+}
+
 export const api = {
+  tokens: () => get<{ tokens: AccessToken[] }>(ROUTES.tokens),
+  createToken: (form: NewAccessToken) => send<IssuedAccessToken>(ROUTES.tokens, 'POST', form),
+  regenerateToken: (id: string) =>
+    send<IssuedAccessToken>(tokenPath(id, '/regenerate'), 'POST', {}),
+  deleteToken: (id: string) => forget(tokenPath(id)),
   runtime: () => get<RuntimeState>(ROUTES.runtime),
   release: () => get<ReleaseState>(ROUTES.release),
   // Typed for the caller, and **narrowed all the same** where it is read
@@ -841,4 +977,115 @@ export const api = {
   standingAdvisories: () => get<AdvisoriesResponse>(`${ROUTES.advisories}?asleep=include`),
   acknowledgeAdvisory: (key: string) =>
     send<AcknowledgedAdvisory>(advisoryAcknowledgementPath(key), 'POST', {}),
+  /** The bell's inventory: the `user` register only (§ 3.6). */
+  userAdvisories: () => get<AdvisoriesResponse>(`${ROUTES.advisories}?register=user`),
+  notificationChannels: () => get<NotificationChannel[]>(ROUTES.notificationChannels),
+  addNotificationChannel: (draft: NotificationChannelDraft) =>
+    send<NotificationChannel>(ROUTES.notificationChannels, 'POST', draft),
+  changeNotificationChannel: (
+    id: string,
+    change: Partial<Omit<NotificationChannelDraft, 'kind'>>,
+  ) => send<NotificationChannel>(notificationChannelPath(id), 'PATCH', change),
+  deleteNotificationChannel: (id: string) => forget(notificationChannelPath(id)),
+  /** A `502` `problem+json` of type `/problems/channel-refused` says why not. */
+  testNotificationChannel: (id: string) =>
+    send<{ ok: true }>(notificationChannelPath(id, true), 'POST', {}),
+
+  /** The agent's providers, the default first. */
+  agentProviders: () => get<AgentProvider[]>(ROUTES.agentProviders),
+  createAgentProvider: (body: AgentProviderBody) =>
+    send<AgentProvider>(ROUTES.agentProviders, 'POST', body),
+  updateAgentProvider: (id: string, body: AgentProviderBody) =>
+    send<AgentProvider>(agentProviderPath(id), 'PATCH', body),
+  deleteAgentProvider: (id: string) =>
+    send<{ id: string; removed: true; disabled: boolean }>(agentProviderPath(id), 'DELETE', {}),
+  makeAgentProviderDefault: (id: string) =>
+    send<AgentProvider>(`${agentProviderPath(id)}/default`, 'PUT', {}),
+  /** `id` is `new` for a provider not saved yet; the body then names the candidate. */
+  testAgentProvider: (
+    id: string,
+    body: Pick<AgentProviderBody, 'kind' | 'base_url' | 'key'> = {},
+  ) => send<AgentProviderTest>(`${agentProviderPath(id)}/test`, 'POST', body),
+  agentStats: (range: AgentStatsRange = 'YTD') =>
+    get<AgentStats>(`${ROUTES.agentStats}?range=${range}`),
+}
+
+function agentProviderPath(id: string): string {
+  return ROUTES.agentProvider.replace(':id', encodeURIComponent(id))
+}
+
+/** The four kinds of provider (`agent.PROVIDERS`). */
+export type AgentProviderKind = 'anthropic' | 'openai' | 'openai_compatible' | 'ollama'
+
+/**
+ * One configured provider, as `GET /api/agent/providers` serves it. Of the key
+ * only `last4`. `privacy` is computed by the server from the address: `local`
+ * only when it resolves to this machine or a private network.
+ */
+export interface AgentProvider {
+  id: string
+  label: string | null
+  kind: AgentProviderKind
+  base_url: string | null
+  default_model: string | null
+  is_default: boolean
+  last_test_at: string | null
+  key: { set: boolean; last4: string | null; set_at: string | null }
+  privacy: { local: boolean; host: string; fr: string; en: string }
+  /** On a `PATCH` or `PUT …/default` that left the agent nothing to run on. */
+  disabled?: true
+}
+
+/** The body of `POST`/`PATCH /api/agent/providers[/:id]`: any subset on a `PATCH`. */
+export interface AgentProviderBody {
+  label?: string | null
+  kind?: AgentProviderKind
+  base_url?: string | null
+  /** Written, never read back; `null` forgets it. */
+  key?: string | null
+  default_model?: string | null
+}
+
+/** `POST /api/agent/providers/:id/test`: the models listed, and how long it took. */
+export interface AgentProviderTest {
+  models: { id: string; name: string }[]
+  preselected: string | null
+  elapsed_ms: number
+}
+
+/** `GET /api/agent/config` since providers: the agent's own two settings. */
+export interface AgentSettings {
+  enabled: boolean
+  reasoning: 'low' | 'medium' | 'high'
+}
+
+export type AgentStatsRange = '1M' | 'YTD' | '1Y' | 'MAX'
+
+/**
+ * `GET /api/agent/stats`. `fresh` is the input the provider did not read from
+ * its cache; `weeks` are Mondays (ISO dates), empty weeks included. No price.
+ */
+export interface AgentStats {
+  range: AgentStatsRange
+  since: string | null
+  totals: {
+    tokens: number
+    input: number
+    output: number
+    cache_read: number
+    fresh: number
+    threads: number
+    requests: number
+    tool_calls: number
+  }
+  weeks: { week: string; cache_read: number; fresh: number; output: number }[]
+  models: {
+    model: string
+    provider: string | null
+    requests: number
+    tokens: number
+    cache_read: number
+    cache_ratio: number | null
+  }[]
+  threads: { id: string; title: string | null; last_at: string; requests: number; tokens: number }[]
 }

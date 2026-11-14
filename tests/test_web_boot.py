@@ -723,31 +723,6 @@ def test_a_body_that_cannot_be_built_does_not_fail_the_probe(open_store):
     assert "the snapshot is not there" in response.get_json()["error"]
 
 
-def test_healthz_is_not_the_name_of_this_route(open_store):
-    """`/healthz` was examined and declined.
-
-    A Kubernetes idiom addressed to a reader this product does not have: it
-    ships as one self-hosted container whose probe is written into its own
-    image. What #818 changed is what the route **answers**, not what it is
-    called, and the rename stays refused rather than merely unperformed.
-
-    Asserted on the **URL map** and not on a status code, because a status code
-    would be lying about the wrong thing: `/healthz` is an unknown client-side
-    path, so a build carrying the front answers it with the SPA shell and a
-    `200` — as it does every path it does not know. What is true in both builds
-    is that no rule is registered under that name, and that the probe's body is
-    reachable under one name only.
-    """
-    runtime = main.Runtime(_FakeConfigManager())
-    runtime.store = open_store
-    app = api.create_app(runtime=runtime)
-
-    rules = {rule.rule for rule in app.url_map.iter_rules()}
-    assert "/health" in rules
-    assert "/healthz" not in rules
-    assert "jobs" in app.test_client().get("/health").get_json()
-
-
 def test_health_fails_when_the_store_does_not_answer(open_store):
     """A green probe over a dead store is the blind spot the probe exists for.
 

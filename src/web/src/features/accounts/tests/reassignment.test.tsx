@@ -50,7 +50,7 @@ function renderAccounts(
 }
 
 function rail() {
-  return screen.findByRole('group', { name: 'Vos comptes' })
+  return screen.findByRole('tablist', { name: 'Vos comptes' })
 }
 
 const OFFER = 'Des événements affectés à aucun compte'
@@ -69,7 +69,7 @@ describe('the first declaration carries the reassignment', () => {
       }),
     )
 
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
     const panel = await screen.findByRole('dialog')
     // The count is the reader's own, and it is on the box rather than in a
     // paragraph beside it: what is being agreed to is what is written on it.
@@ -79,11 +79,11 @@ describe('the first declaration carries the reassignment', () => {
     expect(box).toBeChecked()
 
     await user.type(within(panel).getByLabelText('Identifiant'), 'pea')
-    await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
+    await user.click(within(panel).getByRole('button', { name: 'Ajouter' }))
 
     // **One request**, which is what *dans le même geste* means: the declaration
     // and the move are not two gestures a reader can be interrupted between.
-    await waitFor(() => expect(sent).toEqual({ id: 'pea', label: 'pea', reassign: true }))
+    await waitFor(() => expect(sent).toEqual({ id: 'pea', label: '', reassign: true }))
   })
 
   it('is never a refusal, and unchecking still declares', async () => {
@@ -101,13 +101,13 @@ describe('the first declaration carries the reassignment', () => {
       }),
     )
 
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
     const panel = await screen.findByRole('dialog')
     await user.click(within(panel).getByRole('checkbox'))
     await user.type(within(panel).getByLabelText('Identifiant'), 'pea')
-    await user.click(within(panel).getByRole('button', { name: 'Déclarer ce compte' }))
+    await user.click(within(panel).getByRole('button', { name: 'Ajouter' }))
 
-    await waitFor(() => expect(sent).toEqual({ id: 'pea', label: 'pea' }))
+    await waitFor(() => expect(sent).toEqual({ id: 'pea', label: '' }))
   })
 
   it('asks nothing about the row its owner has already named', async () => {
@@ -119,7 +119,7 @@ describe('the first declaration carries the reassignment', () => {
 
     expect(screen.queryByText(OFFER)).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: REASSIGN })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
     const panel = await screen.findByRole('dialog')
     expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument()
   })
@@ -131,7 +131,7 @@ describe('the first declaration carries the reassignment', () => {
     await rail()
 
     expect(screen.queryByText(OFFER)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Déclarer un compte' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un compte' }))
     const panel = await screen.findByRole('dialog')
     expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument()
   })
@@ -140,7 +140,7 @@ describe('the first declaration carries the reassignment', () => {
 describe('and it stands on its own once something is declared', () => {
   /** The offer lives in the seeded account's own detail — its events, its page. */
   async function openTheSeed(user: ReturnType<typeof renderApp>['user']) {
-    await user.click(within(await rail()).getByRole('link', { name: /Non affecté/ }))
+    await user.click(within(await rail()).getByRole('tab', { name: /Non affecté/ }))
     return screen.findByRole('region', { name: 'Non affecté' })
   }
 
@@ -160,7 +160,7 @@ describe('and it stands on its own once something is declared', () => {
     // Its subject is *this* account's events: rendered beside `PEA`'s figures it
     // would be an offer to move events that account never carried.
     const { user } = renderAccounts(declaredBesideTheSeed('pea'))
-    await user.click(within(await rail()).getByRole('link', { name: /PEA/ }))
+    await user.click(within(await rail()).getByRole('tab', { name: /PEA/ }))
 
     const pea = await screen.findByRole('region', { name: 'PEA' })
     expect(within(pea).queryByRole('region', { name: OFFER })).not.toBeInTheDocument()

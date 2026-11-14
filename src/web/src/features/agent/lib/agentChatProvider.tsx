@@ -43,6 +43,8 @@ interface AgentChatValue {
   failedOnReload: boolean
   /** A question was asked: the failure the thread was read with is over. */
   settle: () => void
+  /** What the thread on screen last ran on; `null` for a thread not asked yet. */
+  ranOn: { provider_id: string | null; model: string | null } | null
 }
 
 const AgentChatContext = createContext<AgentChatValue | null>(null)
@@ -65,6 +67,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const [chat, setChat] = useState(() => chatFor(client, generateId()))
   const [opening, setOpening] = useState<AgentChatValue['opening']>(null)
   const [failedOnReload, setFailedOnReload] = useState(false)
+  const [ranOn, setRanOn] = useState<AgentChatValue['ranOn']>(null)
 
   // The chat on screen, for stopping it from outside a state updater.
   const current = useRef(chat)
@@ -83,6 +86,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
     reading.current += 1
     setOpening(null)
     setFailedOnReload(false)
+    setRanOn(null)
     replace(chatFor(client, generateId()))
   }, [client, replace])
 
@@ -101,6 +105,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
         if (sequence !== reading.current) return
         replace(chatFor(client, thread.id, joinAssistantMessages(thread.messages)))
         setFailedOnReload(thread.failed === true)
+        setRanOn({ provider_id: thread.provider_id ?? null, model: thread.model ?? null })
         setOpening(null)
       } catch (error) {
         if (sequence !== reading.current) return
@@ -113,6 +118,7 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
   const reloadThread = useCallback(async () => {
     const thread = await agentApi.agentThread(current.current.id)
     replace(chatFor(client, thread.id, joinAssistantMessages(thread.messages)))
+    setRanOn({ provider_id: thread.provider_id ?? null, model: thread.model ?? null })
     void client.invalidateQueries({ queryKey: ['agent-threads'] })
   }, [client, replace])
 
@@ -127,8 +133,9 @@ export function AgentChatProvider({ children }: { children: ReactNode }) {
       opening,
       failedOnReload,
       settle,
+      ranOn,
     }),
-    [chat, startThread, openThread, reloadThread, opening, failedOnReload, settle],
+    [chat, startThread, openThread, reloadThread, opening, failedOnReload, settle, ranOn],
   )
 
   return <AgentChatContext.Provider value={value}>{children}</AgentChatContext.Provider>

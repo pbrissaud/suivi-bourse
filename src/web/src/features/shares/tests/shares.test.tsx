@@ -1,1759 +1,252 @@
 /**
- * The shares page (#719), at the one seam: the whole app in
- * jsdom, HTTP the only faked edge.
- *
- * *The header sums the lines it sits above* is not a property of a table
- * component — it only appears once the folded section, the total and the rows
- * are mounted together, which is exactly why this suite lives here.
+ * The shares page and the title's page (« Relevé »), at the one seam: the whole
+ * app in jsdom, HTTP the only faked edge.
  *
  * The fixture's arithmetic is by hand in `test/factories.ts`:
  *
- *     +300,00 latent · +125,00 realised · +35,00 dividends  =  460,00
- *
- * and the figure the fold exists to prevent — the held lines alone — is
- * `+300,00 + 50,00 + 25,00 = 375,00`. Both are correct; only one is the gain.
- * On the portfolio that decided it the gap was 708,92 €, 73 % of what was shown.
+ *     ZZA  10 × 130,00 = 1 300,00  for 1 000,00  →  +300,00
+ *     ZZB   4 × 100,00 =   400,00  for   400,00  →     0,00   (125 USD × 0,80)
+ *     ZZC   6 at cost  =   600,00  for   600,00  →     0,00   (never quoted)
+ *                       2 300,00     2 000,00        +300,00
  */
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { ROUTES } from '@/lib/api'
 import { PROBLEM_TYPES } from '@/lib/problem'
-import {
-  aClosedPosition,
-  aPosition,
-  aPositionsPayload,
-  aRuntime,
-  defaultPositions,
-  sharesPortfolio,
-} from '@/test/factories'
+import { aPositionsPayload, defaultPositions, sharesPortfolio } from '@/test/factories'
 import { setViewportWidth } from '@/test/media'
-import { expectNoBox } from '@/test/noBox'
 import { renderApp } from '@/test/render'
 import { problemHandler, server } from '@/test/server'
 
-/** The page under test, with the portfolio that has closed lines in it. */
-function renderShares(positions = sharesPortfolio()) {
-  server.use(http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(positions))))
-  return renderApp({ url: '/shares' })
+const UNAVAILABLE = {
+  status: 503,
+  type: PROBLEM_TYPES.storageUnavailable,
+  title: 'Storage unavailable',
 }
 
-/** The live table, by its own accessible name — the folded one has another. */
-function liveTable() {
-  return screen.getByRole('table', { name: 'Positions détenues' })
+function renderShares(url = '/shares', payload = aPositionsPayload(defaultPositions())) {
+  server.use(http.get(ROUTES.positions, () => HttpResponse.json(payload)))
+  return renderApp({ url })
 }
 
-function fold() {
-  return screen.getByRole('button', { name: /position(s)? soldée(s)?/ })
+const table = () => screen.findByRole('table', { name: 'Lignes détenues' })
+
+function footer(root: HTMLElement) {
+  const rows = root.querySelectorAll('tfoot tr')
+  expect(rows).toHaveLength(1)
+  return rows[0] as HTMLElement
 }
 
-/**
- * **The total row** — the footer cell at the column index of the header named
- * `label` (#1281). The four totals are read under their own columns, which is
- * the whole point of the row.
- */
-function figure(label: string) {
-  const table = liveTable()
-  const at = columnNames(table).indexOf(label)
-  const footer = table.querySelectorAll('tfoot tr')
-  expect(footer).toHaveLength(1)
-  return footer[0].children[at] as HTMLElement
-}
-
-function head() {
-  return figure('Valorisation')
-}
-
-function columnNames(table: HTMLElement) {
-  return within(table)
-    .getAllByRole('columnheader')
-    .map((cell) => cell.textContent?.trim())
-}
-
-describe('the header sums the lines it sits above', () => {
-  it('counts the closed positions, and folding the section does not move it', async () => {
-    const { user } = renderShares()
-
-    // The strip sums **every** line, closed ones included: `+125,00` realised
-    // is `50,00` on the live lines and `120,00 − 45,00` on the two sold ones.
-    // Taken over the live lines alone it would read `+50,00`, which is not
-    // false — and nothing on screen would say which of the two the dashboard
-    // agrees with.
-    await waitFor(() => expect(figure('Réalisée')).toHaveTextContent(/125,00/))
-    expect(figure('Dividendes')).toHaveTextContent(/35,00/)
-
-    await user.click(fold())
-    expect(figure('Réalisée')).toHaveTextContent(/125,00/)
-
-    await user.click(fold())
-    expect(figure('Réalisée')).toHaveTextContent(/125,00/)
-  })
-
-  it('sums four of its own columns, and never a term that is not one', async () => {
+describe('the table alone', () => {
+  it('has the six columns of the mockup, valuation first', async () => {
     renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    expect(figure('Latente')).toHaveTextContent(/300,00/)
-    expect(figure('Réalisée')).toHaveTextContent(/125,00/)
-    expect(figure('Dividendes')).toHaveTextContent(/35,00/)
-
-    // The fees a broker takes out of a transfer belong to no security, so a
-    // header that sums its rows can never carry them — and no column of this
-    // table carries them either. They stay the dashboard's.
-    expect(screen.queryByRole('group', { name: 'Frais de versement' })).not.toBeInTheDocument()
-    // And there is no page-level total gain here at all (#838): the drawing
-    // puts one under the ring — `Titres` — and four in this strip.
-    expect(screen.queryByRole('group', { name: 'Gain total' })).not.toBeInTheDocument()
-  })
-
-  it('offers no way to hide the closed positions', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // No switch, no checkbox, and nothing named for it: the fold is a fold.
-    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.queryByText(/masquer les .*soldées/i)).not.toBeInTheDocument()
-
-    // And what does exist announces a fold rather than a filter — its rows come
-    // back, and the total never moved in the first place.
-    await user.click(fold())
-    expect(await screen.findByRole('button', { name: 'Zeta Epsilon' })).toBeInTheDocument()
-  })
-
-  it('leaves the explaining to the columns it is the foot of', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // The column keeps it — a table is read scrolled, and the total is a row.
-    const footer = liveTable().querySelector('tfoot') as HTMLElement
-    expect(within(footer).queryByRole('button')).not.toBeInTheDocument()
-  })
-})
-
-describe('the total row (#1281)', () => {
-  it('sits under the columns it sums, and leaves the others empty', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    expect(head()).toHaveTextContent(/2\D?300,00/)
-    expect(figure('Latente')).toHaveTextContent(/300,00/)
-    expect(figure('Réalisée')).toHaveTextContent(/125,00/)
-    expect(figure('Dividendes')).toHaveTextContent(/35,00/)
-    for (const name of ['Cours', 'Détenu', 'PRU', 'Compte'])
-      expect(figure(name), name).toBeEmptyDOMElement()
-  })
-
-  it('says how many closed lines it includes, and nothing when none', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    const total = () => within(liveTable()).getByRole('rowheader', { name: /^Total/ })
-    expect(total()).toHaveTextContent('Total · dont 2 lignes soldées')
-    // Folded or opened, the closed lines are in it and it does not move.
-    await user.click(fold())
-    expect(total()).toHaveTextContent('Total · dont 2 lignes soldées')
-    expect(head()).toHaveTextContent(/2\D?300,00/)
-  })
-
-  it('is « Total » alone when nothing is closed', async () => {
-    renderShares(defaultPositions())
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    expect(within(liveTable()).getByRole('rowheader', { name: 'Total' })).toBeInTheDocument()
-  })
-
-  it('names the reason where a rate is missing, and still sums realised and dividends', async () => {
-    renderShares([
-      aPosition({
-        symbol: 'ZZA',
-        name: 'Zeta Alpha',
-        quantity: 10,
-        cost_basis: 1000,
-        price: 130,
-        realised: 20,
-      }),
-      aPosition({
-        symbol: 'ZZB',
-        name: 'Zeta Beta',
-        price: 125,
-        currency: 'USD',
-        rate: null,
-        dividends: 7,
-      }),
-    ])
-    await waitFor(() => expect(head()).toHaveTextContent(/en attente du taux/))
-
-    expect(figure('Latente')).toHaveTextContent(/en attente du taux/)
-    expect(figure('Réalisée')).toHaveTextContent(/20,00/)
-    expect(figure('Dividendes')).toHaveTextContent(/7,00/)
-  })
-
-  it('follows the anomaly lens and the account reduction, once, grouped or not', async () => {
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(
-          aRuntime({ symbols: [{ symbol: 'ZZC', next_run: null, failure_count: 3 }] }),
-        ),
-      ),
-    )
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    await user.click(screen.getByRole('button', { name: 'Grouper par compte' }))
-    expect(screen.getByRole('rowheader', { name: /alpha/ })).toHaveTextContent(/1\D?300,00/)
-    expect(head()).toHaveTextContent(/2\D?300,00/)
-
-    await user.click(screen.getByRole('button', { name: '1 titre en anomalie' }))
-    expect(head()).toHaveTextContent(/600,00/)
-    expect(screen.getByRole('rowheader', { name: /gamma/ })).toBeInTheDocument()
-  })
-
-  it('has no group of four figures over the table any more', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    for (const name of ['Valorisation', 'Latente', 'Réalisée', 'Dividendes'])
-      expect(screen.queryByRole('group', { name })).not.toBeInTheDocument()
-  })
-})
-
-describe('the table’s toolbar (#1281)', () => {
-  it('sits directly above the table, with the grouping and the anomaly chip', async () => {
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(
-          aRuntime({ symbols: [{ symbol: 'ZZC', next_run: null, failure_count: 3 }] }),
-        ),
-      ),
-    )
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    const block = document.querySelector('[data-slot="shares-table"]') as HTMLElement
-    expect(within(block).getByRole('button', { name: '1 titre en anomalie' })).toBeInTheDocument()
-    expect(within(block).getByRole('table', { name: 'Positions détenues' })).toBeInTheDocument()
-    const group = within(block).getByRole('button', { name: 'Grouper par compte' })
-    expect(group).toHaveAttribute('aria-pressed', 'false')
-    await user.click(group)
-    expect(group).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
-  })
-
-  it('is not drawn where neither control is offered', async () => {
-    server.use(
-      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(sharesPortfolio()))),
-    )
-    renderApp({ url: '/shares?account=alpha' })
-    await waitFor(() => expect(head()).toHaveTextContent(/1\D?300,00/))
-
-    const block = document.querySelector('[data-slot="shares-table"]') as HTMLElement
-    expect(block.children).toHaveLength(1)
-    // The table alone, on the page's background.
-    expect(within(block.firstElementChild as HTMLElement).getByRole('table')).toBeInTheDocument()
-    expectNoBox(block)
-  })
-})
-
-describe('one line per row (#1281)', () => {
-  it('keeps the ticker and the latent percentage on the line', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    expect(liveTable().querySelector('tbody td .block')).toBeNull()
-    const row = screen.getByRole('button', { name: 'Zeta Alpha' }).closest('tr') as HTMLElement
-    // The ticker is beside the name, outside its button.
-    expect(within(row).getByText('ZZA')).toBeInTheDocument()
-    expect(within(row).getByRole('button', { name: 'Zeta Alpha' })).not.toHaveTextContent('ZZA')
-  })
-})
-
-describe('a line nobody named (#1386)', () => {
-  it('reads its ticker once, not twice', async () => {
-    renderShares([aPosition({ symbol: 'SAPDE', name: null })])
-
-    const button = await screen.findByRole('button', { name: 'SAPDE' })
-    const row = button.closest('tr') as HTMLElement
-    expect(within(row).getAllByText('SAPDE')).toHaveLength(1)
-  })
-})
-
-describe('the table sits on the page’s background (#1273)', () => {
-  it('draws no box, with the closed shares folded under the total', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    expectNoBox()
-    // The disclosure row follows the table, ruled off above and not framed.
-    const section = fold().closest('section') as HTMLElement
-    expect(section.className).toMatch(/\bborder-t\b/)
-    expect(section.className).not.toMatch(/\b(rounded\S*|bg-card)\b/)
-    expect(liveTable().closest('[data-slot="shares-table"]')).toContainElement(section)
-  })
-
-  it('draws no box with no closed share', async () => {
-    renderShares(defaultPositions())
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    expectNoBox()
-  })
-})
-
-describe('the folded section', () => {
-  it('is closed on load and already carries realised and dividends', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // Opening it is an intention, not a discovery: the summary line says the
-    // two figures that matter before anyone clicks.
-    expect(fold()).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('button', { name: 'Zeta Delta' })).not.toBeInTheDocument()
-
-    const section = fold().closest('section') as HTMLElement
-    // +120,00 − 45,00 = 75,00 realised, and 10,00 of dividends.
-    expect(section).toHaveTextContent(/Réalisée\s*75,00/)
-    expect(section).toHaveTextContent(/Dividendes\s*10,00/)
-    expect(fold()).toHaveTextContent('2 positions soldées')
-  })
-
-  it('has its own five columns — no price, no held, no unit cost, no latent', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    await user.click(fold())
-
-    const table = screen.getByRole('table', { name: 'Positions soldées' })
-    expect(columnNames(table)).toEqual(['Titre', 'Soldée le', 'Réalisée', 'Dividendes', 'Compte'])
-    // Those four would be an em dash on every row of the section.
-    for (const absent of ['Cours', 'Détenu', 'PRU', 'Latente']) {
-      expect(within(table).queryByRole('columnheader', { name: absent })).not.toBeInTheDocument()
-    }
-  })
-
-  it('sorts on the closing date, descending', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    await user.click(fold())
-
-    const table = screen.getByRole('table', { name: 'Positions soldées' })
-    const names = within(table)
-      .getAllByRole('button')
-      .map((button) => button.textContent)
-    // Closed 2026-01-15 before closed 2025-11-04. Market value is zero on both,
-    // so no other column of this section orders anything.
-    expect(names).toEqual(['Zeta Epsilon', 'Zeta Delta'])
-  })
-
-  it('carries no explanation icon of its own', async () => {
-    // *One icon per figure and per surface*, and the folded section is not a
-    // surface but a part of the page — which is what takes eleven down to nine.
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    const before = screen.getAllByRole('button', { name: /^Ce que veut dire/ }).length
-    await user.click(fold())
-    expect(screen.getAllByRole('button', { name: /^Ce que veut dire/ })).toHaveLength(before)
-  })
-})
-
-describe('the nine columns of the live table', () => {
-  it('are exactly those nine, in that order', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // The maquette's own nine, rendered and counted (#831). `Poids` was the
-    // tenth for one ticket and is not one of them.
-    expect(columnNames(liveTable())).toEqual([
+    const live = await table()
+    expect(
+      within(live)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent?.trim()),
+    ).toEqual([
       'Titre',
-      'Cours',
-      'Détenu',
-      'PRU',
-      'Valorisation',
-      'Latente',
-      'Réalisée',
-      'Dividendes',
-      'Compte',
+      'Détenu · prix moyen',
+      'Cours · jour',
+      'Investi',
+      'Valorisation · poids',
+      'Gain',
     ])
-  })
-
-  it('has no `Écart unitaire`, no `Investi`, and no fourth `Gain total` column', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // `Écart unitaire` is `Cours − PRU`, two columns already on the same line,
-    // and nil by construction on a line carried at its cost. `Investi` is
-    // `Valorisation − latente` and stays on the sheet. And `Poids` is in the
-    // list since #831: the weight of a line is answered on this page by the
-    // `Répartition` above the table — a figure of the whole — and never by a
-    // tenth cell on every row (`features/shares/components/Allocation`).
-    for (const absent of ['Écart unitaire', 'Investi', 'Gain total', 'Variation', 'Poids']) {
-      expect(
-        within(liveTable()).queryByRole('columnheader', { name: absent }),
-      ).not.toBeInTheDocument()
-    }
-  })
-
-  it('keeps `PRU`, the word read at the broker, and gives the rule to the icon', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    expect(within(liveTable()).getByRole('columnheader', { name: /PRU/ })).toBeInTheDocument()
-    expect(screen.queryByText('PMP')).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Ce que veut dire PRU' }))
-    expect(await screen.findByRole('dialog')).toHaveTextContent(/prix moyen payé/)
-  })
-
-  it('puts the percentage on a second line under the latent gain', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // 1 300,00 − 1 000,00 = +300,00, which is +30,00 % of the basis — and it is
-    // not a tenth column.
-    const row = screen.getByRole('button', { name: 'Zeta Alpha' }).closest('tr') as HTMLElement
-    expect(row).toHaveTextContent(/300,00/)
-    expect(row).toHaveTextContent(/\+30,00\D?%/)
-    expect(columnNames(liveTable())).toHaveLength(9)
-  })
-
-  it('keeps the four renderings of absence apart, on one screen', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // Carried at its cost: an em dash in the price — which **is**
-    // the signal, so the row gets no marker of its own — a value, and a latent
-    // gain of exactly zero rather than a total loss.
-    const carried = screen.getByRole('button', { name: 'Zeta Gamma' }).closest('tr') as HTMLElement
-    expect(carried).toHaveTextContent(/—/)
-    expect(carried).toHaveTextContent(/600,00/)
-    expect(carried).toHaveTextContent(/0,00/)
-  })
-
-  it('names the missing rate instead of dashing it', async () => {
-    // Quoted, and the rate has not resolved: the native price is worth showing
-    // — it is what the reader's broker displays — and what is missing is
-    // **named**, because it is repairable. A dash here would say *there is
-    // nothing to compute* about a rate the app fetches by itself.
-    renderShares([
-      aPosition({ symbol: 'ZZB', name: 'Zeta Beta', price: 125, currency: 'USD', rate: null }),
-    ])
-
-    const row = (await screen.findByRole('button', { name: 'Zeta Beta' })).closest(
-      'tr',
-    ) as HTMLElement
-    expect(row).toHaveTextContent(/125,00/)
-    expect(row).toHaveTextContent(/en attente du taux/)
-    // And the header inherits the reason rather than the em dash.
-    expect(head()).toHaveTextContent(/en attente du taux/)
-  })
-
-  it('carries a line quoted in no nameable unit at its cost, like the curves do', async () => {
-    // The shape the payload serves for a symbol whose closes came back and whose
-    // `.info` named no currency (#774): `price` present, `price.currency`
-    // absent. The server has valued that line at its PMP since #773, so the page
-    // saying *en attente du taux* about it made one position two figures on one
-    // screen — and a rate that was never coming, there being no pair.
-    renderShares([
-      ...defaultPositions(),
-      aPosition({
-        symbol: 'ZZH',
-        name: 'Zeta Theta',
-        quantity: 6,
-        cost_basis: 600,
-        price: 130,
-        currency: null,
-      }),
-    ])
-
-    const row = (await screen.findByRole('button', { name: 'Zeta Theta' })).closest(
-      'tr',
-    ) as HTMLElement
-    // Its cost, and a latent gain of exactly zero — the first row of the absence
-    // table, not a fifth rendering of its own. Both are read **on their own
-    // cell**: `Cours` is the second and `Latente` the seventh of the ten, and a
-    // `0,00` sought anywhere in the row is already satisfied by the valuation
-    // `600,00` and the PRU `100,00` beside it, i.e. it could not fail alone.
-    const cells = within(row).getAllByRole('cell')
-    expect(row).toHaveTextContent(/600,00/)
-    expect(cells[6]).toHaveTextContent(/^0,00/)
-    expect(row).not.toHaveTextContent(/en attente du taux/)
-    // And no number under a unit nothing named: 130 is not 130 €.
-    expect(row).not.toHaveTextContent(/130,00/)
-    expect(cells[1]).toHaveTextContent(/^—$/)
-
-    // The strip stays a figure and takes the line in at its cost: 2 300,00
-    // over the three default lines, plus this one's 600,00.
-    expect(head()).toHaveTextContent(/2\D?900,00/)
-    expect(head()).not.toHaveTextContent(/en attente du taux/)
-  })
-
-  it('says nothing at all about a line whose history is still being rebuilt', async () => {
-    // The backward pass has not reached this symbol's first acquisition, so *no
-    // price* means *not yet*: the line has no valuation, and carrying it at its
-    // PMP is *not yet* rendered *never* — which is what the page did, while the
-    // dashboard's own curve left the same day hollow.
-    renderShares([
-      ...defaultPositions(),
-      aPosition({
-        symbol: 'ZZR',
-        name: 'Zeta Rho',
-        quantity: 6,
-        cost_basis: 600,
-        price: null,
-        terminal: false,
-      }),
-    ])
-
-    const row = (await screen.findByRole('button', { name: 'Zeta Rho' })).closest(
-      'tr',
-    ) as HTMLElement
-    expect(row).toHaveTextContent(/historique en cours de reconstitution/)
-    // Not its cost, and not a zero latent gain either: there is no figure.
-    expect(row).not.toHaveTextContent(/600,00/)
-    // And it is not offered as something to repair — nothing has failed.
-    expect(screen.queryByRole('button', { name: /titre(s)? en anomalie/ })).not.toBeInTheDocument()
-  })
-
-  it('refuses the header on a fresh install and names the rebuild, not the rate', async () => {
-    // The install where **every** line is still being rebuilt, which is every
-    // install for the length of its first reconstruction. The two totals that
-    // read a valuation had `awaitingRate` written in, so the strip announced
-    // *en attente du taux* over a portfolio whose currency was answered — and
-    // sent its owner to a dial that had nothing to do with it.
-    renderShares(
-      defaultPositions().map((position) => ({
-        ...position,
-        terminal: false,
-        price: null,
-        converted: null,
-      })),
+    // Sorted by valuation, descending, and the column says so.
+    const sorted = within(live).getByRole('columnheader', { name: 'Valorisation · poids' })
+    expect(sorted).toHaveAttribute('aria-sort', 'descending')
+    expect(within(live).getByRole('columnheader', { name: 'Investi' })).not.toHaveAttribute(
+      'aria-sort',
     )
-
-    await waitFor(() => expect(head()).toHaveTextContent(/historique en cours de reconstitution/))
-    expect(head()).not.toHaveTextContent(/en attente du taux/)
-    // Named, never dashed: an em dash says *there is nothing to compute*
-    // about a portfolio that is simply not finished being read.
-    expect(head()).not.toHaveTextContent(/—/)
-    expect(figure('Latente')).toHaveTextContent(/historique en cours de reconstitution/)
   })
 
-  it('gives the same verdict as the dashboard on the same line, during a rebuild', async () => {
-    // **The two screens, one line, one payload** — the disagreement the whole
-    // ticket is about. `carrying.py` makes the predicate its own acceptance
-    // criterion: no quote observed **and** the backfill is terminal, «sans quoi
-    // "pas encore" est rendu "jamais"». The server has held both terms since
-    // #706; this page held the first and put the failure counter of
-    // `/api/runtime` — another resource, and an optional read — in the place of
-    // the second, so during every reconstruction it valued at its PMP a line
-    // the dashboard was still refusing to value.
-    //
-    // The server's half of the crossing is asserted where both ends are one
-    // process: `tests/test_web_api.py`, on one store, the curve and the
-    // positions payload read together.
-    const rebuilding = defaultPositions().map((position) => ({
-      ...position,
-      terminal: false,
-      price: null,
-      converted: null,
-    }))
-    const { user } = renderShares(rebuilding)
-
-    const row = (await screen.findByRole('button', { name: 'Zeta Gamma' })).closest(
-      'tr',
-    ) as HTMLElement
-    expect(row).toHaveTextContent(/historique en cours de reconstitution/)
-    expect(row).not.toHaveTextContent(/600,00/)
-
-    await user.click(
-      within(screen.getByRole('navigation', { name: 'Sections' })).getByRole('link', {
-        name: 'Tableau de bord',
-      }),
-    )
-
-    // The same sentence, about the same portfolio, on the other screen — where
-    // it used to read a gain computed out of three lines valued at their cost.
-    const total = await screen.findByRole('group', { name: 'Gain total' })
-    expect(total).toHaveTextContent(/historique en cours de reconstitution/)
-    expect(total).not.toHaveTextContent(/2\D?000,00/)
-  })
-})
-
-describe('the exception marker and the date', () => {
-  it('is an icon on the share, never a column, plus a counter that is the filter', async () => {
-    // Eleven rows rendered ten identical *Marché ouvert* and one *Cours figé*: a
-    // per-row marker that does not discriminate is noise however correct it is.
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(
-          aRuntime({
-            symbols: [{ symbol: 'ZZC', next_run: null, failure_count: 3 }],
-          }),
-        ),
-      ),
-    )
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // No column for it, and the reader is told the count rather than *never*,
-    // which is not computable.
-    expect(columnNames(liveTable())).toHaveLength(9)
-    const row = screen.getByRole('button', { name: 'Zeta Gamma' }).closest('tr') as HTMLElement
-    expect(row).toHaveTextContent(/3 relevés consécutifs, aucun cours/)
-
-    // The counter is the filter at a click.
-    const counter = screen.getByRole('button', { name: '1 titre en anomalie' })
-    expect(counter).toHaveAttribute('aria-pressed', 'false')
-    await user.click(counter)
-    expect(screen.getByRole('button', { name: '1 titre en anomalie' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    expect(screen.getByRole('button', { name: 'Zeta Gamma' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Zeta Alpha' })).not.toBeInTheDocument()
-
-    // And the header keeps stating the sum of the rows it sits above rather
-    // than the portfolio's: a figure held over a table showing one line is read
-    // as that line's summary, which is exactly the reading the *hide the closed
-    // ones* switch was deleted for. Zeta Gamma is carried at its cost, so the
-    // valuation of what is on screen is that cost and nothing else.
-    expect(head()).toHaveTextContent(/600,00/)
-    await user.click(screen.getByRole('button', { name: '1 titre en anomalie' }))
-    expect(head()).toHaveTextContent(/2\D?300,00/)
-  })
-
-  it('draws no chip at all where there is nothing to repair', async () => {
-    // It fires zero times on the real portfolio. The lens was an underlined
-    // sentence — *Aucun titre en anomalie* — and the drawing has a chip that is
-    // simply not there when the count is nought (#838): *a block with nothing
-    // in it does not exist*, met at the level of a control, and the attention
-    // colour reserved for something that is actually to be repaired.
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    expect(screen.queryByText(/en anomalie/)).not.toBeInTheDocument()
-  })
-
-  it('says nothing about anomalies while either read is still in flight', async () => {
-    // Two reads compose the count and each of them breaks it on its own.
-    // Without the positions there are no rows, so nought is nought before
-    // anything is known. Without `/api/runtime` every counter reads zero, so a
-    // symbol that has failed three times is classified *carried at cost*
-    // instead of *no quote* and drops out of the count — the page then states
-    // that nothing is wrong precisely when it cannot know.
-    server.use(http.get(ROUTES.runtime, () => new Promise(() => {})))
-    renderShares()
-
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    // Nothing is claimed either way: no chip counting anomalies, and no chip
-    // saying there are none — the second one left the product at #838.
-    expect(screen.queryByText(/en anomalie/)).not.toBeInTheDocument()
-  })
-
-  it('says nothing about anomalies when the runtime read failed', async () => {
-    // The same claim by the other road, and the quieter one: a `shellError`
-    // used to short-circuit `readConditions` to nothing at all, on the argument
-    // that the shell's own band was saying it — so the page had nothing to show
-    // for the failure *and* went on saying nothing was wrong. The short-circuit
-    // left with the band (#829); the counter waits either way.
-    server.use(http.get(ROUTES.runtime, () => HttpResponse.error()))
-    renderShares()
-
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    // Nothing is claimed either way: no chip counting anomalies, and no chip
-    // saying there are none — the second one left the product at #838.
-    expect(screen.queryByText(/en anomalie/)).not.toBeInTheDocument()
-  })
-
-  it('dates the prices once, at the level of the page', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // A table of money with no date reads as *now*, which is false of two
-    // families of line — and a *last reading* column would be the fourth
-    // near-constant column of a page that has just deleted one.
-    expect(screen.getAllByText(/^Cours au /)).toHaveLength(1)
-    expect(
-      within(liveTable()).queryByRole('columnheader', { name: /Cours au|Dernier relevé/ }),
-    ).not.toBeInTheDocument()
-  })
-})
-
-describe('the account column at N ≥ 2', () => {
-  it('renders one account as plain text and never as a list of one', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    const row = screen.getByRole('button', { name: 'Zeta Alpha' }).closest('tr') as HTMLElement
-    expect(row).toHaveTextContent('alpha')
-    expect(within(row).queryByRole('list')).not.toBeInTheDocument()
-  })
-
-  it('keeps the model multi-account: two accounts on one share are two entries', async () => {
-    // Contingent, not structural — the same ETF on a PEA and on a CTO is the
-    // most ordinary case of the domain — so it is the rendering that bends.
-    renderShares([
-      ...sharesPortfolio(),
-      aPosition({
-        account: 'alpha',
-        symbol: 'ZZF',
-        name: 'Zeta Phi',
-        quantity: 2,
-        cost_basis: 200,
-        price: 110,
-      }),
-      aPosition({
-        account: 'beta',
-        symbol: 'ZZF',
-        name: 'Zeta Phi',
-        quantity: 3,
-        cost_basis: 300,
-        price: 110,
-      }),
-    ])
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?850,00/))
-
-    const row = screen.getByRole('button', { name: 'Zeta Phi' }).closest('tr') as HTMLElement
-    expect(
-      within(row)
-        .getAllByRole('listitem')
-        .map((item) => item.textContent),
-    ).toEqual(['alpha', 'beta'])
-    // One line, not two: 2 + 3 held, 500,00 of basis, 550,00 of value.
-    expect(row).toHaveTextContent(/550,00/)
-    expect(screen.getAllByRole('button', { name: 'Zeta Phi' })).toHaveLength(1)
-  })
-})
-
-describe('four icons on the page', () => {
-  it('places every one of them on a column header, and none on the strip', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // *One per figure and **per surface***, and since #838 the strip and the
-    // columns are **one** surface: the strip is the table's own header, and it
-    // names its four figures with the four words four rows below it. Two
-    // bubbles wearing one name on one screen is precisely what *per surface*
-    // exists to prevent — so the columns keep theirs and the strip carries
-    // none.
-    const bubbles = screen.getAllByRole('button', { name: /^Ce que veut dire/ })
-    expect(bubbles.map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Ce que veut dire PRU',
-      'Ce que veut dire Latente',
-      'Ce que veut dire Réalisée',
-      'Ce que veut dire Dividendes',
-    ])
-  })
-
-  it('keeps every one of them on a column header and none on a cell', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    for (const bubble of within(liveTable()).getAllByRole('button', {
-      name: /^Ce que veut dire/,
-    })) {
-      expect(bubble.closest('th')).not.toBeNull()
-      expect(bubble.closest('td')).toBeNull()
-    }
-  })
-
-  it('opens on click, never on hover, and closes on scroll', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    const trigger = screen.getByRole('button', { name: 'Ce que veut dire Latente' })
-    await user.hover(trigger)
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-
-    await user.click(trigger)
-    expect(await screen.findByRole('dialog')).toHaveTextContent(/comptée à son coût/)
-  })
-})
-
-describe('the chart', () => {
-  it('offers the four rungs of the ladder, and changing the range changes the resolution', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    await user.click(screen.getByRole('button', { name: 'Zeta Alpha' }))
-    const range = await screen.findByRole('radiogroup', { name: 'Plage' })
-    expect(
-      within(range)
-        .getAllByRole('radio')
-        .map((radio) => radio.textContent),
-    ).toEqual(['1M', '1A', '2A', 'MAX'])
-    // `3M` is gone: from February to December, the year-to-date covers it.
-    expect(within(range).queryByRole('radio', { name: '3M' })).not.toBeInTheDocument()
-
-    // As written under a year, hourly from one to two, daily beyond — so the
-    // presets make the archive's shape legible instead of being four spellings
-    // of one range.
-    expect(await screen.findByText('Au relevé')).toBeInTheDocument()
-    await user.click(within(range).getByRole('radio', { name: '2A' }))
-    expect(await screen.findByText('Agrégé par heure')).toBeInTheDocument()
-    await user.click(within(range).getByRole('radio', { name: 'MAX' }))
-    expect(await screen.findByText('Agrégé par jour')).toBeInTheDocument()
-  })
-
-  it('says the price’s shape, and repeats neither the resolution nor the events', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    await user.click(screen.getByRole('button', { name: 'Zeta Alpha' }))
-    await screen.findByText('Au relevé')
-
-    // **Reachable, not hidden** (#1003): the `<svg>` is focusable under
-    // Recharts' accessibility layer and its arrows walk the series, so the
-    // drawing keeps its place and the sentence beside it carries the shape.
-    const figure = await waitFor(() => {
-      const found = document.querySelector('figure')
-      if (found === null) throw new Error('the price chart has not landed')
-      return found
-    })
-    expect(figure.closest('[aria-hidden]')).toBeNull()
-
-    const said = (figure.querySelector('figcaption')?.textContent ?? '').replace(/[  ]/g, ' ')
-    expect(said).toMatch(/^Cours, du .+ au .+\./)
-    expect(said).toMatch(/Cours : plus haut .+ le .+, plus bas .+ le .+\./)
-    // One curve and no reference line: nothing to say about a gap.
-    expect(said).not.toMatch(/reste (au-dessus|en dessous)|croise/)
-    // The *aggregated by X* caption and the marker labels are already readable
-    // text: repeating either here would put two announcers on one fact.
-    expect(said).not.toMatch(/Au relevé|Agrégé par/)
-
-    // **And no live region on this surface**: the window is in the cache key, so
-    // pressing a range refetches and unmounts the node a region would live on.
-    // The range control announces the window it selected, which is the answer
-    // the gesture gets.
-    expect(figure.closest('[aria-live]')).toBeNull()
-  })
-
-  it('announces the resolution once, and reads it off the API', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    await user.click(screen.getByRole('button', { name: 'Zeta Alpha' }))
-
-    // The server's bucket and the storage ladder are two facts about one graph;
-    // two announcers on one graph is the defect refused everywhere else.
-    expect(await screen.findByText('Au relevé')).toBeInTheDocument()
-    expect(screen.getAllByText(/Au relevé|Agrégé par/)).toHaveLength(1)
-  })
-})
-
-describe('the page’s own reads', () => {
-  it('names an unreadable store instead of showing an empty table', async () => {
-    // The bell reads `/health` and says the installation is unreachable, but a
-    // page that rendered nothing would still make *the store is unreadable* and
-    // *you own nothing yet* one screen, in its worst form: a blank one. Since
-    // #829 the sentence is the page's **empty state** — where the table would
-    // have been — and never a band at the top of the column.
-    server.use(
-      problemHandler(ROUTES.positions, {
-        status: 503,
-        type: PROBLEM_TYPES.storageUnavailable,
-        title: 'storage unavailable',
-      }),
-    )
-    renderApp({ url: '/shares' })
-
-    expect(await screen.findByText('Lecture impossible')).toBeInTheDocument()
-    expect(screen.getByText(/son magasin ne répond pas/)).toBeInTheDocument()
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(screen.queryByRole('table')).not.toBeInTheDocument()
-  })
-
-  it('says the portfolio is empty, and where to go, when it really is', async () => {
-    renderShares([])
-    expect(await screen.findByText('Aucune position')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toHaveAttribute(
+  it('lists the held lines, closed ones left out, each leading to its page', async () => {
+    renderShares('/shares', aPositionsPayload(sharesPortfolio()))
+    const live = await table()
+    const names = within(live)
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+    expect(names).toEqual(['Zeta Alpha', 'Zeta Gamma', 'Zeta Beta'])
+    expect(within(live).getByRole('link', { name: 'Zeta Alpha' })).toHaveAttribute(
       'href',
-      '/ledger',
+      '/shares/ZZA',
     )
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-  })
-})
-
-describe('the page in English', () => {
-  it('renders whole, with the numbers following the language', async () => {
-    server.use(
-      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(sharesPortfolio()))),
-    )
-    renderApp({ url: '/shares', browserLanguages: ['en-GB'] })
-
-    const table = await screen.findByRole('table', { name: 'Held positions' })
-    expect(within(table).getByRole('row', { name: /^Total/ })).toHaveTextContent(/2,300\.00/)
-    expect(columnNames(screen.getByRole('table', { name: 'Held positions' }))).toEqual([
-      'Share',
-      'Price',
-      'Held',
-      'Avg. cost',
-      'Value',
-      'Unrealised',
-      'Realised',
-      'Dividends',
-      'Account',
-    ])
-    // Nothing needs repairing in this portfolio, so the lens is not drawn at
-    // all — the chip exists only where there is something to press it for.
-    expect(screen.queryByText(/attention/i)).not.toBeInTheDocument()
-  })
-})
-
-describe('a portfolio with nothing closed', () => {
-  it('renders no folded section at all rather than an empty one', async () => {
-    renderShares(defaultPositions())
-    // 1 300,00 + 400,00 + 600,00 carried at its cost = 2 300,00.
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    expect(
-      screen.queryByRole('button', { name: /position(s)? soldée(s)?/ }),
-    ).not.toBeInTheDocument()
-  })
-})
-
-// ------------------------------------------------------------------------- //
-// The reduction an account's panel leads to (#722)
-//
-// It is **not** the *hide the closed ones* switch this page refuses: that one
-// hid part of the table its header summed, silently, leaving two correct
-// figures with nothing on screen to tell them apart. This one names the account
-// it reduces to, offers the way out, and the header goes on summing the lines
-// it sits above — which reduced are that account's lines, and that account's
-// gain.
-// ------------------------------------------------------------------------- //
-
-describe('the reduction to one account', () => {
-  function renderReduced(account: string, positions = sharesPortfolio()) {
-    server.use(http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(positions))))
-    return renderApp({ url: `/shares?account=${account}` })
-  }
-
-  it('keeps that account’s lines, closed ones included, and no other', async () => {
-    renderReduced('alpha')
-
-    // `alpha` holds ZZA and has closed ZZD. The fold is not a filter here
-    // either: the closed line stays and the header counts it.
-    await waitFor(() => expect(liveTable()).toBeInTheDocument())
-    expect(within(liveTable()).getByText('Zeta Alpha')).toBeInTheDocument()
-    expect(within(liveTable()).queryByText('Zeta Beta')).not.toBeInTheDocument()
-    expect(within(liveTable()).queryByText('Zeta Gamma')).not.toBeInTheDocument()
-    expect(fold()).toBeInTheDocument()
+    expect(screen.queryByText('Zeta Delta')).not.toBeInTheDocument()
   })
 
-  it('sums the lines it sits above, which are that account’s', async () => {
-    renderReduced('alpha')
-
-    // `alpha` holds `ZZA` alone, worth 1 300,00 — never the portfolio's
-    // 2 300,00, which counts two accounts that are not on screen. That is the
-    // *other correct figure* one axis over.
-    await waitFor(() => expect(head()).toHaveTextContent(/1\D?300,00/))
-    expect(screen.queryByText(/2\s?300,00/)).not.toBeInTheDocument()
-  })
-
-  it('states itself with the account it names, and offers the way out', async () => {
-    renderReduced('alpha')
-
-    // A table silently shorter than expected is the defect the ledger met one
-    // page over — and worse here, the header over it being a **sum**. The
-    // account is named by its id, which is what the `Compte` column renders.
-    expect(await screen.findByText(/Réduit au compte alpha/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Afficher tous les comptes' })).toHaveAttribute(
-      'href',
-      '/shares',
-    )
-  })
-
-  it('lifts it, and the header comes back to the portfolio’s own figure', async () => {
-    const { user } = renderReduced('alpha')
-    await waitFor(() => expect(head()).toHaveTextContent(/1\D?300,00/))
-
-    await user.click(screen.getByRole('link', { name: 'Afficher tous les comptes' }))
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    expect(screen.queryByText(/Réduit au compte/)).not.toBeInTheDocument()
-  })
-
-  it('does not tell an owner with a full ledger that they own nothing', async () => {
-    renderReduced('delta')
-
-    // *No positions* is a claim about the reader's data; here the cause is a
-    // filter they can lift in one click, and the sentence says so.
-    expect(await screen.findByText('Aucune position sur ce compte')).toBeInTheDocument()
-    expect(screen.queryByText('Aucune position')).not.toBeInTheDocument()
-    // The bar's, and the empty state's own — a reader who has scrolled past the
-    // first must not have to scroll back up to undo what emptied the page.
-    expect(screen.getAllByRole('link', { name: 'Afficher tous les comptes' })).toHaveLength(2)
-  })
-
-  it('says nothing at all when nothing is reduced', async () => {
+  it('says the holding, the day and the weight under their figures', async () => {
     renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    expect(screen.queryByText(/Réduit au compte/)).not.toBeInTheDocument()
+    const live = await table()
+    const alpha = within(live)
+      .getByRole('link', { name: 'Zeta Alpha' })
+      .closest('tr') as HTMLElement
+    // 10 held at an average 100,00; 130,00 today, +2,00 % on the day; 56,5 % of 2 300,00.
+    expect(alpha).toHaveTextContent(/10\s*100,00/)
+    expect(alpha).toHaveTextContent(/130,00.*\+2,00\s?%/)
+    expect(alpha).toHaveTextContent(/1\D?300,00.*56,5\s?%/)
+    expect(alpha).toHaveTextContent(/\+300,00.*\+30,00\s?%/)
   })
-})
 
-// ------------------------------------------------------------------------- //
-// The two gestures the table kept from #791 — the order and the grouping —
-// plus the row that opens the sheet. The weight column left again (its figure
-// lives on in `features/shares/lib/shares.ts`, read by nothing here).
-//
-// None of them removes a line, and that is the property the page is built on:
-// a permutation and a partition both leave the set alone, so the header goes
-// on stating the sum of what is under it without a word of explanation.
-// ------------------------------------------------------------------------- //
+  it('sums the rows above it in its last row', async () => {
+    renderShares()
+    const total = footer(await table())
+    expect(total).toHaveTextContent(/Total.*3 lignes/)
+    expect(total).toHaveTextContent(/2\D?000,00/)
+    expect(total).toHaveTextContent(/2\D?300,00.*100\s?%/)
+    expect(total).toHaveTextContent(/\+300,00/)
+  })
 
-describe('every column sorts', () => {
-  /** The names in the live table, in the order the table is showing them. */
-  function liveNames() {
-    return (
-      within(liveTable())
-        .getAllByRole('row')
-        // Neither the header row nor the total row.
-        .slice(1, -1)
-        .map((row) =>
-          within(row)
-            .getAllByRole('cell')[0]
-            .textContent?.replace(/Z[A-Z]+$/, ''),
-        )
+  it('states the securities gain with its base beside it', async () => {
+    renderShares()
+    await table()
+    expect(screen.getByText(/Plus-value des titres/)).toHaveTextContent(
+      /\+300,00.*hors dividendes et liquidités/,
     )
-  }
-
-  it('gives all nine a control of their own, and its name is the column’s', async () => {
-    // *Every* column, which is the criterion — and the control is the label
-    // itself rather than a ninth *Trier par …* saying what the cell it sits in
-    // already says. The list of orders and the header row are read together:
-    // a sort key for a column nobody renders is a control nobody can reach,
-    // which is what took `weight` back out with the column (#831).
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    const headers = within(liveTable()).getAllByRole('columnheader')
-    expect(headers).toHaveLength(9)
-    for (const header of headers) {
-      const label = header.textContent?.trim() as string
-      expect(within(header).getByRole('button', { name: label })).toBeInTheDocument()
-    }
+    expect(screen.getByText(/lignes, pour/)).toHaveTextContent(
+      /sur\s*3\s*lignes, pour\s*2\D?000,00/,
+    )
   })
 
-  it('opens heaviest first, and says so on the column in force', async () => {
+  it('computes the ratio of the gain over the cost of its lines', async () => {
     renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
+    await table()
+    const gain = screen.getByText(/Plus-value des titres/)
+    expect(gain).toHaveTextContent(/\(\+15,00\s?%\)/)
+    expect(footer(await table())).toHaveTextContent(/\+15,00\s?%/)
+  })
 
-    // Value is the only ordering a portfolio reads naturally, so it is what
-    // the reader is handed before making a gesture.
-    expect(liveNames()).toEqual(['Zeta Alpha', 'Zeta Gamma', 'Zeta Beta'])
-    expect(within(liveTable()).getByRole('columnheader', { name: /Valorisation/ })).toHaveAttribute(
+  it('re-sorts on a header, naming the column in force', async () => {
+    const { user } = renderShares()
+    const live = await table()
+    await user.click(within(live).getByRole('button', { name: 'Investi' }))
+    expect(within(live).getByRole('columnheader', { name: 'Investi' })).toHaveAttribute(
       'aria-sort',
       'descending',
     )
-  })
-
-  it('orders by any of them, and pressing the same one turns it round', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // Held: 10, 4, 6. Money descends first, because *which line is the
-    // biggest* is what a figure is pressed for.
-    await user.click(within(liveTable()).getByRole('button', { name: 'Détenu' }))
-    expect(liveNames()).toEqual(['Zeta Alpha', 'Zeta Gamma', 'Zeta Beta'])
-    await user.click(within(liveTable()).getByRole('button', { name: 'Détenu' }))
-    expect(liveNames()).toEqual(['Zeta Beta', 'Zeta Gamma', 'Zeta Alpha'])
-    expect(within(liveTable()).getByRole('columnheader', { name: /Détenu/ })).toHaveAttribute(
+    expect(
+      within(live)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['Zeta Alpha', 'Zeta Gamma', 'Zeta Beta'])
+    await user.click(within(live).getByRole('button', { name: 'Investi' }))
+    expect(within(live).getByRole('columnheader', { name: 'Investi' })).toHaveAttribute(
       'aria-sort',
       'ascending',
     )
-
-    // A name ascends first: *where is the line called Z* is the other reading,
-    // and a single rule would cost one of the two gestures a second click.
-    await user.click(within(liveTable()).getByRole('button', { name: 'Titre' }))
-    expect(liveNames()).toEqual(['Zeta Alpha', 'Zeta Beta', 'Zeta Gamma'])
   })
 
-  it('never floats an absence to the top, whichever way it is pointed', async () => {
-    const { user } = renderShares([
-      ...defaultPositions(),
-      aPosition({
-        account: 'delta',
-        symbol: 'ZZI',
-        name: 'Zeta Iota',
-        quantity: 3,
-        cost_basis: 300,
-        price: 125,
-        currency: 'USD',
-        rate: null,
-      }),
-    ])
-    await waitFor(() => expect(liveTable()).toBeInTheDocument())
-
-    // A line with no value has no rank; letting the direction lift it would
-    // put the line the reader knows least about above the ones they came for.
-    expect(liveNames().at(-1)).toBe('Zeta Iota')
-    await user.click(within(liveTable()).getByRole('button', { name: 'Valorisation' }))
-    expect(liveNames().at(-1)).toBe('Zeta Iota')
-  })
-
-  it('moves the rows and never the header, which sums the same lines', async () => {
+  it('opens a title on its row', async () => {
     const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    await user.click(within(liveTable()).getByRole('button', { name: 'Réalisée' }))
-    expect(liveNames()).toEqual(['Zeta Beta', 'Zeta Alpha', 'Zeta Gamma'])
-    // A permutation leaves the set alone — which is the whole reason ordering
-    // is safe on a page whose header is a sum of what is under it.
-    expect(head()).toHaveTextContent(/2\D?300,00/)
-    expect(liveNames()).toHaveLength(3)
-  })
-})
-
-describe('the grouping by account', () => {
-  function groupToggle() {
-    return screen.getByRole('button', { name: 'Grouper par compte' })
-  }
-
-  it('puts each subtotal in the header of its group, never in a footer row', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    await user.click(groupToggle())
-
-    // A total and its terms are not read at equal weight — here one
-    // level down: the account's figures sit **above** the lines they sum,
-    // exactly as the page's own header does.
-    // One figure per group header since #838, and it is the **valuation** of
-    // the lines under it: the drawing puts `pea · 15 720,10 €` there, and the
-    // four totals of the whole are read in the strip above the table.
-    const alpha = screen.getByRole('rowheader', { name: /alpha/ })
-    expect(alpha).toHaveTextContent(/alpha\s*·\s*1\s*300,00/)
-    expect(alpha).not.toHaveTextContent(/Gain total/)
-
-    expect(screen.getByRole('rowheader', { name: /beta/ })).toHaveTextContent(/400,00/)
-    // `gamma` holds a line that was never quoted, carried at its cost.
-    expect(screen.getByRole('rowheader', { name: /gamma/ })).toHaveTextContent(/600,00/)
+    const live = await table()
+    await user.click(within(live).getByRole('link', { name: 'Zeta Gamma' }))
+    expect(await screen.findByText('Valorisation de la ligne')).toBeInTheDocument()
   })
 
-  it('is a partition: an account that sold out keeps its realised gain on screen', async () => {
-    // The trap the grouping had to answer. A symbol still held on one account
-    // and sold out on another carries that second account's realised gain, and
-    // a grouping built out of *the accounts that still hold something* would
-    // drop it — leaving the page header summing a figure no row accounts for.
-    const { user } = renderShares([
-      ...defaultPositions(),
-      aPosition({
-        account: 'alpha',
-        symbol: 'ZZF',
-        name: 'Zeta Phi',
-        quantity: 2,
-        cost_basis: 200,
-        price: 110,
-      }),
-      aClosedPosition({
-        account: 'beta',
-        symbol: 'ZZF',
-        name: 'Zeta Phi',
-        realised: 70,
-        dividends: 5,
-        closed_at: '2025-06-01',
-      }),
-    ])
-    // 1 300,00 + 400,00 + 600,00 + 220,00 on the line held twice.
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?520,00/))
-
-    await user.click(groupToggle())
-    const lines = screen.getAllByRole('button', { name: 'Zeta Phi' })
-    expect(lines).toHaveLength(2)
-    // Summed over the two, the figures are the ungrouped line's, exactly.
-    const realised = lines.map(
-      (line) => within(line.closest('tr') as HTMLElement).getAllByRole('cell')[6].textContent,
-    )
-    expect(realised.join(' ')).toMatch(/70,00/)
-    expect(head()).toHaveTextContent(/2\D?520,00/)
+  it('hands the old ?symbol= address over to the title page', async () => {
+    renderShares('/shares?symbol=ZZA')
+    expect(await screen.findByText('Valorisation de la ligne')).toBeInTheDocument()
   })
 
-  it('does not move the page header, and gives it back when it is lifted', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    await user.click(groupToggle())
-    expect(groupToggle()).toHaveAttribute('aria-pressed', 'true')
-    expect(head()).toHaveTextContent(/2\D?300,00/)
-
-    await user.click(groupToggle())
-    expect(screen.queryByRole('rowheader', { name: /alpha/ })).not.toBeInTheDocument()
-    expect(head()).toHaveTextContent(/2\D?300,00/)
-  })
-
-  it('is not offered where there is one account to group', async () => {
-    // One group would repeat the page header line for line — which is the
-    // argument `accountBreakdown` already makes for the sheet — so the control
-    // is not offered rather than offered and inert.
-    server.use(
-      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(sharesPortfolio()))),
-    )
-    renderApp({ url: '/shares?account=alpha' })
-    await waitFor(() => expect(head()).toHaveTextContent(/1\D?300,00/))
-    expect(screen.queryByRole('button', { name: 'Grouper par compte' })).not.toBeInTheDocument()
-  })
-})
-
-describe('a click on the line opens its sheet', () => {
-  it('opens on the row itself, not only on the name', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // The `Détenu` cell carries no control of its own, so this is the row's
-    // own gesture and nothing else's.
-    const row = screen.getByRole('button', { name: 'Zeta Alpha' }).closest('tr') as HTMLElement
-    await user.click(within(row).getAllByRole('cell')[2])
-
-    expect(await screen.findByRole('dialog', { name: 'Zeta Alpha' })).toBeInTheDocument()
-  })
-
-  it('leaves the name a button, which is the keyboard’s way in', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    await user.click(screen.getByRole('button', { name: 'Zeta Gamma' }))
-    expect(await screen.findByRole('dialog', { name: 'Zeta Gamma' })).toBeInTheDocument()
-  })
-})
-
-// ------------------------------------------------------------------------- //
-// The allocation, above the table it divides (#831)
-// ------------------------------------------------------------------------- //
-
-describe('the allocation', () => {
-  it('draws the allocation once, as bars in a section and not a card (#1281)', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // The ring is gone: the figure was drawn twice, a ring and a legend that
-    // drew each share again as a bar.
-    expect(document.querySelector('.recharts-responsive-container')).toBeNull()
-
-    // « Répartition » is a tinted section — a region — and not a card.
-    const section = screen.getByRole('region', { name: 'Répartition' })
-    expect(section.closest('[data-slot="card"]')).toBeNull()
-    expect(section.querySelector('[data-slot="card"]')).toBeNull()
-    expect(within(section).getAllByRole('listitem').length).toBeLessThanOrEqual(5)
-    // No total on the title row, and no count of a list that counts itself (#1412).
-    expect(section.firstElementChild).toHaveTextContent(/^Répartition$/)
-  })
-
-  it('names every line in the slices’ own order, with its share', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    const list = await screen.findByRole('list', { name: 'Répartition' })
-    const rows = within(list)
-      .getAllByRole('listitem')
-      .map((row) => (row.textContent ?? '').replace(/\s/g, ''))
-    expect(rows).toEqual(['ZetaAlpha56,5%', 'ZetaGamma26,1%', 'ZetaBeta17,4%'])
-  })
-
-  it('names what it could not place instead of dropping it in silence', async () => {
-    // Summing a position whose rate has not resolved makes every *other*
-    // percentage silently wrong — the exclusion was already right, and its own
-    // comment said why without ever saying it on screen.
-    renderShares([
-      aPosition({ symbol: 'ZZA', name: 'Zeta Alpha', quantity: 10, cost_basis: 1000, price: 130 }),
-      aPosition({
-        symbol: 'ZZB',
-        name: 'Zeta Beta',
-        quantity: 4,
-        cost_basis: 400,
-        price: 125,
-        currency: 'USD',
-        rate: null,
-      }),
-    ])
-    await waitFor(() => expect(liveTable()).toBeInTheDocument())
-
-    expect(screen.getByText(/n’est pas dans cette répartition/)).toBeInTheDocument()
-    // And the line it kept is the whole of what it counted.
-    const legend = within(screen.getByRole('list', { name: 'Répartition' }))
-    expect(legend.getAllByRole('listitem')).toHaveLength(1)
-    expect(legend.getByRole('listitem')).toHaveTextContent(/100,0\D?%/)
-  })
-
-  it('adds no selector of its own beside the gestures the page already has', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // No breakdown by account and none by type: the question *which account is
-    // working* has a page of its own, and this page already answers *by
-    // account* with the grouping under the table — a partition of the very same
-    // lines rather than a second, disagreeing control.
-    const section = screen.getByRole('region', { name: 'Répartition' })
-    expect(within(section).queryByRole('radiogroup')).not.toBeInTheDocument()
-    expect(within(section).queryByRole('combobox')).not.toBeInTheDocument()
-  })
-
-  it('divides the reduction, which is exactly what the total row sums', async () => {
-    // `?account=` reduces the positions before the folding, so the total row
-    // sums that account's lines — and the bars divide exactly them, no rule of
-    // their own required. `alpha` holds `ZZA` alone, worth 1 300,00, and has
-    // closed `ZZD`, which is worth zero and is not a slice.
-    server.use(
-      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(sharesPortfolio()))),
-    )
-    renderApp({ url: '/shares?account=alpha' })
-    await waitFor(() => expect(head()).toHaveTextContent(/1\D?300,00/))
-
-    const legend = within(await screen.findByRole('list', { name: 'Répartition' }))
+  it('reduces to one account and says so', async () => {
+    renderShares('/shares?account=beta')
+    const live = await table()
     expect(
-      legend.getAllByRole('listitem').map((row) => (row.textContent ?? '').replace(/\s/g, '')),
-    ).toEqual(['ZetaAlpha100,0%'])
-  })
-})
-
-describe('the absences of this page, one screen apart', () => {
-  it('gives a share carried at its cost an em dash and no triangle', async () => {
-    // Nothing is broken: no price was ever observed, the line is carried at
-    // what it cost, and the em dash in `Cours` **is** the signal.
-    // The attention mark is reserved for what is genuinely repairable.
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    const row = screen.getByRole('button', { name: 'Zeta Gamma' }).closest('tr') as HTMLElement
-    expect(within(row).getAllByRole('cell')[1]).toHaveTextContent(/^—$/)
-    expect(within(row).queryByText(/faute de frappe/)).not.toBeInTheDocument()
-    // And no lens on the page: there is nothing to repair, so the chip that
-    // would name a count is not drawn (#838).
-    expect(screen.queryByText(/en anomalie/)).not.toBeInTheDocument()
+      within(live)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(['Zeta Beta'])
+    expect(screen.getByText(/Réduit au compte beta/)).toBeInTheDocument()
   })
 
-  it('names a share it never managed to quote, and says it can be repaired', async () => {
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(
-          aRuntime({ symbols: [{ symbol: 'ZZC', next_run: null, failure_count: 3 }] }),
-        ),
-      ),
-    )
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    const row = screen.getByRole('button', { name: 'Zeta Gamma' }).closest('tr') as HTMLElement
-    expect(row).toHaveTextContent(/3 relevés consécutifs, aucun cours/)
-    expect(within(row).getByText(/Vérifiez le symbole/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '1 titre en anomalie' })).toBeInTheDocument()
+  it('says why it is empty, over an answered read only', async () => {
+    renderShares('/shares', aPositionsPayload([]))
+    expect(await screen.findByText('Aucune ligne')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Aller au grand livre' })).toBeInTheDocument()
   })
 
-  it('keeps a zero a figure, in the cells where it is one', async () => {
-    renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    // `Réalisée` and `Dividendes` are figures on every row: a zero wears the
-    // colour of text and never the grey of absence (`lib/sign.ts`).
-    const row = screen.getByRole('button', { name: 'Zeta Alpha' }).closest('tr') as HTMLElement
-    const cells = within(row).getAllByRole('cell')
-    expect(cells[6]).toHaveTextContent(/^0,00/)
-    expect(cells[6]).not.toHaveTextContent('—')
-  })
-})
-
-// ------------------------------------------------------------------------- //
-// Colour is rationed (#907, ADR-0018): only the terms that can change sign
-// take it. `Valorisation` is a market value — positive on every line that
-// holds anything — so `signClass` on it resolved to the gain colour on every
-// held row, permanently. A green that is always on is not a signal, and it sat
-// one cell away from `Latente`, which is the column that does carry one.
-// ------------------------------------------------------------------------- //
-
-describe('the valuation column takes no sign colour', () => {
-  /** The nine cells of a row, found by the name the reader recognises it by. */
-  function cellsOf(name: string) {
-    const row = screen.getByRole('button', { name }).closest('tr') as HTMLElement
-    return within(row).getAllByRole('cell')
-  }
-
-  const VALUATION = 4
-  const UNREALISED = 5
-
-  /** Gain, loss, zero, and a valuation that is not a figure at all. */
-  function colouredPortfolio() {
-    return [
-      // +300,00 latent.
-      ...defaultPositions(),
-      // −200,00 latent: 10 × 80,00 against a basis of 1 000,00.
-      aPosition({
-        account: 'delta',
-        symbol: 'ZZH',
-        name: 'Zeta Eta',
-        price: 80,
-      }),
-      // Quoted, and waiting for the rate: the valuation renders as a named
-      // cause rather than a figure.
-      aPosition({
-        account: 'delta',
-        symbol: 'ZZI',
-        name: 'Zeta Iota',
-        quantity: 3,
-        cost_basis: 300,
-        price: 125,
-        currency: 'USD',
-        rate: null,
-      }),
-    ]
-  }
-
-  it('never paints a held row’s valuation, whatever the line has done', async () => {
-    renderShares(colouredPortfolio())
-    await waitFor(() => expect(liveTable()).toBeInTheDocument())
-
-    for (const name of ['Zeta Alpha', 'Zeta Beta', 'Zeta Gamma', 'Zeta Eta']) {
-      const cell = cellsOf(name)[VALUATION]
-      expect(cell).not.toHaveClass('text-gain')
-      expect(cell).not.toHaveClass('text-loss')
-      // The colour of text, and **not** the grey of absence: a valuation that
-      // renders as a figure is one, zero included (ADR-0016).
-      expect(cell).toHaveClass('text-foreground')
-    }
-  })
-
-  it('keeps the grey of absence where the cell is not a figure', async () => {
-    renderShares(colouredPortfolio())
-    await waitFor(() => expect(liveTable()).toBeInTheDocument())
-
-    expect(cellsOf('Zeta Iota')[VALUATION]).toHaveClass('text-muted-foreground')
-  })
-
-  it('leaves the latent column’s tone alone, gain, loss and zero alike', async () => {
-    // The other caller of the same helper, asserted here so a regression on it
-    // is caught by the ticket that moved the helper's other caller.
-    renderShares(colouredPortfolio())
-    await waitFor(() => expect(liveTable()).toBeInTheDocument())
-
-    expect(cellsOf('Zeta Alpha')[UNREALISED]).toHaveClass('text-gain')
-    expect(cellsOf('Zeta Eta')[UNREALISED]).toHaveClass('text-loss')
-    expect(cellsOf('Zeta Beta')[UNREALISED]).toHaveClass('text-foreground')
-    expect(cellsOf('Zeta Gamma')[UNREALISED]).toHaveClass('text-foreground')
-    expect(cellsOf('Zeta Iota')[UNREALISED]).toHaveClass('text-muted-foreground')
-  })
-})
-
-describe('a refetch that fails keeps the figures (#1180)', () => {
-  it('leaves the positions on screen when the next poll gets a 503', async () => {
-    server.use(
-      http.get(ROUTES.positions, () => HttpResponse.json(aPositionsPayload(sharesPortfolio()))),
-    )
-    const { queryClient } = renderApp({ url: '/shares', fakeTimers: true })
-    await waitFor(() => expect(figure('Réalisée')).toHaveTextContent(/125,00/))
-
-    const unreadable = {
-      status: 503,
-      type: PROBLEM_TYPES.storageUnavailable,
-      title: 'storage unavailable',
-    }
-    server.use(problemHandler(ROUTES.positions, unreadable))
-    await vi.advanceTimersByTimeAsync(60_000)
-    await waitFor(() => expect(queryClient.getQueryState(['positions'])?.error).toBeTruthy())
-
-    expect(figure('Réalisée')).toHaveTextContent(/125,00/)
-    expect(screen.queryByText('Lecture impossible')).not.toBeInTheDocument()
-  })
-})
-
-// ------------------------------------------------------------------------- //
-// Under 768 px the table is a list (#1338)
-// ------------------------------------------------------------------------- //
-
-describe('on a phone, the lines are a list (#1338)', () => {
-  /** Zeta Beta is the line that gained most, so *Latente* reorders the list. */
-  function reorderable() {
-    return sharesPortfolio().map((position) =>
-      position.symbol === 'ZZB'
-        ? aPosition({
-            account: 'beta',
-            symbol: 'ZZB',
-            name: 'Zeta Beta',
-            quantity: 4,
-            cost_basis: 400,
-            realised: 50,
-            price: 300,
-            currency: 'USD',
-            rate: 0.8,
-          })
-        : position,
-    )
-  }
-
-  function phone(positions = sharesPortfolio()) {
-    setViewportWidth(390)
-    return renderShares(positions)
-  }
-
-  function heldList() {
-    return screen.getByRole('list', { name: 'Positions détenues' })
-  }
-
-  function names() {
-    return within(heldList())
-      .getAllByRole('listitem')
-      .map((item) => within(item).getAllByRole('button')[0].textContent)
-  }
-
-  it('draws no list while the positions are in flight, and draws it once they land', async () => {
-    setViewportWidth(390)
-    let land: () => void = () => {}
-    const landed = new Promise<void>((resolve) => {
-      land = resolve
-    })
-    server.use(
-      http.get(ROUTES.positions, async () => {
-        await landed
-        return HttpResponse.json(aPositionsPayload(sharesPortfolio()))
-      }),
-    )
+  it('says it could not read, where the table would have been', async () => {
+    server.use(problemHandler(ROUTES.positions, UNAVAILABLE))
     renderApp({ url: '/shares' })
-    await screen.findByRole('heading', { level: 1, name: 'Titres' })
-
-    expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
-
-    land()
-    expect(await screen.findByRole('list', { name: 'Positions détenues' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText(/Lecture impossible/)).toBeInTheDocument())
+    expect(screen.queryByRole('table', { name: 'Lignes détenues' })).not.toBeInTheDocument()
   })
 
-  it('has no table, one item per held line, and no card around them', async () => {
-    phone()
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
-
-    expect(screen.queryByRole('table')).not.toBeInTheDocument()
-    expect(within(list).getAllByRole('listitem')).toHaveLength(3)
-    expect(list.closest('[data-slot="card"]')).toBeNull()
-    expectNoBox()
-  })
-
-  it('keeps the table at 1024 px, and no list with that name', async () => {
+  it('becomes a ruled list under 768 px, each line leading to its page', async () => {
+    setViewportWidth(390)
     renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-
-    expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
-  })
-
-  it('shows the valuation and the latent gain, and opens the sheet from the name', async () => {
-    const { user } = phone()
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
-    const item = within(list)
-      .getByRole('button', { name: 'Zeta Alpha' })
-      .closest('li') as HTMLElement
-
-    expect(item).toHaveTextContent(/1\D?300,00/)
-    // The gain element alone: `300,00` is also the tail of the `1 300,00` valuation.
-    expect(item.querySelector('span.text-xs.tabular')).toHaveTextContent(/^300,00/)
-    expect(item).toHaveTextContent(/30,00\s?%/)
-    expect(item).toHaveTextContent('ZZA · alpha')
-
-    await user.click(within(item).getByRole('button', { name: 'Zeta Alpha' }))
-    expect(await screen.findByRole('dialog', { name: 'Zeta Alpha' })).toBeInTheDocument()
-  })
-
-  it('sets only the ticker and the account ids in Geist Mono', async () => {
-    phone()
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
-    const page = list.parentElement as HTMLElement
-
-    // The tickers and nothing else: no figure of the list, nor of its totals.
-    const mono = [...page.querySelectorAll('.font-mono')].map((node) => node.textContent)
-    expect(mono).toEqual(['ZZA · alpha', 'ZZC · gamma', 'ZZB · beta'])
-  })
-
-  it('names an absence where the table names it', async () => {
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(
-          aRuntime({ symbols: [{ symbol: 'ZZC', next_run: null, failure_count: 3 }] }),
-        ),
-      ),
+    const list = await screen.findByRole('list', { name: 'Lignes détenues' })
+    expect(within(list).getByRole('link', { name: /Zeta Alpha/ })).toHaveAttribute(
+      'href',
+      '/shares/ZZA',
     )
-    // Still being rebuilt: the table names the valuation, so the list does.
-    phone(
-      sharesPortfolio().map((position) =>
-        position.symbol === 'ZZC'
-          ? aPosition({
-              account: 'gamma',
-              symbol: 'ZZC',
-              name: 'Zeta Gamma',
-              quantity: 6,
-              cost_basis: 600,
-              price: null,
-              terminal: false,
-            })
-          : position,
-      ),
-    )
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
-    const item = within(list)
-      .getByRole('button', { name: 'Zeta Gamma' })
-      .closest('li') as HTMLElement
-
-    expect(item).toHaveTextContent('3 relevés consécutifs, aucun cours')
-    expect(item).not.toHaveTextContent(/600,00/)
-  })
-
-  it('marks a line to repair, carried at its cost', async () => {
-    server.use(
-      http.get(ROUTES.runtime, () =>
-        HttpResponse.json(
-          aRuntime({ symbols: [{ symbol: 'ZZC', next_run: null, failure_count: 3 }] }),
-        ),
-      ),
-    )
-    phone()
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
-    const item = within(list)
-      .getByRole('button', { name: 'Zeta Gamma' })
-      .closest('li') as HTMLElement
-
-    expect(item).toHaveTextContent(/Vérifiez le symbole/)
-    expect(item).toHaveTextContent(/600,00/)
-  })
-
-  it('cuts the list by account, a heading each, when grouped', async () => {
-    const { user } = phone()
-    await screen.findByRole('list', { name: 'Positions détenues' })
-    await user.click(await screen.findByRole('button', { name: 'Grouper par compte' }))
-
-    const headings = screen.getAllByRole('heading', { level: 3 })
-    expect(headings.map((heading) => heading.textContent)).toEqual([
-      expect.stringMatching(/^alpha\s·\s1\D?300,00/),
-      expect.stringMatching(/^beta\s·\s400,00/),
-      expect.stringMatching(/^gamma\s·\s600,00/),
-    ])
-    for (const heading of headings) {
-      const group = screen.getByRole('list', { name: heading.textContent as string })
-      expect(within(group).getAllByRole('listitem')).toHaveLength(1)
-      // The head says the account once.
-      expect(group).not.toHaveTextContent(/ZZ[ABC] ·/)
-    }
-  })
-
-  it('reads the totals the table’s footer reads, closed lines included', async () => {
-    phone()
-    const list = await screen.findByRole('list', { name: 'Positions détenues' })
-    const totals = list.parentElement?.querySelector('dl') as HTMLElement
-
-    const rows = within(totals).getAllByRole('term')
-    expect(rows.map((row) => row.textContent)).toEqual([
-      'Total · dont 2 lignes soldées',
-      'Latente',
-      'Réalisée',
-      'Dividendes',
-    ])
-    const definitions = within(totals).getAllByRole('definition')
-    expect(definitions[0]).toHaveTextContent(/2\D?300,00/)
-    expect(definitions[1]).toHaveTextContent(/300,00/)
-    expect(definitions[2]).toHaveTextContent(/125,00/)
-    expect(definitions[3]).toHaveTextContent(/35,00/)
-    expect(totals.querySelector('.font-mono')).toBeNull()
-  })
-
-  it('sorts from a select and a direction button', async () => {
-    const { user } = phone(reorderable())
-    await screen.findByRole('list', { name: 'Positions détenues' })
-    expect(names()).toEqual(['Zeta Alpha', 'Zeta Beta', 'Zeta Gamma'])
-
-    await user.selectOptions(screen.getByLabelText('Trier par'), 'Latente')
-    expect(names()).toEqual(['Zeta Beta', 'Zeta Alpha', 'Zeta Gamma'])
-
-    await user.click(screen.getByRole('button', { name: 'Ordre décroissant' }))
-    expect(names()).toEqual(['Zeta Gamma', 'Zeta Alpha', 'Zeta Beta'])
-    expect(screen.getByRole('button', { name: 'Ordre croissant' })).toBeInTheDocument()
-  })
-
-  it('keeps the desktop’s order when the viewport widens', async () => {
-    const { user } = phone(reorderable())
-    await user.selectOptions(await screen.findByLabelText('Trier par'), 'Latente')
-
-    act(() => setViewportWidth(1024))
-
-    expect(await screen.findByRole('table', { name: 'Positions détenues' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: /Latente/ })).toHaveAttribute(
-      'aria-sort',
-      'descending',
-    )
-  })
-
-  it('keeps the column the desktop sorted on as a fourth option', async () => {
-    const { user } = renderShares()
-    await waitFor(() => expect(head()).toHaveTextContent(/2\D?300,00/))
-    await user.click(within(liveTable()).getByRole('button', { name: 'Cours' }))
-
-    act(() => setViewportWidth(390))
-
-    const select = await screen.findByLabelText('Trier par')
-    expect(
-      within(select)
-        .getAllByRole('option')
-        .map((option) => option.textContent),
-    ).toEqual(['Valorisation', 'Latente', 'Nom', 'Cours'])
-    expect(select).toHaveValue('price')
-  })
-
-  it('offers the sort before the runtime answers, and the group toggle only after', async () => {
-    server.use(http.get(ROUTES.runtime, () => new Promise<never>(() => {})))
-    phone()
-
-    expect(await screen.findByLabelText('Trier par')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Grouper par compte' })).not.toBeInTheDocument()
-  })
-
-  it('draws neither a held list nor a sort when every line is closed', async () => {
-    phone([
-      aClosedPosition({
-        account: 'alpha',
-        symbol: 'ZZD',
-        name: 'Zeta Delta',
-        realised: 120,
-        closed_at: '2025-11-04',
-      }),
-    ])
-    await screen.findByRole('button', { name: /position soldée/ })
-
-    expect(screen.queryByRole('list', { name: 'Positions détenues' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Trier par')).not.toBeInTheDocument()
-    // The totals are still the totals of what is on screen.
-    expect(screen.getAllByRole('term')[0]).toHaveTextContent(/^Total/)
-  })
-
-  it('says the ticker and the account of a closed line, and its figures', async () => {
-    const { user } = phone([
-      ...sharesPortfolio(),
-      // A line the store never dated.
-      {
-        ...aClosedPosition({
-          account: 'alpha',
-          symbol: 'ZZF',
-          name: 'Zeta Phi',
-          realised: -30,
-          closed_at: '2025-01-01',
-        }),
-        closed_at: null,
-      },
-    ])
-    await screen.findByRole('list', { name: 'Positions détenues' })
-    await user.click(fold())
-
-    const closed = await screen.findByRole('list', { name: 'Positions soldées' })
-    const items = within(closed).getAllByRole('listitem')
-    expect(items).toHaveLength(3)
-    const epsilon = items.find((item) => item.textContent?.includes('Zeta Epsilon')) as HTMLElement
-    expect(epsilon).toHaveTextContent('ZZE · beta')
-    expect(epsilon).toHaveTextContent(/-45,00/)
-    const phi = items.find((item) => item.textContent?.includes('Zeta Phi')) as HTMLElement
-    expect(phi).toHaveTextContent('Soldée le —')
-    expect(phi).toHaveTextContent(/-30,00/)
-  })
-
-  it('opens the closed lines as a list, not a table', async () => {
-    const { user } = phone()
-    await screen.findByRole('list', { name: 'Positions détenues' })
-    await user.click(fold())
-
-    const closed = await screen.findByRole('list', { name: 'Positions soldées' })
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
-    const items = within(closed).getAllByRole('listitem')
-    expect(items).toHaveLength(2)
-    expect(items[0]).toHaveTextContent('Soldée le')
-    expect(items[0]).toHaveTextContent(/15 janv. 2026/)
-    await user.click(within(items[0]).getByRole('button'))
-    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+})
+
+describe('the title page', () => {
+  it('leads with the line, its gain and its holding', async () => {
+    renderShares('/shares/ZZA')
+    expect(await screen.findByText('Valorisation de la ligne')).toBeInTheDocument()
+    expect(screen.getByText(/de gain/).parentElement).toHaveTextContent(
+      /\+300,00.*\(\+30,00\s?%\).*10.*titres au prix moyen d’achat de.*100,00/,
+    )
+    expect(screen.getByRole('link', { name: '← Titres' })).toHaveAttribute('href', '/shares')
+  })
+
+  it('names the invested and the gained, and the three terms of the gain', async () => {
+    renderShares('/shares/ZZA')
+    await screen.findByText('Valorisation de la ligne')
+    const bar = screen.getByRole('img', { name: /^Investi .*gain .* de la valorisation$/ })
+    expect(bar).toBeInTheDocument()
+    expect(screen.getByText('Latente').parentElement).toHaveTextContent(/\+300,00/)
+    expect(screen.getByText('Dividendes').parentElement).toHaveTextContent(/25,00/)
+  })
+
+  it('draws the price and its legend, the average purchase price included', async () => {
+    renderShares('/shares/ZZA')
+    expect(await screen.findByRole('radiogroup', { name: 'Plage' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '1 an' })).toBeChecked()
+    expect(await screen.findByText('Prix moyen d’achat')).toBeInTheDocument()
+  })
+
+  it('lists the last events and leads to the ledger', async () => {
+    renderShares('/shares/ZZA')
+    const section = (await screen.findByRole('region', { name: 'Événements' })) as HTMLElement
+    expect(await within(section).findByRole('table')).toBeInTheDocument()
+    expect(within(section).getAllByText('Achat').length).toBeGreaterThan(0)
+    expect(
+      within(section).getByRole('link', { name: 'Voir tous les événements de ce titre' }),
+    ).toHaveAttribute('href', '/ledger?symbol=%5B%22ZZA%22%5D')
+  })
+
+  it('says what the title is, its accounts linked', async () => {
+    renderShares('/shares/ZZA')
+    const section = await screen.findByRole('region', { name: 'Le titre' })
+    expect(within(section).getByRole('link', { name: 'Alpha' })).toHaveAttribute(
+      'href',
+      '/accounts?account=alpha',
+    )
+    expect(section).toHaveTextContent(/Part du portefeuille.*56,5\s?%/)
+    // The source's codes are worded: EQUITY is « Action »; a place the glossary
+    // does not know is shown as it came.
+    expect(section).toHaveTextContent(/NatureAction/)
+    expect(section).not.toHaveTextContent('EQUITY')
+    expect(section).toHaveTextContent(/PlaceZZE/)
+  })
+
+  it('says a title is unknown only over an answered read, and offers the way back', async () => {
+    renderShares('/shares/NOPE')
+    expect(await screen.findByText('Titre introuvable')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '← Titres' })).toBeInTheDocument()
+  })
+
+  it('says the ledger could not be read where the events would be', async () => {
+    server.use(problemHandler(ROUTES.events, UNAVAILABLE))
+    renderShares('/shares/ZZA')
+    const section = await screen.findByRole('region', { name: 'Événements' })
+    await waitFor(() => expect(within(section).getByText(/Lecture impossible/)).toBeInTheDocument())
   })
 })

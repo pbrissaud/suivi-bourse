@@ -11,7 +11,7 @@ import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
 
 import { LEDGER_COLUMNS } from '@/features/data/components/LedgerTable'
-import { formatCurrency, formatDay, formatQuantity } from '@/lib/format'
+import { formatCurrency, formatDate, formatQuantity } from '@/lib/format'
 import { ROUTES } from '@/lib/api'
 import { LOCALES } from '@/lib/i18n'
 import { aLedgerPayload } from '@/test/factories'
@@ -21,22 +21,22 @@ import { server } from '@/test/server'
 const SOURCE = path.resolve(import.meta.dirname, '../../..')
 const read = (file: string) => fs.readFileSync(path.join(SOURCE, file), 'utf8')
 
-/** Mono at 13 px, and the `xl` cell padding (DESIGN.md, #838). */
+/** Mono at 13 px, and the 12 px cell padding each side (« Relevé »). */
 const CHAR = 7.8
-const PADDING = 32
+const PADDING = 24
 
 const columns = Object.entries(LEDGER_COLUMNS)
 const sum = (cells: { min: number }[]) => cells.reduce((total, { min }) => total + min, 0)
 
-// 1440 px, the sidebar open, the content gutter, the card's 1 px borders.
+// 1440 px, the sidebar open, the content gutter: the table sits on the ground.
 const SIDEBAR =
   Number(/const SIDEBAR_WIDTH = '([\d.]+)rem'/.exec(read('components/ui/sidebar.tsx'))?.[1]) * 16
-const GUTTER = Number(/\blg:p-(\d+)\b/.exec(read('components/Shell.tsx'))?.[1]) * 4
-const CONTAINER_AT_1440 = 1440 - SIDEBAR - 2 * GUTTER - 2
+const GUTTER = Number(/\bmd:px-(\d+)\b/.exec(read('components/Shell.tsx'))?.[1]) * 4
+const CONTAINER_AT_1440 = 1440 - SIDEBAR - 2 * GUTTER
 
 describe('the ledger’s column budget', () => {
   it('fits every column at 1440 px with the sidebar open', () => {
-    expect(CONTAINER_AT_1440).toBe(1190)
+    expect(CONTAINER_AT_1440).toBe(1176)
     for (const [, column] of columns)
       expect(column.from ?? 0).toBeLessThanOrEqual(CONTAINER_AT_1440)
     expect(sum(Object.values(LEDGER_COLUMNS))).toBeLessThanOrEqual(CONTAINER_AT_1440)
@@ -60,9 +60,8 @@ describe('the ledger’s column budget', () => {
     const widest = {
       amount: formatCurrency(FR, -1234567.89, 'EUR'),
       unitPrice: formatCurrency(FR, 123456.78, 'EUR'),
-      fee: formatCurrency(FR, 1234.56, 'EUR'),
       quantity: formatQuantity(FR, 0.12345678),
-      date: formatDay(FR, '2026-12-31'),
+      date: formatDate(FR, '2026-12-31'),
     }
     for (const [id, text] of Object.entries(widest)) {
       const need = text.length * CHAR + PADDING
@@ -92,13 +91,12 @@ describe('the ledger’s column budget', () => {
       account: 'Compte',
       quantity: 'Quantité',
       unitPrice: 'Prix unitaire',
-      fee: 'Frais',
     } as const
     for (const [id, name] of Object.entries(named)) {
       const show = LEDGER_COLUMNS[id as keyof typeof named].show as string
       expect(head(name), id).toHaveClass(...show.split(' '))
     }
-    expect(head('De quoi il s’agit')).toHaveClass('w-full', 'max-w-0')
+    expect(head('Événement')).toHaveClass('w-full', 'max-w-0')
     for (const name of ['Date', 'Type', 'Montant']) expect(head(name)).not.toHaveClass('hidden')
   })
 
@@ -109,8 +107,8 @@ describe('the ledger’s column budget', () => {
   })
 
   it('subtracts no facet panel from that container (#1278)', () => {
-    // 1 134 px is the whole content column: the filters are a toolbar above the
-    // table, so no 248 px track sits beside it.
+    // The filters are on the control line above the table, so no 248 px track
+    // sits beside it.
     expect(read('features/data/components/Ledger.tsx')).not.toMatch(/grid-cols-\[248px/)
   })
 })

@@ -281,6 +281,7 @@ export type SortColumn =
   | 'price'
   | 'quantity'
   | 'avgCost'
+  | 'invested'
   | 'value'
   | 'unrealised'
   | 'realised'
@@ -332,6 +333,8 @@ function sortKey(row: ShareRow, column: SortColumn): string | number | null {
       return row.quantity
     case 'avgCost':
       return unitCost(row)
+    case 'invested':
+      return row.cost_basis
     case 'value':
       return marketValue(row)
     case 'unrealised':
@@ -508,9 +511,8 @@ export interface Allocation {
  * A **closed** line is not a slice: it is worth exactly zero and a legend of
  * zeros is noise, so the folded section of the shares page is where it lives. A
  * held line worth zero stays — that is a figure about a line the owner holds.
- * The predicate is `isClosed`, above, and `moversList` calls the same one one
- * module over: the two blocks describe one portfolio, so what is *in* it cannot
- * be two questions — which is why the predicate did not travel with the block.
+ * The predicate is `isClosed`, above: what is *in* the portfolio is one question,
+ * which is why the predicate did not travel with the block.
  */
 export function allocation(rows: readonly ShareRow[]): Allocation {
   const placed: AllocationSlice[] = []
@@ -857,4 +859,76 @@ export function eventMarkers(
     count: held.reduce((sum, one) => sum + one.count, 0),
     offset: held[0].rank / steps,
   }))
+}
+
+/**
+ * What the title page says about the owner's buying: the first purchase, how
+ * many there were, and over how many months (`14 en 68 mois`). Counted from
+ * the ledger's BUY events of the symbol; `null` when it has none.
+ */
+export function purchaseStats(
+  events: readonly LedgerEvent[],
+  symbol: string,
+  now: Date = new Date(),
+): { first: string; count: number; months: number } | null {
+  const days = events
+    .filter((event) => event.symbol === symbol && event.event_type === 'BUY' && event.date)
+    .map((event) => event.date as string)
+    .sort()
+  if (days.length === 0) return null
+  const [year, month] = days[0].split('-').map(Number)
+  const months = Math.max(1, (now.getFullYear() - year) * 12 + now.getMonth() + 1 - month)
+  return { first: days[0], count: days.length, months }
+}
+
+/**
+ * The average purchase price after each day that moved it, oldest first.
+ *
+ * A buy adds `quantity × price + fee` to the cost, a grant adds shares at no
+ * cost, a sale takes its shares out at the running average, which is why it
+ * leaves the average where it stood.
+ */
+function averageCostSteps(
+  events: readonly LedgerEvent[],
+  symbol: string,
+): { day: string; average: number }[] {
+  const steps: { day: string; average: number }[] = []
+  let quantity = 0
+  let cost = 0
+  for (const event of shareEvents(events, symbol).reverse()) {
+    const moved = event.quantity ?? 0
+    if (event.event_type === 'BUY') {
+      cost += moved * (event.unit_price ?? 0) + (event.fee ?? 0)
+      quantity += moved
+    } else if (event.event_type === 'GRANT') {
+      quantity += moved
+    } else if (event.event_type === 'SELL') {
+      cost -= moved * (quantity > 0 ? cost / quantity : 0)
+      quantity -= moved
+    } else continue
+    if (quantity > 0 && event.date) steps.push({ day: event.date, average: cost / quantity })
+  }
+  return steps
+}
+
+/**
+ * The average purchase price at each plotted point: a step that follows the
+ * buys, or the flat `current` PRU when the steps do not end on it (within half
+ * a percent). Split factors live on the server, so a split title, or one
+ * bought in another currency than the reporting one, would otherwise draw a
+ * fake jump.
+ */
+export function averageCostSeries(
+  events: readonly LedgerEvent[],
+  symbol: string,
+  points: readonly SeriesPoint[],
+  current: number,
+): (number | null)[] {
+  const steps = averageCostSteps(events, symbol)
+  const last = steps.at(-1)
+  if (!last || Math.abs(last.average - current) > current * 0.005) return points.map(() => current)
+  return points.map((point) => {
+    const day = point.t.slice(0, 10)
+    return steps.filter((step) => step.day <= day).at(-1)?.average ?? null
+  })
 }

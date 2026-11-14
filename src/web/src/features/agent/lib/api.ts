@@ -10,7 +10,17 @@
 import type { UIMessage } from 'ai'
 
 import type { EventsProposal } from '@/lib/api.gen'
-import { authFetch, get, ROUTES, send } from '@/lib/api'
+import {
+  type AgentProvider as ConfiguredProvider,
+  type AgentSettings,
+  type AgentStats,
+  type AgentStatsRange,
+  api,
+  authFetch,
+  get,
+  ROUTES,
+} from '@/lib/api'
+import { rememberModels } from '@/features/agent/lib/modelNames'
 import type { MessageKey } from '@/lib/i18n'
 
 /** The four kinds of provider the agent runs on, as `agent.PROVIDERS` names them. */
@@ -31,8 +41,8 @@ export const STATEMENT_MAX = 50_000
 export interface StatementDraft {
   thread_id: string
   account: string
-  /** The provider the dialog named: the server answers 409 if it is no longer the configured one. */
-  provider: AgentProvider
+  /** The provider the dialog named: the server answers 409 if it was deleted since. */
+  provider_id: string
   name: string
   text: string
 }
@@ -54,25 +64,6 @@ export interface AgentConfig {
   disabled?: boolean
 }
 
-/** What `PUT /api/agent/config` takes: any subset of the fields. */
-export interface AgentConfigDraft {
-  enabled?: boolean
-  provider?: AgentProvider
-  model?: string
-  /** Sent with its `model`: a model without a name clears the name. */
-  model_name?: string | null
-  base_url?: string | null
-  thinking?: AgentThinking
-}
-
-/** What `POST /api/agent/test` takes: a candidate, kept only if the provider accepts it. */
-export interface AgentCandidate {
-  provider?: AgentProvider
-  base_url?: string | null
-  /** Left out, the stored key is used, for the provider and address it was stored for. */
-  key?: string
-}
-
 /** One line of `GET /api/agent/threads`. */
 export interface AgentThreadSummary {
   id: string
@@ -86,6 +77,10 @@ export interface AgentThreadSummary {
 export interface AgentThread {
   id: string
   title: string | null
+  /** What the thread runs on, as its last turn stored it; `null` before a first turn. */
+  provider_id?: string | null
+  provider?: AgentProvider | null
+  model?: string | null
   /** The last turn ended on an error: its partial answer is there, the rest is not. */
   failed: boolean
   messages: UIMessage[]
@@ -125,15 +120,6 @@ async function agentError(response: Response): Promise<string> {
   return `HTTP ${response.status}`
 }
 
-/** `POST /api/agent/test`: the provider's own list, newest first, and what is now stored. */
-export interface AgentTestResult {
-  provider: AgentProvider
-  models: { id: string; name: string }[]
-  /** The stored model while the provider still serves it, else its newest. */
-  preselected: string | null
-  config: AgentConfig
-}
-
 async function agentSend<T>(path: string, body: unknown): Promise<T> {
   const response = await authFetch(path, {
     method: 'POST',
@@ -145,10 +131,18 @@ async function agentSend<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const agentApi = {
+  /** `GET /api/agent/config` since providers: `enabled` and `reasoning` alone. */
+  settings: () => get<AgentSettings>(ROUTES.agentConfig),
+  /** The configured providers, the default first. */
+  providers: () => api.agentProviders(),
+  /** The models a provider lists now; it is the connection test, read for its list. */
+  models: (id: string) =>
+    api.testAgentProvider(id).then((answer) => {
+      rememberModels(answer.models)
+      return answer
+    }),
+  stats: (range: AgentStatsRange) => api.agentStats(range),
   agentConfig: () => get<AgentConfig>(ROUTES.agentConfig),
-  saveAgentConfig: (draft: AgentConfigDraft) => send<AgentConfig>(ROUTES.agentConfig, 'PUT', draft),
-  testAgent: (candidate: AgentCandidate) =>
-    send<AgentTestResult>(ROUTES.agentTest, 'POST', candidate),
   agentThreads: () => agentRead<AgentThreadSummary[]>(ROUTES.agentThreads),
   agentThread: (id: string) => agentRead<AgentThread>(agentThreadPath(id)),
   forgetAgentThread: (id: string) => agentForget(agentThreadPath(id)),
@@ -156,3 +150,5 @@ export const agentApi = {
   sendStatement: (draft: StatementDraft) =>
     agentSend<{ proposal: EventsProposal; thread_id: string }>(ROUTES.agentStatements, draft),
 }
+
+export type { AgentSettings, AgentStats, AgentStatsRange, ConfiguredProvider }

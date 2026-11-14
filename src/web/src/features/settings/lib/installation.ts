@@ -1,65 +1,12 @@
 /**
  * What the *installation* tab decides before anything is rendered (#724). Pure: payloads in, verdicts out.
  *
- * Two of the three are quantifications, and both exist for the same reason: a
- * portfolio-wide gesture that reaches part of the portfolio has to say so, or
- * the reader concludes the rest is broken.
  */
 import type { SettingDescription } from '@/features/settings/lib/api'
-import type { RuntimeState } from '@/lib/api'
-
-// ------------------------------------------------------------------------- //
-// The cadence's reach
-// ------------------------------------------------------------------------- //
-
-/** How many symbols a new `regular_interval` reaches now, and how many later. */
-export interface CadenceReach {
-  /** Polling right now: re-armed the moment the dial is saved. */
-  now: number
-  /** Asleep: not mis-set, off-topic. They read the dial when their market opens. */
-  atMarketOpen: number
-}
-
-/**
- * Split the held symbols the way the write path will actually reach them.
- *
- * **The instrument is `closed`, not `next_run`**, and that is the one place
- * this module departs from the letter of its ticket. #701 settled it on the
- * server with three counter-examples, and re-deriving the split from the armed
- * time here would reproduce all three: it misreads a symbol asleep until an
- * open that falls *inside* a long outgoing interval, it cannot tell a
- * dead-ticker back-off (armed at `interval × 2^n`) from a market close, and it
- * inverts the moment the dial it is compared against is the very thing being
- * changed. `closed` is what the scheduler *acted on* for that symbol on its
- * last pass, it is published per symbol on the same resource, and using it is
- * what makes this sentence agree with the receipt the save answers with —
- * whereas two instruments would give the reader two counts of one gesture.
- *
- * A symbol that has never completed a pass (`closed: null`) counts as reached:
- * it is armed to fire immediately, so it reads the new value on a pass that has
- * already begun. The two figures **add up to the held portfolio**, which is the
- * property that lets a reader tell *asleep* from *misconfigured*.
- */
-export function cadenceReach(runtime: RuntimeState | undefined): CadenceReach | null {
-  if (!runtime) return null
-  const held = runtime.symbols.filter((symbol) => symbol.held !== false)
-  const atMarketOpen = held.filter((symbol) => symbol.closed === true).length
-  return { now: held.length - atMarketOpen, atMarketOpen }
-}
 
 // ------------------------------------------------------------------------- //
 // The dials, as the registry hands them over
 // ------------------------------------------------------------------------- //
-
-/**
- * The dial whose change is retroactive, and the reason its row says so out
- * loud: the dead-ticker back-off waits `regular_interval × 2^(n−3)` and stores
- * no absolute delay anywhere, so lowering the number shortens —
- * *retroactively* — the wait of a symbol that has been failing since this
- * morning. No interface can hide it: the number typed is the number in
- * the formula.
- */
-export const RETROACTIVE_DIAL = 'regular_interval'
 
 /** A dial's field id. One spelling, so a label and a link agree. */
 export function settingFieldId(key: string): string {

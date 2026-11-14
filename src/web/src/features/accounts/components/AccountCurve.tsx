@@ -39,9 +39,15 @@ import type { ValuePoint } from '@/features/accounts/lib/accounts'
 interface AccountCurveProps {
   points: readonly ValuePoint[]
   currency: string | null
+  /**
+   * `amount` draws the value against the contribution; `ratio` draws the
+   * time-weighted performance from the window's first day (`value` is then a
+   * ratio and `contributed` is ignored).
+   */
+  kind?: 'amount' | 'ratio'
 }
 
-export function AccountCurve({ points, currency }: AccountCurveProps) {
+export function AccountCurve({ points, currency, kind = 'amount' }: AccountCurveProps) {
   const { t } = useI18n()
   const f = useFormatters()
   const phone = useIsMobile()
@@ -50,7 +56,10 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
     phone ? AXIS_TICKS.time.phone : AXIS_TICKS.time.wide,
   )
   const y = valueAxis(points.flatMap((point) => [point.value, point.contributed]))
+  const ratio = kind === 'ratio'
   const digits = tickDigits(y.ticks, (value, d) => f.compact(value, currency, d))
+  const say = (value: number | null) => (ratio ? f.percent(value, 1) : f.currency(value, currency))
+  const valueName = t(ratio ? 'accounts.detail.curve.performance' : 'accounts.detail.curve.value')
 
   return (
     // **No heading of its own** (#838): the curve is drawn inside the head card
@@ -66,7 +75,7 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
           opening another account from the rail redraws this curve in place, and
           the sentence below is what says the new shape. */}
       <figure aria-live="polite">
-        <div className="h-40 tabular">
+        <div className="h-40 fig">
           <ResponsiveContainer width="100%" height="100%">
             {/* **Named, and the name is not the section's** (#1003). The `<svg>`
                 is focusable and its arrows walk the series, so it needs a name of
@@ -91,7 +100,9 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
               <YAxis
                 domain={y.domain}
                 ticks={y.ticks}
-                tickFormatter={(value: number) => f.compact(value, currency, digits)}
+                tickFormatter={(value: number) =>
+                  ratio ? f.percent(value, 0, 1) : f.compact(value, currency, digits)
+                }
                 width="auto"
                 axisLine={false}
                 tickLine={false}
@@ -99,58 +110,70 @@ export function AccountCurve({ points, currency }: AccountCurveProps) {
                 tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
               />
               {/* The axes give the scale, the pointer gives the exact figure. */}
-              <ChartTooltip format={(value) => f.currency(value, currency)} />
+              <ChartTooltip format={(value) => say(value)} />
               <Line
                 type="monotone"
                 dataKey="value"
-                name={t('accounts.detail.curve.value')}
+                name={valueName}
                 stroke="var(--color-price)"
                 dot={false}
                 isAnimationActive={false}
                 connectNulls={false}
               />
-              <Line
-                type="monotone"
-                dataKey="contributed"
-                name={t('accounts.detail.curve.contributed')}
-                stroke="var(--color-muted-foreground)"
-                strokeDasharray="4 4"
-                dot={false}
-                isAnimationActive={false}
-                connectNulls={false}
-              />
+              {ratio ? null : (
+                <Line
+                  type="monotone"
+                  dataKey="contributed"
+                  name={t('accounts.detail.curve.contributed')}
+                  stroke="var(--color-muted-foreground)"
+                  strokeDasharray="4 4"
+                  dot={false}
+                  isAnimationActive={false}
+                  connectNulls={false}
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </div>
         <ChartReading
           rows={points}
           curves={[
-            { name: t('accounts.detail.curve.value'), key: 'value' },
-            { name: t('accounts.detail.curve.contributed'), key: 'contributed' },
+            { name: valueName, key: 'value' },
+            ...(ratio
+              ? []
+              : [{ name: t('accounts.detail.curve.contributed'), key: 'contributed' }]),
           ]}
-          format={currency === null ? null : (value) => f.currency(value, currency)}
+          format={ratio ? (value) => f.percent(value, 1) : currency === null ? null : say}
         />
       </figure>
 
       {/* The legend is written rather than drawn by the chart: it has to be
           readable by a test and by a screen reader, and Recharts' own is
           neither. */}
-      <ul className="flex flex-wrap gap-x-4 gap-y-2 text-2xs text-muted-foreground">
+      <ul className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
         <li className="flex items-baseline gap-2">
           <span
             aria-hidden
             className="inline-block h-0.5 w-3.5"
             style={{ backgroundColor: 'var(--color-price)' }}
           />
-          {t('accounts.detail.curve.value')}
+          {valueName}
+          <span className="fig text-foreground">
+            {say(points[points.length - 1]?.value ?? null)}
+          </span>
         </li>
-        <li className="flex items-baseline gap-2">
-          <span
-            aria-hidden
-            className="inline-block h-0 w-3.5 border-t-[1.5px] border-dashed border-muted-foreground"
-          />
-          {t('accounts.detail.curve.contributed')}
-        </li>
+        {ratio ? null : (
+          <li className="flex items-baseline gap-2">
+            <span
+              aria-hidden
+              className="inline-block h-0 w-3.5 border-t-[1.5px] border-dashed border-muted-foreground"
+            />
+            {t('accounts.detail.curve.contributed')}
+            <span className="fig text-foreground">
+              {say(points[points.length - 1]?.contributed ?? null)}
+            </span>
+          </li>
+        )}
       </ul>
     </section>
   )

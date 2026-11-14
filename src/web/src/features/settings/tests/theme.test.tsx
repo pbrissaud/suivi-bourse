@@ -1,6 +1,7 @@
 /**
- * *Thème* in Settings (#1248): the theme kept in the store, imported from
- * tweakcn or pasted, the whole app in jsdom and HTTP the only faked edge.
+ * *Thème* as a page (#1248, #1314): the theme kept in the store, edited in a
+ * token list with the real pages beside it, the whole app in jsdom and HTTP the
+ * only faked edge.
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -41,19 +42,11 @@ function store(initial: ThemeVars | null = null) {
 }
 
 async function openTheme() {
-  const rendered = renderApp({ url: '/settings' })
-  const block = await screen.findByRole('region', { name: 'Thème' })
-  return { ...rendered, block }
+  const rendered = renderApp({ url: '/settings/theme' })
+  await screen.findByRole('heading', { level: 1, name: 'Thème' })
+  await screen.findByRole('button', { name: 'Modifier le JSON' })
+  return rendered
 }
-
-/** The Dialog a button opened: it is portalled out of the section. */
-async function dialogOf(user: Awaited<ReturnType<typeof openTheme>>['user'], opener: HTMLElement) {
-  await user.click(opener)
-  return within(await screen.findByRole('dialog'))
-}
-
-const jsonField = (dialog: ReturnType<typeof within>) =>
-  dialog.getByRole('textbox', { name: 'Modifier le JSON' }) as HTMLTextAreaElement
 
 function addLink() {
   const link = document.createElement('link')
@@ -63,140 +56,230 @@ function addLink() {
   return link
 }
 
+/** A colour picked in the native input of a token's row. */
+const pick = (name: string, hex: string) =>
+  fireEvent.change(screen.getByLabelText(name), { target: { value: hex } })
+
+const preview = () => screen.getByTestId('theme-preview').firstElementChild as HTMLElement
+
+const jsonField = (dialog: ReturnType<typeof within>) =>
+  dialog.getByRole('textbox', { name: 'Modifier le JSON' }) as HTMLTextAreaElement
+
 afterEach(() => {
   document.head.querySelectorAll('link').forEach((link) => link.remove())
-  document.getElementById('theme-preview')?.remove()
   document.documentElement.classList.remove('dark')
 })
 
-describe('the theme card', () => {
-  it('says Atelier and offers no reset when nothing is stored', async () => {
+describe('the page', () => {
+  it('leads back to Réglages, offers the three ways in, and lists the tokens by name', async () => {
     store()
-    const { block } = await openTheme()
+    await openTheme()
 
-    expect(within(block).getByRole('status')).toHaveTextContent('Thème livré (Atelier)')
-    expect(within(block).queryByRole('button', { name: 'Revenir à Atelier' })).toBeNull()
+    expect(screen.getByRole('link', { name: '← Réglages' })).toHaveAttribute('href', '/settings')
+    for (const name of ['Importer depuis tweakcn', 'Modifier le JSON', 'Exporter']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument()
+    }
+    expect(screen.getByRole('tab', { name: 'Clair' })).toHaveAttribute('aria-selected', 'true')
+    for (const name of [
+      'Fond de page',
+      'Plan de section',
+      'Encre',
+      'Gain',
+      'Perte',
+      'Répartition 4',
+    ]) {
+      expect(screen.getByLabelText(name)).toBeInTheDocument()
+    }
+    expect(screen.getByRole('slider', { name: 'Rayon des angles' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Appliquer' })).toBeDisabled()
+    // Atelier is what is in force: there is nothing to restore.
+    expect(screen.getByRole('button', { name: 'Rétablir Atelier' })).toBeDisabled()
   })
 
-  it('offers nothing to apply once the JSON is cleared', async () => {
+  it('draws the real pages beside the tokens, one tab each, inert', async () => {
     store()
-    const { user, block } = await openTheme()
-    const dialog = await dialogOf(
-      user,
-      within(block).getByRole('button', { name: 'Modifier le JSON' }),
+    const { user } = await openTheme()
+
+    const frame = screen.getByTestId('theme-preview')
+    expect(frame.firstElementChild).toHaveAttribute('inert')
+    const tabs = screen.getByRole('tablist', { name: 'Page en aperçu' })
+    expect(
+      within(tabs)
+        .getAllByRole('tab')
+        .map((one) => one.textContent),
+    ).toEqual(['Tableau de bord', 'Titres', 'Comptes', 'Grand livre'])
+
+    await user.click(within(tabs).getByRole('tab', { name: 'Comptes' }))
+    expect(within(tabs).getByRole('tab', { name: 'Comptes' })).toHaveAttribute(
+      'aria-selected',
+      'true',
     )
-
-    await user.clear(jsonField(dialog))
-
-    expect(dialog.getByRole('button', { name: 'Appliquer' })).toBeDisabled()
+    // The Thème page keeps its own title whatever page is drawn.
+    expect(screen.getByRole('heading', { level: 1, name: 'Thème' })).toBeInTheDocument()
   })
 
-  it('opens the JSON on Atelier when nothing is stored, and saves it as any theme', async () => {
-    const writes = store()
-    const { user, block } = await openTheme()
-    const dialog = await dialogOf(
-      user,
-      within(block).getByRole('button', { name: 'Modifier le JSON' }),
-    )
+  it('paints an edit in the preview only, marks the token, and reverts it', async () => {
+    store()
+    const { user } = await openTheme()
 
-    expect(JSON.parse(jsonField(dialog).value)).toEqual(atelier)
-    await user.click(dialog.getByRole('button', { name: 'Appliquer' }))
+    pick('Encre', '#ff0000')
 
-    expect(await within(block).findByText('Thème personnalisé · appliqué')).toBeInTheDocument()
-    expect(writes).toEqual([['put', atelier]])
-    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(preview().style.getPropertyValue('--primary')).toMatch(/oklch/))
+    expect(screen.getByRole('img', { name: 'Modifié' })).toBeInTheDocument()
+    // The rest of the app is not repainted: no document-wide stylesheet.
+    expect(document.getElementById('theme-preview')).toBeNull()
+    expect(screen.getByText(/1 modification non appliquée/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Rétablir : Encre' }))
+    expect(screen.queryByRole('img', { name: 'Modifié' })).toBeNull()
+    expect(screen.getByText(/aucune modification/)).toBeInTheDocument()
   })
 
-  it('says a custom theme is stored, and resets it', async () => {
-    const writes = store(THEME)
-    const { user, block } = await openTheme()
+  it('previews the dark palette in dark, whatever the device is set to', async () => {
+    store()
+    const { user } = await openTheme()
 
-    expect(within(block).getByRole('status')).toHaveTextContent('Thème personnalisé')
-    await user.click(within(block).getByRole('button', { name: 'Revenir à Atelier' }))
+    expect(preview()).not.toHaveClass('dark')
+    await user.click(screen.getByRole('tab', { name: 'Sombre' }))
 
-    expect(await within(block).findByText('Atelier rétabli')).toBeInTheDocument()
-    expect(writes).toEqual([['delete', null]])
-    expect(within(block).queryByRole('button', { name: 'Revenir à Atelier' })).toBeNull()
+    expect(preview()).toHaveClass('dark')
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
   })
 
-  it('imports by id, closes the dialog, and repaints', async () => {
+  it('applies once, and repaints with the new stylesheet', async () => {
     const link = addLink()
     const writes = store()
-    const { user, block } = await openTheme()
-    const dialog = await dialogOf(
-      user,
-      within(block).getByRole('button', { name: 'Importer depuis tweakcn' }),
-    )
+    const { user } = await openTheme()
+    pick('Encre', '#ff0000')
+    const apply = screen.getByRole('button', { name: 'Appliquer' })
 
-    await user.type(dialog.getByLabelText('Identifiant ou adresse du thème'), 'claude')
-    await user.click(dialog.getByRole('button', { name: 'Importer' }))
+    const done = user.click(apply)
+    await waitFor(() => expect(link.getAttribute('href')).toMatch(/^\/api\/theme\.css\?v=\d+$/))
+    act(() => {
+      link.dispatchEvent(new Event('load'))
+    })
+    await done
 
-    expect(await within(block).findByText('Thème personnalisé · appliqué')).toBeInTheDocument()
-    expect(writes).toEqual([['import', { id: 'claude' }]])
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(link.getAttribute('href')).toMatch(/^\/api\/theme\.css\?v=\d+$/)
+    await waitFor(() => expect(writes).toHaveLength(1))
+    expect(writes[0][0]).toBe('put')
+    await waitFor(() => expect(screen.queryByRole('img', { name: 'Modifié' })).toBeNull())
   })
 
-  it('imports from the address of a theme', async () => {
+  it('writes Ombres as opacity and strings, and the letter spacing under both its keys', async () => {
     const writes = store()
-    const { user, block } = await openTheme()
-    const dialog = await dialogOf(
-      user,
-      within(block).getByRole('button', { name: 'Importer depuis tweakcn' }),
-    )
+    await openTheme()
 
-    await user.type(
-      dialog.getByLabelText('Identifiant ou adresse du thème'),
-      'https://tweakcn.com/themes/claude?tab=1',
-    )
-    await user.click(dialog.getByRole('button', { name: 'Importer' }))
+    const shadows = screen.getByRole('slider', { name: 'Ombres' })
+    shadows.focus()
+    fireEvent.keyDown(shadows, { key: 'End' })
+    const tracking = screen.getByRole('slider', { name: 'Interlettrage' })
+    tracking.focus()
+    fireEvent.keyDown(tracking, { key: 'End' })
+    fireEvent.click(screen.getByRole('button', { name: 'Appliquer' }))
 
-    await waitFor(() => expect(writes).toEqual([['import', { id: 'claude' }]]))
+    await waitFor(() => expect(writes).toHaveLength(1))
+    const sent = writes[0][1] as ThemeVars
+    expect(sent.theme['shadow-opacity']).toBe('0.5')
+    expect(sent.theme['letter-spacing']).toBe('0.1em')
+    expect(sent.theme['tracking-normal']).toBe('0.1em')
+    expect(sent.theme['shadow-sm']).toContain('/ 0.5')
   })
 
-  it('sends nothing on unreadable JSON and marks the field', async () => {
-    const writes = store()
-    const { user, block } = await openTheme()
-    const dialog = await dialogOf(
-      user,
-      within(block).getByRole('button', { name: 'Modifier le JSON' }),
+  it('restores Atelier through the store, once something is stored', async () => {
+    const writes = store(THEME)
+    const link = addLink()
+    const { user } = await openTheme()
+
+    const restore = screen.getByRole('button', { name: 'Rétablir Atelier' })
+    expect(restore).toBeEnabled()
+    const done = user.click(restore)
+    await waitFor(() => expect(link.getAttribute('href')).toMatch(/^\/api\/theme\.css\?v=\d+$/))
+    act(() => {
+      link.dispatchEvent(new Event('load'))
+    })
+    await done
+
+    await waitFor(() => expect(writes).toEqual([['delete', null]]))
+  })
+
+  it('says a refused apply in the bar, with the edits kept', async () => {
+    store()
+    server.use(
+      http.put(ROUTES.theme, () =>
+        HttpResponse.json(
+          { type: PROBLEM_TYPES.badRequest, title: 'Invalid request', status: 422, key: 'ring' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+      ),
     )
+    const { user } = await openTheme()
+    pick('Encre', '#ff0000')
+
+    await user.click(screen.getByRole('button', { name: 'Appliquer' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Clé refusée : ring')
+    expect(screen.getByRole('img', { name: 'Modifié' })).toBeInTheDocument()
+  })
+})
+
+describe('the JSON and the import', () => {
+  async function dialogOf(user: Awaited<ReturnType<typeof openTheme>>['user'], name: string) {
+    await user.click(screen.getByRole('button', { name }))
+    return within(await screen.findByRole('dialog'))
+  }
+
+  it('opens the JSON on Atelier when nothing is stored, and saves it as any theme', async () => {
+    const link = addLink()
+    const writes = store()
+    const { user } = await openTheme()
+    const dialog = await dialogOf(user, 'Modifier le JSON')
+
+    expect(JSON.parse(jsonField(dialog).value)).toEqual(atelier)
+    const done = user.click(dialog.getByRole('button', { name: 'Appliquer' }))
+    await waitFor(() => expect(link.getAttribute('href')).toMatch(/^\/api\/theme\.css\?v=\d+$/))
+    act(() => {
+      link.dispatchEvent(new Event('load'))
+    })
+    await done
+
+    await waitFor(() => expect(writes).toEqual([['put', atelier]]))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('offers nothing to apply once the JSON is cleared, and sends nothing on unreadable JSON', async () => {
+    const writes = store()
+    const { user } = await openTheme()
+    const dialog = await dialogOf(user, 'Modifier le JSON')
     const field = jsonField(dialog)
 
     await user.clear(field)
+    expect(dialog.getByRole('button', { name: 'Appliquer' })).toBeDisabled()
     await user.paste('{ nope')
     await user.click(dialog.getByRole('button', { name: 'Appliquer' }))
 
     expect(dialog.getByRole('alert')).toHaveTextContent(/^JSON illisible : /)
     expect(field).toHaveAttribute('aria-invalid', 'true')
-    expect(field).toHaveFocus()
     expect(writes).toEqual([])
   })
 
-  it('names the key the server refused', async () => {
-    store()
-    server.use(
-      http.put(ROUTES.theme, () =>
-        HttpResponse.json(
-          { type: PROBLEM_TYPES.badRequest, title: 'Invalid request', status: 422, key: 'gain' },
-          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
-        ),
-      ),
-    )
-    const { user, block } = await openTheme()
-    const dialog = await dialogOf(
-      user,
-      within(block).getByRole('button', { name: 'Modifier le JSON' }),
-    )
-    const field = jsonField(dialog)
+  it('imports by id or by address, and marks the id field when the server refuses it', async () => {
+    const link = addLink()
+    const writes = store()
+    const { user } = await openTheme()
+    const dialog = await dialogOf(user, 'Importer depuis tweakcn')
 
-    await user.clear(field)
-    await user.paste('{"light": {"gain": "red"}, "dark": {}}')
-    await user.click(dialog.getByRole('button', { name: 'Appliquer' }))
+    await user.type(
+      dialog.getByLabelText('Identifiant ou adresse du thème'),
+      'https://tweakcn.com/themes/claude',
+    )
+    const done = user.click(dialog.getByRole('button', { name: 'Importer' }))
+    await waitFor(() => expect(link.getAttribute('href')).toMatch(/^\/api\/theme\.css\?v=\d+$/))
+    act(() => {
+      link.dispatchEvent(new Event('load'))
+    })
+    await done
 
-    expect(await dialog.findByRole('alert')).toHaveTextContent('Clé refusée : gain')
-    await waitFor(() => expect(field).toHaveFocus())
-    expect(field).toHaveAttribute('aria-invalid', 'true')
+    await waitFor(() => expect(writes).toEqual([['import', { id: 'claude' }]]))
   })
 
   it('says what tweakcn answered when the import fails', async () => {
@@ -208,206 +291,25 @@ describe('the theme card', () => {
             type: PROBLEM_TYPES.providerRefused,
             title: 'Provider refused',
             status: 502,
-            detail: 'tweakcn: OSError: HTTP 404',
+            detail: 'tweakcn: answered 404',
             provider: 'tweakcn',
-            reason: 'unreachable',
+            reason: 'refused',
           },
           { status: 502, headers: { 'Content-Type': 'application/problem+json' } },
         ),
       ),
     )
-    const { user, block } = await openTheme()
-    const dialog = await dialogOf(
-      user,
-      within(block).getByRole('button', { name: 'Importer depuis tweakcn' }),
-    )
+    const { user } = await openTheme()
+    const dialog = await dialogOf(user, 'Importer depuis tweakcn')
 
     await user.type(dialog.getByLabelText('Identifiant ou adresse du thème'), 'nope')
     await user.click(dialog.getByRole('button', { name: 'Importer' }))
 
-    expect(await dialog.findByRole('alert')).toHaveTextContent(
-      'tweakcn n’a pas rendu de thème : OSError: HTTP 404',
-    )
-    expect(dialog.getByLabelText('Identifiant ou adresse du thème')).not.toHaveAttribute(
-      'aria-invalid',
-    )
-  })
-
-  it('marks the id field when the server refuses the id', async () => {
-    store()
-    server.use(
-      http.post(ROUTES.themeImport, () =>
-        HttpResponse.json(
-          { type: PROBLEM_TYPES.badRequest, title: 'Invalid request', status: 422, key: 'id' },
-          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
-        ),
-      ),
-    )
-    const { user, block } = await openTheme()
-    const dialog = await dialogOf(
-      user,
-      within(block).getByRole('button', { name: 'Importer depuis tweakcn' }),
-    )
-    const field = dialog.getByLabelText('Identifiant ou adresse du thème')
-
-    await user.type(field, 'Nope')
-    await user.click(dialog.getByRole('button', { name: 'Importer' }))
-
-    expect(await dialog.findByRole('alert')).toHaveTextContent(
-      'Un identifiant tweakcn ne contient que',
-    )
-    expect(field).toHaveAttribute('aria-invalid', 'true')
-    await waitFor(() => expect(field).toHaveFocus())
-  })
-
-  it('applies pasted JSON, repaints, and shows what the store kept', async () => {
-    const link = addLink()
-    const writes = store()
-    const { user, block } = await openTheme()
-    const dialog = await dialogOf(
-      user,
-      within(block).getByRole('button', { name: 'Modifier le JSON' }),
-    )
-
-    await user.clear(jsonField(dialog))
-    await user.paste('{"light": {"primary": "red"}, "dark": {"primary": "blue"}}')
-    await user.click(dialog.getByRole('button', { name: 'Appliquer' }))
-
-    expect(await within(block).findByText('Thème personnalisé · appliqué')).toBeInTheDocument()
-    expect(writes).toEqual([['put', { light: { primary: 'red' }, dark: { primary: 'blue' } }]])
-    expect(link.getAttribute('href')).toMatch(/^\/api\/theme\.css\?v=\d+$/)
-
-    const reopened = await dialogOf(
-      user,
-      within(block).getByRole('button', { name: 'Modifier le JSON' }),
-    )
-    expect(JSON.parse(jsonField(reopened).value)).toEqual(THEME)
+    expect(await dialog.findByRole('alert')).toHaveTextContent('tweakcn n’a pas rendu de thème')
   })
 })
 
-const preview = () => document.getElementById('theme-preview')
-
-async function openForm() {
-  const rendered = await openTheme()
-  await rendered.user.click(within(rendered.block).getByRole('button', { name: 'Modifier' }))
-  return rendered
-}
-
-/** Move a colour field's native input, as the picker does. */
-const pick = (name: string, hex: string) =>
-  fireEvent.change(screen.getByLabelText(name), { target: { value: hex } })
-
-describe('the theme form', () => {
-  it('opens in place, shows the light palette by name, and hides the import and the JSON', async () => {
-    store()
-    const { block } = await openForm()
-
-    expect(within(block).getByRole('radio', { name: 'Clair' })).toBeChecked()
-    for (const name of ['Fond', 'Encre', 'Gain', 'Perte', 'Répartition 4']) {
-      expect(within(block).getByLabelText(name)).toBeInTheDocument()
-    }
-    expect(within(block).getByRole('slider', { name: 'Arrondi' })).toBeInTheDocument()
-    expect(within(block).queryByRole('button', { name: 'Importer depuis tweakcn' })).toBeNull()
-    expect(within(block).queryByRole('button', { name: 'Modifier le JSON' })).toBeNull()
-    expect(within(block).getByRole('button', { name: 'Appliquer' })).toBeDisabled()
-    expect(preview()).toBeNull()
-  })
-
-  it('previews an edit over the whole app, and marks the field as edited', async () => {
-    store()
-    const { user, block } = await openForm()
-
-    pick('Encre', '#ff0000')
-
-    await waitFor(() => expect(preview()).not.toBeNull())
-    expect(preview()?.textContent).toContain('html:root{')
-    expect(preview()?.textContent).toMatch(/--ring: oklch\(0\.6\d* 0\.2\d* 29/)
-    expect(within(block).getByText(/1 modification non appliquée/)).toBeInTheDocument()
-    await user.click(within(block).getByRole('button', { name: 'Rétablir : Encre' }))
-    expect(preview()).toBeNull()
-    expect(within(block).getByText(/aucune modification/)).toBeInTheDocument()
-  })
-
-  it('applies once, and keeps the preview until the new stylesheet has loaded', async () => {
-    const link = addLink()
-    const writes = store()
-    const { user, block } = await openForm()
-    pick('Encre', '#ff0000')
-    await waitFor(() => expect(preview()).not.toBeNull())
-
-    await user.click(within(block).getByRole('button', { name: 'Appliquer' }))
-
-    await waitFor(() => expect(writes).toHaveLength(1))
-    expect(writes[0][0]).toBe('put')
-    expect(link.getAttribute('href')).toMatch(/^\/api\/theme\.css\?v=\d+$/)
-    expect(preview()).not.toBeNull()
-    link.dispatchEvent(new Event('load'))
-    await waitFor(() => expect(preview()).toBeNull())
-    expect(within(block).getByText(/aucune modification/)).toBeInTheDocument()
-  })
-
-  it('keeps the preview and says so when the new stylesheet does not load', async () => {
-    const link = addLink()
-    store()
-    const { user, block } = await openForm()
-    pick('Encre', '#ff0000')
-    await waitFor(() => expect(preview()).not.toBeNull())
-
-    await user.click(within(block).getByRole('button', { name: 'Appliquer' }))
-    await waitFor(() => expect(link.getAttribute('href')).toMatch(/\?v=/))
-    link.dispatchEvent(new Event('error'))
-
-    expect(await within(block).findByRole('alert')).toHaveTextContent(
-      'Le thème est enregistré, mais la feuille de style n’a pas pu être rechargée',
-    )
-    expect(preview()).not.toBeNull()
-  })
-
-  it('shows the dark ground while the dark palette is edited, and gives it back on Annuler', async () => {
-    const writes = store()
-    const { user, block } = await openForm()
-
-    await user.click(within(block).getByRole('radio', { name: 'Sombre' }))
-    expect(document.documentElement).toHaveClass('dark')
-    pick('Fond', '#101010')
-    await waitFor(() => expect(preview()).not.toBeNull())
-    await user.click(within(block).getByRole('button', { name: 'Annuler' }))
-
-    expect(document.documentElement).not.toHaveClass('dark')
-    expect(preview()).toBeNull()
-    expect(within(block).getByRole('button', { name: 'Modifier' })).toBeInTheDocument()
-    expect(writes).toEqual([])
-  })
-
-  it('writes Ombres as opacity and strings, and the letter spacing under both its keys', async () => {
-    const writes = store()
-    const { user, block } = await openForm()
-
-    const shadows = within(block).getByRole('slider', { name: 'Ombres' })
-    shadows.focus()
-    await user.keyboard('{ArrowRight}{ArrowRight}')
-    const tracking = within(block).getByRole('slider', { name: 'Espacement des lettres' })
-    tracking.focus()
-    await user.keyboard('{ArrowRight}')
-    await user.click(within(block).getByRole('button', { name: 'Appliquer' }))
-
-    await waitFor(() => expect(writes).toHaveLength(1))
-    const sent = writes[0][1] as ThemeVars
-    expect(sent.theme['shadow-opacity']).toBe('0.02')
-    expect(sent.theme['shadow-2xl']).toBe('0px 1px 2px 0px hsl(0 0% 0% / 0.05)')
-    expect(sent.theme['tracking-normal']).toBe('0.005em')
-    expect(sent.theme['letter-spacing']).toBe('0.005em')
-  })
-})
-
-describe('leaving the form with edits', () => {
-  async function dirty() {
-    const writes = store()
-    const rendered = await openForm()
-    pick('Encre', '#ff0000')
-    await waitFor(() => expect(preview()).not.toBeNull())
-    return { ...rendered, writes }
-  }
+describe('leaving the page with edits', () => {
   const leave = (router: Awaited<ReturnType<typeof openTheme>>['router']) =>
     act(() => {
       void router.navigate({ to: '/' })
@@ -415,7 +317,7 @@ describe('leaving the form with edits', () => {
 
   it('asks nothing when nothing was edited', async () => {
     store()
-    const { router } = await openForm()
+    const { router } = await openTheme()
 
     leave(router)
 
@@ -423,27 +325,30 @@ describe('leaving the form with edits', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('stays on Rester, and on Escape, with the edits and the preview kept', async () => {
-    const { user, router } = await dirty()
+  it('stays on Rester, and on Escape, with the edits kept', async () => {
+    store()
+    const { user, router } = await openTheme()
+    pick('Encre', '#ff0000')
 
     leave(router)
     const dialog = within(await screen.findByRole('dialog'))
     expect(dialog.getByText('1 modification non appliquée')).toBeInTheDocument()
-    expect(dialog.getByText('Abandonner rétablit le thème enregistré.')).toBeInTheDocument()
     await user.click(dialog.getByRole('button', { name: 'Rester' }))
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(router.state.location.pathname).toBe('/settings')
+    expect(router.state.location.pathname).toBe('/settings/theme')
 
     leave(router)
     await screen.findByRole('dialog')
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(router.state.location.pathname).toBe('/settings')
-    expect(preview()).not.toBeNull()
+    expect(router.state.location.pathname).toBe('/settings/theme')
+    expect(screen.getByRole('img', { name: 'Modifié' })).toBeInTheDocument()
   })
 
-  it('leaves on Abandonner and restores the saved theme', async () => {
-    const { user, router, writes } = await dirty()
+  it('leaves on Abandonner, writing nothing', async () => {
+    const writes = store()
+    const { user, router } = await openTheme()
+    pick('Encre', '#ff0000')
 
     leave(router)
     await user.click(
@@ -451,42 +356,26 @@ describe('leaving the form with edits', () => {
     )
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
-    expect(preview()).toBeNull()
     expect(writes).toEqual([])
   })
 
   it('applies, then leaves, on Appliquer', async () => {
-    const { user, router, writes } = await dirty()
+    const writes = store()
+    const link = addLink()
+    const { user, router } = await openTheme()
+    pick('Encre', '#ff0000')
 
     leave(router)
-    await user.click(
+    const done = user.click(
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Appliquer' }),
     )
+    await waitFor(() => expect(link.getAttribute('href')).toMatch(/^\/api\/theme\.css\?v=\d+$/))
+    act(() => {
+      link.dispatchEvent(new Event('load'))
+    })
+    await done
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/'))
     expect(writes).toHaveLength(1)
-    expect(preview()).toBeNull()
-  })
-
-  it('stays, with the edits and the refusal in the bar, when Appliquer fails', async () => {
-    const { user, router, block } = await dirty()
-    server.use(
-      http.put(ROUTES.theme, () =>
-        HttpResponse.json(
-          { type: PROBLEM_TYPES.badRequest, title: 'Invalid request', status: 422, key: 'ring' },
-          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
-        ),
-      ),
-    )
-
-    leave(router)
-    await user.click(
-      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Appliquer' }),
-    )
-
-    expect(await within(block).findByRole('alert')).toHaveTextContent('Clé refusée : ring')
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(router.state.location.pathname).toBe('/settings')
-    expect(preview()).not.toBeNull()
   })
 })

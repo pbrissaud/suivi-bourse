@@ -89,8 +89,6 @@ import type {
 } from '@/features/benchmark/lib/api'
 import type {
   InvestmentRhythmResponse,
-  Mover,
-  MoversResponse,
   PortfolioTotals,
   PortfolioTotalsHistoryResponse,
   PortfolioTotalsResponse,
@@ -122,7 +120,14 @@ import type {
   PriceSeriesResponse,
   Resolution,
 } from '@/features/shares/lib/api'
-import type { Advisory, HealthJobs, HealthState, InstallationFact, RuntimeState } from '@/lib/api'
+import type {
+  Advisory,
+  HealthJobs,
+  HealthState,
+  InstallationFact,
+  JournalRow,
+  RuntimeState,
+} from '@/lib/api'
 
 /** The instant every fixture is written against. Tests freeze the clock to it. */
 export const NOW = '2026-03-02T12:00:00.000Z'
@@ -333,6 +338,10 @@ export function aPosition(options: PositionOptions = {}): Position {
     cost_basis: 1000,
     realised: 0,
     dividends: 0,
+    // Market value less cost on the fixture's default quantity and basis.
+    latent_gain: price === null || rate === null ? null : 10 * price * rate - 1000,
+    latent_gain_pct: price === null || rate === null ? null : (10 * price * rate - 1000) / 1000,
+    day_change_pct: null,
     price: price === null ? null : { value: price, currency, at: NOW },
     converted:
       price === null || rate === null
@@ -433,7 +442,13 @@ export function defaultAccounts(): Account[] {
 
 export function defaultPositions(): Position[] {
   return [
-    aPosition({ account: 'alpha', symbol: 'ZZA', name: 'Zeta Alpha', dividends: 25 }),
+    aPosition({
+      account: 'alpha',
+      symbol: 'ZZA',
+      name: 'Zeta Alpha',
+      dividends: 25,
+      day_change_pct: 0.02,
+    }),
     // Held, quoted in dollars, converted at 0,80.
     aPosition({
       account: 'beta',
@@ -445,6 +460,7 @@ export function defaultPositions(): Position[] {
       price: 125,
       currency: 'USD',
       rate: 0.8,
+      day_change_pct: 0,
     }),
     // Held, never quoted: carried at its cost.
     aPosition({
@@ -536,6 +552,18 @@ export function aTotals(overrides: Partial<PortfolioTotals> = {}): PortfolioTota
     transfer_fees: -5,
     gain_absolu: 370,
     ytd: { gain: 40.69, twr: -0.0125 },
+    variation: {
+      '1M': { amount: 120, pct: 0.045, base: 2666.67, deposits: false, start_date: '2026-02-02' },
+      YTD: { amount: 40.69, pct: 0.0157, base: 2591.6, deposits: false, start_date: '2025-12-31' },
+      '1Y': { amount: 310, pct: 0.14, base: 2214.29, deposits: false, start_date: '2025-03-02' },
+      MAX: { amount: 370, pct: 0.152, base: 2430, deposits: false, start_date: '2019-10-30' },
+    },
+    cash: 500,
+    gain_total: { amount: 370, pct: 0.152 },
+    net_if_sold_today: 2800,
+    estimated_accounts: [],
+    first_deposit: '2019-10-30',
+    granted: 0,
     ...overrides,
   }
 }
@@ -668,35 +696,6 @@ export function aPositionsHistory(
 }
 
 /**
- * THE MOVERS (#727), and the shape the block exists for.
- *
- * Three held lines, and **only two of them are in the collection**:
- *
- *   ZZA  +2,00 %   a riser
- *   ZZB   0,00 %   moved by exactly nothing — so it is in neither column, and
- *                  it is the measured case: on the real portfolio the second
- *                  line, at 16,6 % of it, disappeared from both
- *   ZZC     —      never quoted, therefore nothing to compare a first day
- *                  against, therefore not served at all
- *
- * One riser, no faller, and **two** held lines shown nowhere — one of which
- * moved by nothing. The sentence under the two columns is what says so.
- */
-export function aMover(overrides: Partial<Mover> = {}): Mover {
-  return {
-    symbol: 'ZZA',
-    name: 'Zeta Alpha',
-    price: 130,
-    previous_price: 127.45,
-    change: 2.55,
-    change_pct: 0.02,
-    market_value: 1300,
-    contribution: 25.5,
-    ...overrides,
-  }
-}
-
-/**
  * THE INVESTMENT RHYTHM (#751) — **six covered months of twelve**.
  *
  * The pair the record is about, chosen so the two wrong readings are both
@@ -725,26 +724,6 @@ export function aRhythm(
     ...figures,
     accounts: [{ account: 'alpha', ...figures }],
     ...overrides,
-  }
-}
-
-export function aMoversPayload(
-  movers: Mover[] = [
-    aMover(),
-    aMover({
-      symbol: 'ZZB',
-      name: 'Zeta Beta',
-      price: 100,
-      previous_price: 100,
-      change: 0,
-      change_pct: 0,
-      market_value: 400,
-      contribution: 0,
-    }),
-  ],
-): MoversResponse {
-  return {
-    movers,
   }
 }
 
@@ -1095,7 +1074,9 @@ export function aRuntime(overrides: Partial<RuntimeState> = {}): RuntimeState {
     // The ordinary installation is the mounted one (#741), so the factory's
     // default is the state that says nothing on screen; the other two are what
     // a test asks for by name.
-    store: { path: '/data/suivi-bourse.duckdb' },
+    store: { path: '/data/suivi-bourse.duckdb', size_bytes: 48_234_496 },
+    followed: [],
+    quote_source: { name: 'yfinance', response_seconds: 1.4 },
     // The ordinary installation is a published image (#741's taste applied to
     // the stamp): the default is what an owner who pulled a tag runs, and the
     // three other states are what a test asks for by name.
@@ -1502,6 +1483,8 @@ export function anAdvisory(overrides: Partial<Advisory> = {}): Advisory {
     key: 'cash_share:alpha',
     kind: 'cash_share',
     subject: 'accounts',
+    register: 'system',
+    texts: null,
     message: 'Alpha holds 24.8% of its value in uninvested cash.',
     detail: {
       account: 'alpha',
@@ -1556,11 +1539,68 @@ export function aJobTrack(overrides: Partial<JobTrack> = {}): JobTrack {
 /** `GET /api/jobs` as the server lists its four jobs, in its order (#1253). */
 export function someJobs(extra: JobInfo[] = []): JobInfo[] {
   return [
-    { id: 'scrape', label_key: 'settings.jobs.scrape', kind: 'family', in_health: true },
-    { id: 'backfill', label_key: 'settings.jobs.backfill', kind: 'job', in_health: true },
-    { id: 'ingestion', label_key: 'settings.jobs.ingestion', kind: 'job', in_health: false },
-    { id: 'performance', label_key: 'settings.jobs.performance', kind: 'job', in_health: true },
+    {
+      id: 'scrape',
+      label_key: 'settings.jobs.scrape',
+      kind: 'family',
+      in_health: true,
+      state: 'ok',
+      last_run_at: null,
+      next_run_at: null,
+      cadence: null,
+    },
+    {
+      id: 'backfill',
+      label_key: 'settings.jobs.backfill',
+      kind: 'job',
+      in_health: true,
+      state: 'ok',
+      last_run_at: null,
+      next_run_at: null,
+      cadence: null,
+    },
+    {
+      id: 'ingestion',
+      label_key: 'settings.jobs.ingestion',
+      kind: 'job',
+      in_health: false,
+      state: 'ok',
+      last_run_at: null,
+      next_run_at: null,
+      cadence: null,
+    },
+    {
+      id: 'performance',
+      label_key: 'settings.jobs.performance',
+      kind: 'job',
+      in_health: true,
+      state: 'ok',
+      last_run_at: null,
+      next_run_at: null,
+      cadence: null,
+    },
     ...extra,
+  ]
+}
+
+/** `GET /api/logs`, newest first: a warning with its traceback, then an info line. */
+export function someJournalRows(extra: JournalRow[] = []): JournalRow[] {
+  return [
+    ...extra,
+    {
+      time: '2026-03-02T11:50:00.000Z',
+      level: 'warning',
+      job: 'scrape',
+      message: 'yfinance: HTTP 429 Too Many Requests for AI.PA, retried after 8 s',
+      detail: 'Traceback (most recent call last):\n  YFRateLimitError',
+    },
+    {
+      time: '2026-03-02T11:45:00.000Z',
+      level: 'info',
+      job: 'performance',
+      message: 'recomputed 2 accounts in 0.41 s',
+      detail: null,
+    },
   ]
 }
 

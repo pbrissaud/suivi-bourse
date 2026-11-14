@@ -1,4 +1,5 @@
 """Pure view logic for the web UI (issue #659, rewritten to v5's shape by #700)."""
+from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import (
@@ -207,6 +208,19 @@ def build_positions(rows: Sequence[Dict[str, Any]],
     return [_build_position(row, base_currency, terminal) for row in rows]
 
 
+def with_day_change(positions: List[Dict[str, Any]],
+                    previous: Mapping[str, float]) -> List[Dict[str, Any]]:
+    """Add ``day_change_pct`` to each row: the converted price over the symbol's
+    previous close, as a ratio. ``None`` when either term is unknown."""
+    for position in positions:
+        converted = position.get('converted') or {}
+        position['day_change_pct'] = _ratio(
+            _difference(converted.get('value'),
+                        previous.get(position.get('symbol'))),
+            previous.get(position.get('symbol')))
+    return positions
+
+
 def _build_position(row: Dict[str, Any],
                     base_currency: Optional[str],
                     terminal: Collection[str]) -> Dict[str, Any]:
@@ -214,6 +228,10 @@ def _build_position(row: Dict[str, Any],
     price_native = row.get('price_native')
     converted = row.get('price')
     at = instants.iso(row.get('price_time'))
+    held = _build_account(row, row.get('symbol') in terminal)
+    # A closed line is worth exactly nothing, and that is known (see
+    # :func:`latent_gains_by_account`): its latent gain is zero, not unknown.
+    latent_gain = held.plus_value_latente if held.quantity else 0.0
     return {
         'account': row.get('account'),
         'symbol': row.get('symbol'),
@@ -233,6 +251,11 @@ def _build_position(row: Dict[str, Any],
             'rate': row.get('fx_rate'),
             'rate_at': at,
         },
+        # **On the securities' cost only**, never on what was paid in: the
+        # same arithmetic as the shares table's row, so the Titres summary is
+        # the sum of its rows.
+        'latent_gain': latent_gain,
+        'latent_gain_pct': _ratio(latent_gain, held.cost_basis),
         'closed_at': instants.iso(row.get('closed_at')),
         'terminal': row.get('symbol') in terminal,
         'fundamentals': _build_fundamentals(row),
@@ -291,6 +314,94 @@ def build_portfolio_totals(
     payload['transfer_fees'] = transfer_fees
     payload['ytd'] = _ytd(latest, base)
     return payload
+
+
+#: The ranges the hero reads its change over (``MAX`` is the whole series).
+VARIATION_RANGES = ('1M', 'YTD', '1Y', 'MAX')
+
+
+def _back(day: date, months: int) -> date:
+    """``day`` less whole months, clamped to the shorter month's last day."""
+    index = day.year * 12 + day.month - 1 - months
+    year, month = divmod(index, 12)
+    month += 1
+    return date(year, month, min(day.day, monthrange(year, month)[1]))
+
+
+def variation_base_day(name: str, day: date) -> Optional[date]:
+    """The day a range counts from; ``None`` for ``MAX``, whose start is the series'."""
+    if name == 'MAX':
+        return None
+    if name == 'YTD':
+        return ytd_base_day(day)
+    return _back(day, 1 if name == '1M' else 12)
+
+
+def build_variation(
+    latest: Dict[str, Any],
+    bases: Mapping[str, Optional[Dict[str, Any]]],
+    first: Optional[Dict[str, Any]],
+) -> Dict[str, Optional[Dict[str, Any]]]:
+    """``{amount, pct, start_date}`` per range, or ``None`` where the series is too short.
+
+    **The amount is the change in gain** (``gain_absolu``), so a deposit inside
+    the range is not a performance. The percentage is over the value at the
+    start of the range. ``MAX`` is the exception, and a stated one: the
+    series starts at its first deposit, a base too small to mean anything, so
+    its amount is the whole gain and its base the net contribution.
+
+    ``base`` is that amount, so the screen can say what the percentage is *of*;
+    ``deposits`` says money went in or out inside the range, which is what
+    « hors versements » claims on a window that had some.
+    """
+    out: Dict[str, Optional[Dict[str, Any]]] = {}
+    for name in VARIATION_RANGES:
+        if name == 'MAX':
+            if first is None:
+                out[name] = None
+                continue
+            amount, base, start = (latest.get('gain_absolu'),
+                                   latest.get('net_contributed'), first)
+            deposits = False
+        else:
+            start = bases.get(name)
+            if start is None:
+                out[name] = None
+                continue
+            amount = _difference(latest.get('gain_absolu'),
+                                 start.get('gain_absolu'))
+            base = start.get('total_value')
+            deposits = _difference(latest.get('net_contributed'),
+                                   start.get('net_contributed')) not in (None, 0)
+        out[name] = {'amount': amount, 'pct': _ratio(amount, base),
+                     'base': base, 'deposits': bool(deposits),
+                     'start_date': instants.iso(start.get('day'))}
+    return out
+
+
+def build_gain_total(shares: Sequence[SharePosition],
+                     transfer_fees: Optional[float],
+                     net_contributed: Optional[float]) -> Dict[str, Optional[float]]:
+    """The official gain: latent + realised + dividends − fees, over the net contribution.
+
+    Unknown (``None``) when a held line has no value, as the front's four-term
+    sum is: a partial latent gain is not a gain.
+    """
+    latent: Optional[float] = 0.0
+    for share in shares:
+        if not share.quantity:
+            continue
+        if share.plus_value_latente is None:
+            latent = None
+            break
+        latent += share.plus_value_latente
+    if latent is None or transfer_fees is None:
+        amount = None
+    else:
+        realised = sum(share.realized_gain or 0.0 for share in shares)
+        dividends = sum(share.received_dividend or 0.0 for share in shares)
+        amount = latent + realised + dividends + transfer_fees
+    return {'amount': amount, 'pct': _ratio(amount, net_contributed)}
 
 
 _TOTALS_MEMBERS = (
@@ -439,66 +550,6 @@ def _valued_at(position: Dict[str, Any], observed: Optional[float],
                           position.get('cost_basis'))
 
 
-@dataclass(frozen=True)
-class Mover:
-    """One share's move since the previous session close."""
-
-    symbol: str
-    name: Optional[str]
-    price: Optional[float]
-    previous_price: Optional[float]
-    change: Optional[float]
-    change_pct: Optional[float]
-    market_value: Optional[float]
-    contribution: Optional[float]
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            'symbol': self.symbol,
-            'name': self.name,
-            'price': self.price,
-            'previous_price': self.previous_price,
-            'change': self.change,
-            'change_pct': self.change_pct,
-            'market_value': self.market_value,
-            'contribution': self.contribution,
-        }
-
-
-def build_movers(
-    shares: Sequence[SharePosition],
-    baseline_rows: Sequence[Dict[str, Any]],
-) -> List[Mover]:
-    """Rank the portfolio by each line's move since its own previous close."""
-    baseline = {
-        row.get('symbol'): row.get('price') for row in baseline_rows
-        if row.get('symbol') and row.get('price') is not None
-    }
-
-    movers = []
-    for share in shares:
-        if not share.quantity:
-            continue
-        previous = baseline.get(share.symbol)
-        change = _difference(share.price, previous)
-        if change is None:
-            continue
-        movers.append(Mover(
-            symbol=share.symbol,
-            name=share.name,
-            price=share.price,
-            previous_price=previous,
-            change=change,
-            change_pct=_ratio(change, previous),
-            market_value=share.market_value,
-            contribution=_product(change, share.quantity),
-        ))
-
-    movers.sort(key=lambda mover: (mover.change_pct is None,
-                                   -(mover.change_pct or 0.0)))
-    return movers
-
-
 def _build_account(row: Dict[str, Any], carry: bool = False) -> AccountPosition:
     """One breakdown row, with the same arithmetic scoped to a single account."""
     quantity = row.get('quantity')
@@ -566,9 +617,9 @@ def _first_value(rows: Sequence[Dict[str, Any]], field: str) -> Any:
 
 
 __all__ = [
-    'AccountPosition', 'AccountSummary', 'SharePosition', 'Mover',
+    'AccountPosition', 'AccountSummary', 'SharePosition',
     'build_shares', 'build_accounts', 'latent_gains_by_account', 'unit_cost',
-    'build_positions', 'build_portfolio_totals', 'ytd_base_day',
-    'build_price_series',
-    'valuation_series', 'build_movers',
+    'build_positions', 'with_day_change', 'build_portfolio_totals', 'ytd_base_day',
+    'build_price_series', 'valuation_series', 'build_variation',
+    'build_gain_total', 'variation_base_day',
 ]

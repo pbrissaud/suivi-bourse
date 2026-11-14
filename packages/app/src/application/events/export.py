@@ -235,7 +235,7 @@ def _account_row(account: str, declaration: Optional[Any],
     metric = metric or {}
     return {
         'account': account,
-        'account_label': None if declaration is None else declaration.label,
+        'account_label': account if declaration is None else declaration.label or account,
         'as_of': metric.get('day'),
         'cash_balance': metric.get('cash_balance'),
         'net_contributed': metric.get('net_contributed'),
@@ -256,7 +256,7 @@ def _position_row(account: str, declaration: Optional[Any],
     price = position.get('price')
     return {
         'account': account,
-        'account_label': None if declaration is None else declaration.label,
+        'account_label': account if declaration is None else declaration.label or account,
         'symbol': position.get('symbol'),
         'name': position.get('name'),
         'quantity': quantity,

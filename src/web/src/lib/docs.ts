@@ -73,6 +73,11 @@ export function docsPageHref(
   return `${origin}/${locale}docs/${DOCS_VERSION}/${page}#${anchor}`
 }
 
+/** The documentation's front page for this version and locale. */
+export function docsRootHref(language: Language, origin = DOCS_ORIGIN): string {
+  return `${origin}/${language === 'en' ? '' : `${language}/`}docs/${DOCS_VERSION}/`
+}
+
 /** The origin the server named, or the default: never empty, never relative. */
 export function docsOrigin(value: unknown): string {
   if (typeof value !== 'string') return DOCS_ORIGIN
@@ -98,6 +103,7 @@ export function useDocs() {
     staleTime: Number.POSITIVE_INFINITY,
   })
   return {
+    docsRootHref: (language: Language) => docsRootHref(language, origin),
     docsHref: (language: Language, anchor: DocsAnchor) => docsHref(language, anchor, origin),
     docsPageHref: (language: Language, page: string, anchor: string) =>
       docsPageHref(language, page, anchor, origin),

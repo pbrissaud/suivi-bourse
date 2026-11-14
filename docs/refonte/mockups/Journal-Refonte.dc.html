@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Journal — refonte</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.act{padding:0;border:0;background:none;font:inherit;font-size:13px;color:var(--muted-foreground);cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--border)}
+.act:hover{color:var(--foreground)}
+.btn{display:inline-flex;height:32px;align-items:center;gap:6px;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--foreground);font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.tabs{display:flex;gap:24px;font-size:15px;line-height:22px;font-weight:500;color:var(--muted-foreground)}
+.tabs span{padding:0 0 12px;margin-bottom:-13px;border-bottom:2px solid transparent;cursor:pointer}
+.tabs span[data-on]{color:var(--foreground);border-bottom-color:var(--foreground)}
+.flt{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--muted-foreground);cursor:pointer;white-space:nowrap}
+.flt:hover{color:var(--foreground)}
+.day{font-size:12px;line-height:16px;color:var(--muted-foreground);padding:20px 0 6px;border-bottom:1px solid var(--border)}
+.row{display:grid;grid-template-columns:56px 72px 210px minmax(0,1fr);gap:0 16px;align-items:start;min-height:40px;box-sizing:border-box;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;line-height:18px}
+.row .msg{font-family:var(--font-mono);font-size:12.5px;white-space:pre-wrap;word-break:break-word;color:var(--foreground)}
+.row[data-l="info"] .msg{color:var(--muted-foreground)}
+.row[data-l="info"] .lvl{color:var(--muted-foreground)}
+.row .lvl{display:inline-flex;align-items:center;gap:5px;font-weight:500;white-space:nowrap}
+.row .task{color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t{color:var(--muted-foreground)}
+.row details{grid-column:4 / span 2}
+.row summary{list-style:none;cursor:pointer}
+.row summary::-webkit-details-marker{display:none}
+.row pre{margin:8px 0 0;padding:12px 14px;border-radius:10px;background:var(--muted);font-family:var(--font-mono);font-size:12px;line-height:17px;color:var(--muted-foreground);white-space:pre-wrap;word-break:break-word}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted-foreground)}
+.live i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--foreground)}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; flex-wrap: wrap; align-items: stretch; min-height: 900px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="system" hint-size="200px,900px"></dc-import>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Journal" subtitle="" hint-size="100%,56px"></dc-import>
+
+<div style="width: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 32px 32px 56px; font-size: 14px; line-height: 20px">
+
+<!-- Ligne 1 : retour + actions de page -->
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px">
+<a href="Systeme-Refonte.dc.html" class="act" style="text-decoration: none">← Système</a>
+<div style="display: flex; align-items: center; gap: 16px">
+<span class="live"><i aria-hidden="true"></i>En direct</span>
+<button type="button" class="btn"><x-import component-from-global-scope="SuiviBourse.Icons.Download" class-name="size-4" aria-hidden="true"></x-import>Télécharger</button>
+</div>
+</div>
+
+<!-- Ligne 2 : filtres -->
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); align-items: flex-end">
+<div style="display: flex; align-items: center; gap: 24px">
+<div class="tabs" role="tablist"><span role="tab" data-on>Tout</span><span role="tab">Avertissements <span class="fig">4</span></span><span role="tab">Erreurs <span class="fig">0</span></span></div>
+<span class="flt">Toutes les tâches<x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></span>
+<span class="flt">7 derniers jours<x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></span>
+</div>
+<x-import component-from-global-scope="SuiviBourse.Input" type="search" placeholder="Rechercher" aria-label="Rechercher dans le journal" style="width: 280px; height: 32px"></x-import>
+</div>
+
+<!-- Lignes -->
+<div role="table" aria-label="Journal">
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="18">
+<div class="day" style="display: {{r.dayDisp}}">{{r.day}}</div>
+<div class="row" role="row" data-l="{{r.level}}" style="display: {{r.rowDisp}}">
+<span role="cell" class="fig t">{{r.time}}</span>
+<span role="cell" class="lvl"><span style="display: {{r.warnDisp}}; line-height: 0"><x-import component-from-global-scope="SuiviBourse.Icons.TriangleAlert" class-name="size-3.5" aria-hidden="true"></x-import></span>{{r.lvl}}</span>
+<span role="cell" class="task">{{r.task}}</span>
+<span role="cell" class="msg" style="display: {{r.plainDisp}}">{{r.msg}}</span>
+<details style="display: {{r.detDisp}}"><summary class="msg">{{r.msg}} <span class="act" style="font-family: var(--font-sans)">détail</span></summary><pre>{{r.detail}}</pre></details>
+</div>
+</sc-for>
+<p style="margin: 0; padding: 16px 0 0; font-size: 13px; color: var(--muted-foreground)">Plus ancien que <span class="fig">7 jours</span> · <a href="#" class="act">élargir la période</a></p>
+</div>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const L = { info: 'info', warn: 'avert.', error: 'erreur' };
+    const R = (time, level, task, msg, detail = '', day = '') => ({
+      time, level, lvl: L[level], task, msg, detail, day,
+      dayDisp: day ? 'block' : 'none',
+      rowDisp: 'grid',
+      warnDisp: level === 'info' ? 'none' : 'inline-flex',
+      plainDisp: detail ? 'none' : 'block',
+      detDisp: detail ? 'block' : 'none',
+    });
+    return {
+      rows: [
+        R('09:00', 'info', 'Mise à jour des cours', 'weekend · markets closed, next open Mon 09:00', '', 'Aujourd’hui · dimanche 8 nov.'),
+        R('03:00', 'info', 'Reconstruction de l’historique', 'backfill complete · 7 series, 0 gaps, 41 s'),
+        R('17:36', 'info', 'Calcul de la performance', 'recomputed 2 accounts in 0.41 s', '', 'Vendredi 6 nov.'),
+        R('17:35', 'warn', 'Mise à jour des cours', 'PUST.PA close unchanged for 6 passes (82.09)'),
+        R('17:35', 'info', 'Mise à jour des cours', '6 symbols fetched in 1.4 s · next 17:40'),
+        R('17:30', 'warn', 'Mise à jour des cours', 'PUST.PA close unchanged for 5 passes (82.09)'),
+        R('17:30', 'info', 'Mise à jour des cours', '6 symbols fetched in 1.3 s · next 17:35'),
+        R('17:25', 'info', 'Mise à jour des cours', '6 symbols fetched in 1.5 s · next 17:30'),
+        R('16:50', 'warn', 'Mise à jour des cours', 'yfinance: HTTP 429 Too Many Requests for AI.PA — retried after 8 s, ok', 'Traceback (most recent call last):\n  File "suivi_bourse/scrape.py", line 142, in fetch\n    hist = ticker.history(period="1d", interval="5m")\n  File "yfinance/base.py", line 88, in history\n    raise YFRateLimitError(url)\nyfinance.exceptions.YFRateLimitError: https://query2.finance.yahoo.com/v8/finance/chart/AI.PA\n\nretry 1/3 in 8 s … ok (1.9 s)'),
+        R('16:45', 'info', 'Mise à jour des cours', '6 symbols fetched in 1.2 s · next 16:50'),
+        R('16:25', 'warn', 'Mise à jour des cours', 'PUST.PA close unchanged for 1 pass (82.09)'),
+        R('09:12', 'info', 'Relecture du grand livre', 'ledger reread · 57 events, 0 changed'),
+        R('09:12', 'info', 'Relecture du grand livre', 'event 2026-11-08 BUY CW8 ×2 @ 512.30 recorded'),
+        R('09:00', 'info', 'Mise à jour des cours', 'market open · resuming 5 min cadence'),
+        R('03:00', 'info', 'Reconstruction de l’historique', 'backfill complete · 7 series, 0 gaps, 42 s'),
+        R('23:58', 'info', 'Mise à jour des cours', 'market closed · pausing until 09:00', '', 'Jeudi 5 nov.'),
+        R('17:40', 'info', 'Mise à jour des cours', '6 symbols fetched in 1.1 s · next tomorrow 09:00'),
+        R('17:36', 'info', 'Calcul de la performance', 'recomputed 2 accounts in 0.39 s'),
+        R('17:35', 'info', 'Mise à jour des cours', '6 symbols fetched in 1.4 s · next 17:40'),
+        R('12:04', 'info', 'Système', 'version check · 5.3.0 is latest'),
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -7,15 +7,16 @@
  * no card and no scroll box of its own, and draws what a phone reader scans for:
  *
  *     ☐  AAPL                    −1 627,35 €
- *        12/03/2026 · Achat             [compte]
+ *        12 mars 2026 · Achat           compte
  *     ☐  Virement                 +1 000,00 €
- *        12/03/2026 · Dépôt             [compte]
+ *        12 mars 2026 · Dépôt           compte
  *
  * The figure is the event's amount, the cash it moved, and `× quantity` for a
  * grant, which moves none (`EventFigure`, #1355, #1425).
  *
- * Quantity, unit price, fee and the label under a ticker are not drawn; they
- * live in `EventForm`, one tap away. It takes the table's props and its
+ * A purchase or a sale also says `quantity × unit price` on its second line;
+ * the fee and the label under a ticker are not drawn, they live in
+ * `EventForm`, one tap away, and a chevron says the row opens. It takes the table's props and its
  * selection state, so crossing the breakpoint changes the drawing and nothing
  * else.
  *
@@ -24,15 +25,16 @@
  * the row and never opens the editor.
  */
 import type { OnChangeFn, RowSelectionState } from '@tanstack/react-table'
+import { ChevronRight } from 'lucide-react'
 
 import { Checkbox } from '@/components/ui/checkbox'
 import type { LedgerEvent } from '@/features/data/lib/api'
 import {
-  AccountChip,
+  AccountId,
   EventFigure,
   Ticker,
   TYPE_LABEL,
-  TypePill,
+  TypeWord,
 } from '@/features/data/components/LedgerTable'
 import { identityOf, isEditable, nameOf, rowKey, selectionState } from '@/features/data/lib/ledger'
 import { ABSENT, useFormatters } from '@/lib/format'
@@ -52,6 +54,8 @@ interface LedgerListProps {
   onEdit: (event: LedgerEvent) => void
   /** The rows a merge has just written (#1119): marked, then let go of. */
   fresh?: ReadonlySet<string>
+  /** An account by the name the reader knows it by (its libellé). */
+  accountName?: (id: string) => string
 }
 
 /** 44 × 44 on a coarse pointer, around a 16 px box, above the stretched button. */
@@ -65,6 +69,7 @@ export function LedgerList({
   onRowSelectionChange,
   onEdit,
   fresh,
+  accountName,
 }: LedgerListProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -114,9 +119,10 @@ export function LedgerList({
           return (
             <li
               key={key}
+              data-row-id={event.id ?? undefined}
               data-state={rowSelection[key] ? 'selected' : undefined}
               data-fresh={fresh?.has(String(event.id)) ? '' : undefined}
-              className="relative flex min-h-15 items-center gap-3 border-b px-1 py-2 last:border-b-0 has-[button:active]:bg-muted/50 data-[state=selected]:bg-muted/50 data-fresh:bg-primary/10"
+              className="relative flex min-h-15 items-center gap-3 border-b px-1 py-2 data-[state=selected]:bg-muted/50 data-fresh:bg-primary/10"
             >
               <Checkbox
                 aria-label={t('data.select.row', {
@@ -138,6 +144,7 @@ export function LedgerList({
                       <button
                         type="button"
                         title={title}
+                        data-row-open=""
                         aria-label={
                           name === null
                             ? `${f.date(event.date)} · ${t(TYPE_LABEL[event.event_type])}`
@@ -163,21 +170,41 @@ export function LedgerList({
                     {/* The ticker beside the name, as on Titres (#1433). */}
                     {identity.name === null ? null : <Ticker symbol={identity.ticker as string} />}
                   </span>
-                  <span className="tabular shrink-0">
+                  <span className="fig shrink-0">
                     <EventFigure event={event} currency={currency} />
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="label tabular whitespace-nowrap">{f.day(event.date)}</span>
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-1.5">
+                    <span className="label fig whitespace-nowrap">{f.date(event.date)}</span>
                     <span aria-hidden className="label">
                       ·
                     </span>
-                    <TypePill type={event.event_type} />
+                    <TypeWord type={event.event_type} />
+                    {/* What a purchase or a sale was, since the phone has no
+                        quantity or price column to read it in. */}
+                    {event.quantity === null || event.unit_price === null ? null : (
+                      <>
+                        <span aria-hidden className="label">
+                          ·
+                        </span>
+                        <span className="label fig whitespace-nowrap">
+                          {`${f.quantity(event.quantity)} × ${f.currency(event.unit_price, currency)}`}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  <AccountChip event={event} />
+                  <span className="text-xs text-muted-foreground">
+                    <AccountId event={event} name={accountName} />
+                  </span>
                 </div>
               </div>
+              {/* A phone has no hover: the chevron is what says the row opens.
+                  (DESIGN.md says « no chevron » on a clickable row, which
+                  holds for a table read with a pointer.) */}
+              {isEditable(event) ? (
+                <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              ) : null}
             </li>
           )
         })}

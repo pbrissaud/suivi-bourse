@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Palette ⌘K</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.grp{padding:10px 8px 4px;font-size:12px;line-height:16px;color:var(--muted-foreground)}
+.it{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;min-height:40px;padding:0 10px;border-radius:8px;font-size:14px;color:inherit;text-decoration:none}
+.it[data-on]{background:var(--muted)}
+.it .sb{font-size:12px;color:var(--muted-foreground)}
+.it kbd{font-family:var(--font-sans);font-size:11px;color:var(--muted-foreground);border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+mark{background:none;color:inherit;font-weight:600}
+</style>
+</helmet>
+<div data-theme="light" style="position: relative; width: 1440px; height: 1180px; overflow: hidden; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Dashboard-Releve-C" hint-size="1440px,1180px"></dc-import>
+<a href="Dashboard-Releve-C.dc.html" aria-label="Fermer" style="position: absolute; inset: 0; background: oklch(0.2193 0.0208 56.376 / 0.32)"></a>
+<section role="dialog" aria-modal="true" aria-label="Rechercher" style="position: absolute; top: 140px; left: 50%; transform: translateX(-50%); width: 600px; box-sizing: border-box; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; background: var(--background); font-size: 14px; line-height: 20px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border)">
+<x-import component-from-global-scope="SuiviBourse.Icons.Search" class-name="size-4" aria-hidden="true" style="color: var(--muted-foreground)"></x-import>
+<span style="flex: 1; font-size: 16px; color: {{qColor}}">{{q}}<span aria-hidden="true" style="display: inline-block; width: 1px; height: 18px; margin-left: 1px; vertical-align: -3px; background: var(--foreground)"></span></span>
+<kbd style="font-family: var(--font-sans); font-size: 11px; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px">esc</kbd>
+</div>
+<div style="display: flex; flex-direction: column; padding: 6px 8px 10px; max-height: 520px; overflow: auto">
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+<div class="grp" style="display: {{r.grpDisp}}">{{r.grp}}</div>
+<a href="{{r.href}}" class="it" data-on="{{r.on}}" style="display: {{r.itDisp}}">
+<span style="display: flex; flex-direction: column; min-width: 0"><span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap"><mark>{{r.hit}}</mark>{{r.rest}}</span><span class="sb">{{r.sub}}</span></span>
+<span class="fig" style="font-size: 12px; color: var(--muted-foreground); white-space: nowrap">{{r.right}}</span>
+</a>
+</sc-for>
+<p style="display: {{emptyDisp}}; margin: 0; padding: 28px 10px; text-align: center; color: var(--muted-foreground)">Rien pour « {{q}} »</p>
+</div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["ouverte","recherche","vide"],"default":"recherche"},"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mode = this.props.mode ?? 'recherche';
+    const G = (grp) => ({ grp, grpDisp: 'block', itDisp: 'none', hit: '', rest: '', sub: '', right: '', href: '#', on: '' });
+    const I = (hit, rest, sub, right, href = '#', on = false) => ({ grp: '', grpDisp: 'none', itDisp: 'grid', hit, rest, sub, right, href, on: on ? 'true' : '' });
+    let rows = [], q = '', qColor = 'var(--foreground)';
+    if (mode === 'recherche') {
+      q = 'air';
+      rows = [
+        G('Titres'),
+        I('Air', ' Liquide', 'AI.PA · PEA', '3 951,63 €', 'Titre-Fiche.dc.html', true),
+        G('Événements'),
+        I('Air', ' Liquide · Dividende', '3 nov. 2026 · PEA', '+18,40 €', 'GrandLivre-Refonte.dc.html'),
+        I('Air', ' Liquide · Achat', '12 mai 2026 · PEA', '−1 714,00 €', 'GrandLivre-Refonte.dc.html'),
+        G('Fils de l’agent'),
+        I('', 'Et si je renforçais Air Liquide ?', '6 nov. · 4 messages', '', 'Agent-Refonte.dc.html'),
+      ];
+    } else if (mode === 'ouverte') {
+      q = 'Rechercher un titre, un compte, une page…'; qColor = 'var(--muted-foreground)';
+      rows = [
+        G('Récents'),
+        I('', 'Amundi MSCI World', 'CW8.PA · PEA', '24 571,80 €', 'Titre-Fiche.dc.html', true),
+        I('', 'PEA', 'Compte · 4 titres', '42 658,79 €', 'Comptes-Refonte.dc.html'),
+        G('Actions'),
+        I('', 'Saisir un événement', '', '⌘N', 'GrandLivre-Saisie.dc.html'),
+        I('', 'Importer un relevé', '', '', 'GrandLivre-Import-Refonte.dc.html'),
+        I('', 'Nouveau fil avec l’agent', '', '⇧⌘N', 'Agent-Vide-Refonte.dc.html'),
+        G('Pages'),
+        I('', 'Tableau de bord', '', 'G puis D', 'Dashboard-Releve-C.dc.html'),
+        I('', 'Titres', '', 'G puis T', 'Titres-T5-Simple.dc.html'),
+        I('', 'Grand livre', '', 'G puis L', 'GrandLivre-Refonte.dc.html'),
+        I('', 'Système', '', 'G puis S', 'Systeme-Refonte.dc.html'),
+      ];
+    } else {
+      q = 'tesla';
+    }
+    return { q, qColor, rows, emptyDisp: mode === 'vide' ? 'block' : 'none' };
+  }
+}
+</script>
+</body>
+</html>

@@ -74,6 +74,9 @@
         "projected_base": {
           "type": "number"
         },
+        "projected_income_tax": {
+          "type": "number"
+        },
         "projected_rate_changes_on": {
           "type": "string"
         },
@@ -83,13 +86,16 @@
           },
           "type": "array"
         },
+        "projected_social_levy": {
+          "type": "number"
+        },
         "projected_tax": {
           "type": "number"
         },
         "taxation_kind": {
           "type": "string"
         },
-        "taxation_model": {
+        "taxation_model_id": {
           "type": "string"
         },
         "total_value": {
@@ -469,6 +475,16 @@
         "cost_basis": {
           "type": "number"
         },
+        "day_change_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "dividends": {
           "type": "number"
         },
@@ -476,6 +492,26 @@
           "anyOf": [
             {
               "$ref": "#/$defs/Fundamentals"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latent_gain": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latent_gain_pct": {
+          "anyOf": [
+            {
+              "type": "number"
             },
             {
               "type": "null"
@@ -523,6 +559,9 @@
         "cost_basis",
         "realised",
         "dividends",
+        "latent_gain",
+        "latent_gain_pct",
+        "day_change_pct",
         "price",
         "converted",
         "closed_at",

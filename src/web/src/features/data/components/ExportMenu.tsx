@@ -1,6 +1,6 @@
 /**
  * Every event as an importable `.csv`, the same ledger as a **workbook with one
- * sheet per year**, the **filtered selection** — what the chips retain at the
+ * sheet per year**, the **filtered selection** — what the filters retain at the
  * instant of the click — and the **accounts with their positions**. The fourth
  * had left with the accounts file and comes back a different thing altogether:
  * #787 puts it in the menu on an argument that is not the one that removed it,
@@ -18,7 +18,7 @@
  * the one entry that reduces, and by no other.
  *
  * **Nothing here narrows anything.** The selection is the ledger's own
- * reduction, carried to the server as the five names the chips hold (`q`,
+ * reduction, carried to the server as the names the filters hold (`q`,
  * `type`, `account`, `symbol`, and since #810 `since`/`until`) and answered
  * there: the importable form belongs to `events/export.py`, and a partial file
  * assembled in TypeScript would be a second spelling of a format written once.
@@ -57,14 +57,13 @@
  */
 import { toast } from 'sonner'
 
-import { ChevronDown, Download } from 'lucide-react'
+import { Download } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { dataApi, type ExportFile } from '@/features/data/lib/api'
@@ -108,24 +107,13 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {/* The drawing's own control: the gesture's icon, the word, then a
-            hairline and a chevron — one button that says both *this exports*
-            and *there is a choice under it*. */}
-        <Button
-          type="button"
-          variant="outline"
-          className="h-8 gap-2.5 rounded-lg bg-transparent pr-2 pl-3.5 pointer-coarse:h-11 dark:bg-transparent"
-        >
-          <Download aria-hidden className="size-3.5" />
+        {/* An outline page button with the Download icon, like Importer. */}
+        <Button type="button" variant="outline" className="pointer-coarse:h-11">
+          <Download aria-hidden />
           {t('data.export.title')}
-          <span aria-hidden className="h-4.5 w-px bg-input" />
-          <ChevronDown aria-hidden className="size-3.5 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
-        {/* The menu says what the four entries answer, once, rather than four
-            times over: *what you are exporting*. */}
-        <DropdownMenuLabel className="label">{t('data.export.heading')}</DropdownMenuLabel>
         {files.events ? (
           <>
             <Entry
@@ -146,7 +134,7 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
                 drawn — the table reveals forty at a time, so *what
                 is on screen* would be a sentence the file contradicts. With
                 nothing pressed the reduction is the whole ledger, which is what
-                the chips retain then — and the receipt then says *your events*,
+                the filters retain then — and the receipt then says *your events*,
                 like the file the server answers under. The kind is read off the
                 reduction and never off the entry that was clicked, or the one
                 sentence on screen would contradict the name on the disk. */}
@@ -178,6 +166,9 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
             />
           </>
         ) : null}
+        <p className="border-t px-2 pt-2 pb-1 text-xs text-muted-foreground">
+          {t('data.export.notBackup')}
+        </p>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -186,7 +177,7 @@ export function ExportMenu({ files, selection, selected, total }: ExportMenuProp
 /**
  * One entry: what leaves, what is in it, and the shape it leaves in.
  *
- * The format rides on the right as a badge rather than inside the sentence,
+ * The format rides on the right as a word rather than inside the sentence,
  * because it is the one thing a reader scans the column of entries for — two of
  * the four differ by nothing else. It is **not** hidden from the accessible
  * name for exactly that reason: the two entries it separates are read out
@@ -209,9 +200,7 @@ function Entry({
         {label}
         <span className="block text-xs text-muted-foreground">{note}</span>
       </span>
-      <span className="shrink-0 rounded border px-1.5 font-mono text-2xs text-muted-foreground">
-        {format}
-      </span>
+      <span className="fig shrink-0 text-xs text-muted-foreground">{format}</span>
     </DropdownMenuItem>
   )
 }

@@ -334,119 +334,6 @@ ACCOUNTS_EVENTS = (
 
 
 # --------------------------------------------------------------------- #
-# Movers
-# --------------------------------------------------------------------- #
-
-def test_movers_anchor_on_the_last_session_close_not_on_midnight_today(tmp_path):
-    """#652 déc. 8's trap. The newest stored point is a Friday close; the
-    baseline is the last price before *that* day, so a weekend still shows
-    Friday's session instead of a column of zeros."""
-    def seed(opened):
-        seed_position(opened, quantity=10.0, cost_basis=1000.0)
-        seed_quote(opened, price=100.0,
-                   at=datetime(2026, 7, 30, 20, 0, tzinfo=timezone.utc))
-        seed_quote(opened, price=110.0,
-                   at=datetime(2026, 7, 31, 21, 0, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, seed=seed)
-    payload = client.get('/api/portfolio/movers').get_json()
-
-    assert payload['movers'][0]['change_pct'] == pytest.approx(0.1)
-    assert payload['movers'][0]['contribution'] == pytest.approx(100.0)
-
-
-def test_movers_read_the_auction_stamped_closes(tmp_path):
-    """#1352. Two closes stamped at the closing auction's own instant."""
-    def seed(opened):
-        seed_position(opened, symbol='SAN.PA', quantity=10.0, cost_basis=700.0)
-        seed_quote(opened, symbol='SAN.PA', price=71.01,
-                   at=datetime(2026, 10, 19, 15, 35, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='SAN.PA', price=73.44,
-                   at=datetime(2026, 10, 20, 15, 29, 59, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='SAN.PA', price=73.58,
-                   at=datetime(2026, 10, 20, 15, 35, 46, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, seed=seed)
-    move = client.get('/api/portfolio/movers').get_json()['movers'][0]
-
-    assert move['change_pct'] == pytest.approx(0.0362, abs=0.0001)
-
-
-def test_movers_compare_each_line_against_its_own_previous_close(tmp_path):
-    """#1142. A 24/7 line quoted on Sunday must not drag every other line's
-    baseline to Sunday midnight: the equity's price there *is* its Friday
-    close, so it read as unchanged and left the block."""
-    def seed(opened):
-        seed_position(opened, quantity=10.0, cost_basis=1000.0)
-        seed_quote(opened, price=100.0,
-                   at=datetime(2026, 10, 8, 20, 0, tzinfo=timezone.utc))
-        seed_quote(opened, price=110.0,
-                   at=datetime(2026, 10, 9, 20, 0, tzinfo=timezone.utc))
-        seed_position(opened, symbol='BTC-EUR', name='Bitcoin',
-                      quantity=1.0, cost_basis=50000.0)
-        seed_quote(opened, symbol='BTC-EUR', price=60000.0,
-                   at=datetime(2026, 10, 10, 23, 59, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='BTC-EUR', price=57000.0,
-                   at=datetime(2026, 10, 11, 16, 41, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, seed=seed)
-    payload = client.get('/api/portfolio/movers').get_json()
-
-    moves = {m['symbol']: m for m in payload['movers']}
-    assert moves['AAPL']['previous_price'] == pytest.approx(100.0)
-    assert moves['AAPL']['change_pct'] == pytest.approx(0.1)
-    assert moves['BTC-EUR']['previous_price'] == pytest.approx(60000.0)
-    assert moves['BTC-EUR']['change_pct'] == pytest.approx(-0.05)
-
-
-def test_movers_leave_out_a_line_whose_quotes_stopped(tmp_path):
-    """#1142's own regression. A line no longer quoted (delisted, halted, a
-    scrape that fails) would show its move from weeks ago as *since the
-    previous close*; trailing the newest quote by more than five days, it has
-    no previous close worth naming. A line quoted on one day only has none
-    either."""
-    def seed(opened):
-        seed_position(opened, quantity=10.0, cost_basis=1000.0)
-        seed_quote(opened, price=100.0,
-                   at=datetime(2026, 10, 8, 20, 0, tzinfo=timezone.utc))
-        seed_quote(opened, price=110.0,
-                   at=datetime(2026, 10, 9, 20, 0, tzinfo=timezone.utc))
-        seed_position(opened, symbol='GONE.PA', name='Gone', quantity=5.0)
-        seed_quote(opened, symbol='GONE.PA', price=50.0,
-                   at=datetime(2026, 9, 16, 15, 30, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='GONE.PA', price=30.0,
-                   at=datetime(2026, 9, 17, 15, 30, tzinfo=timezone.utc))
-        seed_position(opened, symbol='NEW.PA', name='New', quantity=5.0)
-        seed_quote(opened, symbol='NEW.PA', price=20.0,
-                   at=datetime(2026, 10, 9, 15, 30, tzinfo=timezone.utc))
-        # The bound's two sides. Easter's gap, Thursday's close to Monday's,
-        # is 4 days and some hours: kept. Six days behind: left out.
-        seed_position(opened, symbol='EASTER.PA', name='Easter', quantity=5.0)
-        seed_quote(opened, symbol='EASTER.PA', price=40.0,
-                   at=datetime(2026, 10, 4, 15, 30, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='EASTER.PA', price=42.0,
-                   at=datetime(2026, 10, 5, 15, 30, tzinfo=timezone.utc))
-        seed_position(opened, symbol='LATE.PA', name='Late', quantity=5.0)
-        seed_quote(opened, symbol='LATE.PA', price=40.0,
-                   at=datetime(2026, 10, 2, 15, 30, tzinfo=timezone.utc))
-        seed_quote(opened, symbol='LATE.PA', price=44.0,
-                   at=datetime(2026, 10, 3, 15, 30, tzinfo=timezone.utc))
-
-    client = build_client(tmp_path, seed=seed)
-    payload = client.get('/api/portfolio/movers').get_json()
-
-    assert [m['symbol'] for m in payload['movers']] == ['AAPL', 'EASTER.PA']
-
-
-def test_movers_on_a_fresh_install_is_empty_and_asks_nothing_further(tmp_path):
-    """No observation means no session to anchor on, and nothing to compare."""
-    client = build_client(tmp_path)
-    payload = client.get('/api/portfolio/movers').get_json()
-
-    assert payload == {'movers': []}
-
-
-# --------------------------------------------------------------------- #
 # The v5 pair the front reads (contract #745, issue #763)
 #
 # `/api/positions` and `/api/portfolio-totals` were declared in `lib/api.ts`
@@ -487,11 +374,15 @@ def test_positions_serves_the_frozen_shape_in_one_read(tmp_path):
     row = payload['positions'][0]
     assert set(row) == {'account', 'symbol', 'name', 'quantity', 'cost_basis',
                         'realised', 'dividends', 'price', 'converted',
+                        'latent_gain', 'latent_gain_pct', 'day_change_pct',
                         'closed_at', 'terminal', 'fundamentals'}
     assert (row['account'], row['symbol'], row['name']) == (
         'pea', 'AAPL', 'Apple Inc')
     assert row['quantity'] == 10.0 and row['cost_basis'] == 1500.0
     assert row['realised'] == 25.0 and row['dividends'] == 12.5
+    # 10 shares at 180 against a cost of 1 500: on the securities' cost alone.
+    assert row['latent_gain'] == pytest.approx(300.0)
+    assert row['latent_gain_pct'] == pytest.approx(0.2)
     assert row['price'] == {'value': 200.0, 'currency': 'USD',
                             'at': '2024-06-01T12:00:00+00:00'}
     assert row['converted'] == {'value': 180.0, 'currency': 'EUR', 'rate': 0.9,
@@ -755,8 +646,8 @@ def test_positions_storage_failure_is_503_and_never_an_empty_list(tmp_path):
     assert response.get_json()['type'] == '/problems/storage-unavailable'
 
 
-def test_portfolio_totals_serves_the_eleven_members(tmp_path):
-    """Eight columns and three derivations, under the names #745 froze."""
+def test_portfolio_totals_serves_its_members(tmp_path):
+    """Eight columns, three derivations (#745) and what the hero reads."""
     payload = build_client(
         tmp_path, seed=seed_totals).get('/api/portfolio-totals').get_json()
 
@@ -764,7 +655,8 @@ def test_portfolio_totals_serves_the_eleven_members(tmp_path):
     assert set(payload['totals']) == {
         'day', 'total_value', 'holdings_value', 'cash_balance',
         'net_contributed', 'xirr', 'twr_index', 'twr_since', 'transfer_fees',
-        'gain_absolu', 'ytd'}
+        'gain_absolu', 'ytd', 'variation', 'cash', 'gain_total',
+        'net_if_sold_today', 'estimated_accounts', 'first_deposit', 'granted'}
     assert payload['totals']['day'] == '2026-08-05'
     assert payload['totals']['total_value'] == 12500.0
     # The index counts from the first day of the series, and there is one here.
@@ -772,6 +664,81 @@ def test_portfolio_totals_serves_the_eleven_members(tmp_path):
     # An install whose broker moves money for free: a figure worth nothing, not
     # an absence — the page drops it for being zero.
     assert payload['totals']['transfer_fees'] == 0.0
+
+
+def test_variation_is_the_change_in_gain_over_the_value_at_the_start(tmp_path):
+    """+5 021 over a year is a performance: the deposit made since is not in it."""
+    def seed(opened):
+        seed_totals(opened, day=date(2025, 8, 5), total_value=40000.0,
+                    gain_absolu=1000.0)
+        seed_totals(opened, day=date(2025, 12, 31), total_value=44000.0,
+                    gain_absolu=2000.0)
+        seed_totals(opened, day=date(2026, 7, 5), total_value=50000.0,
+                    gain_absolu=4000.0, net_contributed=46000.0)
+        seed_totals(opened, day=date(2026, 8, 5), total_value=52000.0,
+                    gain_absolu=5000.0, net_contributed=47000.0)
+
+    variation = build_client(tmp_path, seed=seed).get(
+        '/api/portfolio-totals').get_json()['totals']['variation']
+
+    assert set(variation) == {'1M', 'YTD', '1Y', 'MAX'}
+    assert variation['1M'] == {'amount': 1000.0, 'pct': pytest.approx(0.02),
+                               'base': 50000.0, 'deposits': True,
+                               'start_date': '2026-07-05'}
+    assert variation['YTD'] == {'amount': 3000.0, 'pct': pytest.approx(3000 / 44000),
+                                'base': 44000.0, 'deposits': True,
+                                'start_date': '2025-12-31'}
+    assert variation['1Y'] == {'amount': 4000.0, 'pct': pytest.approx(0.1),
+                               'base': 40000.0, 'deposits': True,
+                               'start_date': '2025-08-05'}
+    # The whole series: the whole gain, over what was paid in.
+    assert variation['MAX'] == {'amount': 5000.0,
+                                'pct': pytest.approx(5000 / 47000),
+                                'base': 47000.0, 'deposits': False,
+                                'start_date': '2025-08-05'}
+
+
+def test_a_range_the_series_does_not_reach_has_no_variation(tmp_path):
+    variation = build_client(tmp_path, seed=seed_totals).get(
+        '/api/portfolio-totals').get_json()['totals']['variation']
+
+    assert variation['1M'] is None and variation['YTD'] is None
+    assert variation['1Y'] is None
+    assert variation['MAX']['start_date'] == '2026-08-05'
+
+
+def test_the_totals_reconcile_to_the_cent(tmp_path):
+    """`value = securities + cash`; `gain_total` is the four terms, and the
+    shares' latent gain is the sum of the rows."""
+    def seed(opened):
+        seed_position(opened, account='pea', quantity=10.0, cost_basis=1500.0,
+                      realized_gain=25.0, received_dividend=12.5)
+        seed_quote(opened, price=200.0, currency='USD', converted=180.0,
+                   rate=0.9)
+        seed_totals(opened, total_value=2300.0, holdings_value=1800.0,
+                    cash_balance=500.0, net_contributed=2000.0)
+
+    client = build_client(tmp_path, accounts=ACCOUNTS_FILE, events=FEE_EVENTS,
+                          seed=seed)
+    totals = client.get('/api/portfolio-totals').get_json()['totals']
+    rows = client.get('/api/positions').get_json()['positions']
+
+    assert totals['total_value'] == pytest.approx(
+        totals['holdings_value'] + totals['cash'])
+    latent = sum(row['latent_gain'] for row in rows)
+    assert latent == pytest.approx(300.0)
+    assert totals['gain_total']['amount'] == pytest.approx(
+        latent + 25.0 + 12.5 + totals['transfer_fees'])
+    assert totals['gain_total']['pct'] == pytest.approx(
+        totals['gain_total']['amount'] / totals['net_contributed'])
+
+
+def test_net_if_sold_today_counts_an_account_without_a_model_gross(tmp_path):
+    totals = build_client(tmp_path, seed=seed_totals).get(
+        '/api/portfolio-totals').get_json()['totals']
+
+    assert totals['net_if_sold_today'] == totals['total_value']
+    assert totals['estimated_accounts'] == []
 
 
 def test_portfolio_totals_with_no_figures_at_all_is_200_and_null(tmp_path):
@@ -3657,13 +3624,13 @@ def test_the_report_names_the_accounts_the_app_names(tmp_path):
 
 
 def test_an_install_with_nothing_declared_reports_its_seeded_account(tmp_path):
-    """The route's own wiring with no declaration: the seeded row, no label, no figures."""
+    """The route's own wiring with no declaration: the seeded row, named by its id, no figures."""
     client, opened = build_client_and_store(tmp_path)
 
     body = client.get('/api/export/portfolio.csv').get_data(as_text=True)
     rows = list(csv.DictReader(io.StringIO(body)))
     assert [(row['account'], row['account_label'], row['as_of'],
-             row['cash_balance']) for row in rows] == [('default', '', '', '')]
+             row['cash_balance']) for row in rows] == [('default', 'default', '', '')]
     opened.close()
 
 
@@ -5704,14 +5671,14 @@ def test_an_account_declares_the_model_it_carries_and_the_read_publishes_it(
 
     declared = client.post('/api/accounts',
                            json={'id': 'pea', 'label': 'PEA',
-                                 'taxation_model': key})
+                                 'taxation_model_id': key})
     assert declared.status_code == 201
-    assert declared.get_json()['taxation_model'] == key
+    assert declared.get_json()['taxation_model_id'] == key
     assert opened.query('SELECT account, taxation_model FROM account_fact') == [
         ('pea', key)]
 
     listed = client.get('/api/accounts').get_json()['accounts']
-    assert {row['id']: row.get('taxation_model') for row in listed} == {
+    assert {row['id']: row.get('taxation_model_id') for row in listed} == {
         'pea': key}
 
 
@@ -5725,10 +5692,10 @@ def test_an_account_with_no_model_publishes_no_member_at_all(tmp_path):
 
     declared = client.post('/api/accounts', json={'id': 'pea', 'label': 'PEA'})
 
-    assert 'taxation_model' not in declared.get_json()
+    assert 'taxation_model_id' not in declared.get_json()
     assert opened.query('SELECT count(*) FROM account_fact') == [(0,)]
     listed = client.get('/api/accounts').get_json()['accounts']
-    assert all('taxation_model' not in row for row in listed)
+    assert all('taxation_model_id' not in row for row in listed)
 
 
 def test_renaming_an_account_leaves_the_model_it_carries_alone(tmp_path):
@@ -5736,12 +5703,12 @@ def test_renaming_an_account_leaves_the_model_it_carries_alone(tmp_path):
     client, opened = build_client_and_store(tmp_path)
     key = _a_flat_model(client)
     client.post('/api/accounts',
-                json={'id': 'pea', 'label': 'PEA', 'taxation_model': key})
+                json={'id': 'pea', 'label': 'PEA', 'taxation_model_id': key})
 
     renamed = client.patch('/api/accounts/pea', json={'label': 'Mon PEA'})
 
     assert renamed.status_code == 200
-    assert renamed.get_json()['taxation_model'] == key
+    assert renamed.get_json()['taxation_model_id'] == key
     assert opened.query('SELECT taxation_model FROM account_fact') == [(key,)]
 
 
@@ -5750,11 +5717,11 @@ def test_a_null_model_detaches_it_and_leaves_no_row(tmp_path):
     client, opened = build_client_and_store(tmp_path)
     key = _a_flat_model(client)
     client.post('/api/accounts',
-                json={'id': 'pea', 'label': 'PEA', 'taxation_model': key})
+                json={'id': 'pea', 'label': 'PEA', 'taxation_model_id': key})
 
-    detached = client.patch('/api/accounts/pea', json={'taxation_model': None})
+    detached = client.patch('/api/accounts/pea', json={'taxation_model_id': None})
 
-    assert 'taxation_model' not in detached.get_json()
+    assert 'taxation_model_id' not in detached.get_json()
     assert opened.query('SELECT count(*) FROM account_fact') == [(0,)]
 
 
@@ -5764,10 +5731,10 @@ def test_a_model_reference_matching_nothing_is_422_and_writes_no_account(
 
     response = client.post('/api/accounts',
                            json={'id': 'pea', 'label': 'PEA',
-                                 'taxation_model': 'no-such-model'})
+                                 'taxation_model_id': 'no-such-model'})
 
     assert response.status_code == 422
-    assert response.get_json()['key'] == 'taxation_model'
+    assert response.get_json()['key'] == 'taxation_model_id'
     # The declaration and the attachment are one transaction: nothing landed.
     assert 'pea' not in {row[0] for row in opened.query('SELECT id FROM account')}
 
@@ -5778,9 +5745,9 @@ def test_removing_a_model_an_account_carries_is_409_and_names_the_accounts(
     client, opened = build_client_and_store(tmp_path)
     key = _a_flat_model(client)
     client.post('/api/accounts',
-                json={'id': 'pea', 'label': 'PEA', 'taxation_model': key})
+                json={'id': 'pea', 'label': 'PEA', 'taxation_model_id': key})
     client.post('/api/accounts',
-                json={'id': 'cto', 'label': 'CTO', 'taxation_model': key})
+                json={'id': 'cto', 'label': 'CTO', 'taxation_model_id': key})
 
     refused = client.delete(f'/api/taxation-models/{key}')
 
@@ -5795,8 +5762,8 @@ def test_removing_a_model_nothing_carries_goes_through(tmp_path):
     client, opened = build_client_and_store(tmp_path)
     key = _a_flat_model(client)
     client.post('/api/accounts',
-                json={'id': 'pea', 'label': 'PEA', 'taxation_model': key})
-    client.patch('/api/accounts/pea', json={'taxation_model': None})
+                json={'id': 'pea', 'label': 'PEA', 'taxation_model_id': key})
+    client.patch('/api/accounts/pea', json={'taxation_model_id': None})
 
     assert client.delete(f'/api/taxation-models/{key}').status_code == 200
     assert opened.query('SELECT count(*) FROM taxation_model') == [(0,)]
@@ -5815,7 +5782,7 @@ def test_removing_an_account_takes_the_facts_declared_about_it(tmp_path):
     client, opened = build_client_and_store(tmp_path)
     key = _a_flat_model(client)
     client.post('/api/accounts',
-                json={'id': 'pea', 'label': 'PEA', 'taxation_model': key})
+                json={'id': 'pea', 'label': 'PEA', 'taxation_model_id': key})
 
     assert client.delete('/api/accounts/pea').status_code == 200
 
@@ -5835,7 +5802,7 @@ def test_a_refused_model_reference_does_not_rename_the_account_either(tmp_path):
 
     refused = client.patch('/api/accounts/pea',
                            json={'label': 'Renamed',
-                                 'taxation_model': 'no-such-model'})
+                                 'taxation_model_id': 'no-such-model'})
 
     assert refused.status_code == 422
     assert opened.query("SELECT label FROM account WHERE id = 'pea'") == [('PEA',)]
@@ -5863,7 +5830,7 @@ def test_a_refused_removal_writes_none_of_its_three_statements(tmp_path):
     client, opened = build_client_and_store(
         tmp_path, accounts=ACCOUNTS_FILE, events=ACCOUNTS_EVENTS)
     key = _a_flat_model(client)
-    client.patch('/api/accounts/pea', json={'taxation_model': key})
+    client.patch('/api/accounts/pea', json={'taxation_model_id': key})
 
     refused = client.delete('/api/accounts/pea')
 
@@ -6043,7 +6010,7 @@ def _carry(client, account='pea', **model):
     assert written.status_code == 201, written.get_json()
     key = written.get_json()['id']
     assert client.patch(f'/api/accounts/{account}',
-                        json={'taxation_model': key}).status_code == 200
+                        json={'taxation_model_id': key}).status_code == 200
     return key
 
 
@@ -6120,6 +6087,37 @@ def test_a_pea_counted_from_its_first_payment_still_gets_a_figure(tmp_path):
     assert 'projected_rate_changes_on' not in row
 
 
+def test_a_pea_is_taxed_on_the_whole_gain_of_the_envelope_from_its_first_payment(
+        tmp_path):
+    """Persona pass, bug 12 (Hélène): the base of an aged wrapper is value minus
+    net contributions — the dividend that stayed inside counts, not only the
+    latent gain — and the clock starts at the first deposit, not at the opening
+    date the account declares."""
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,amount,account\n"
+        "2022-01-12,DEPOSIT,,,,,2000.00,pea\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,,pea\n"
+        "2024-03-01,DIVIDEND,AAPL,,,,100.00,pea\n"
+    )
+    client, _ = _valued_pea(tmp_path, events=events)
+    metrics = registry.build(api_module.current_runtime().config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
+    _carry(client, name='PEA', kind='aged_flat_realised',
+           parameters={'rate_before': 0.128, 'rate_after': 0.0,
+                       'threshold_years': 5, 'age_basis': 'first_payment',
+                       'social_rate': 0.172})
+    client.patch('/api/accounts/pea', json={'opened_on': '2022-01-10'})
+
+    row = _pea_row(client)
+
+    # Value 2 000 + 100 of dividend cash − 2 000 deposited = 600; the latent
+    # gain alone is 500.
+    assert row['projected_base'] == pytest.approx(600.0, abs=5e-3)
+    assert row['projected_base'] == pytest.approx(row['gain_absolu'], abs=5e-3)
+    assert row['projected_rate_changes_on'] == '2027-01-12'
+
+
 def test_the_positions_are_not_read_where_no_model_projects(tmp_path, mocker):
     """**The cost of the feature is paid by the readers who have it.**
 
@@ -6181,7 +6179,7 @@ def test_a_model_this_version_refuses_does_not_pay_for_the_positions_read(
     row = _pea_row(client)
     assert 'taxation_kind' not in row
     # And the declaration is still named, so its owner can go and repair it.
-    assert row['taxation_model'] == 'legacy'
+    assert row['taxation_model_id'] == 'legacy'
 
 
 def test_an_account_carrying_no_model_publishes_no_projection(tmp_path):
@@ -6374,7 +6372,7 @@ def test_a_model_this_version_refuses_takes_its_own_account_and_no_other(
     # it: taxation_model present with taxation_kind absent is how a reader is
     # told the declaration needs repairing rather than that the read failed.
     # Drop the name and that sentence points at nothing.
-    assert rows['pea']['taxation_model'] == 'legacy'
+    assert rows['pea']['taxation_model_id'] == 'legacy'
     # And the account beside it is untouched: 4 AAPL at 150, quoted at 200.
     assert rows['cto']['taxation_kind'] == 'flat_realised'
     assert rows['cto']['projected_tax'] == pytest.approx(60.0, abs=5e-3)
@@ -6577,3 +6575,74 @@ def test_the_portfolio_export_states_yahoos_name_and_the_events_export_does_not(
         'AAPL': 'Apple Inc', 'MSFT': 'Microsoft Corporation'}
     assert {row['symbol']: row['name'] for row in ledgered} == {
         'AAPL': 'Apple Inc', 'MSFT': ''}
+
+
+# --------------------------------------------------------------------- #
+# An account is an identifiant, an optional label and a model (B1)
+# --------------------------------------------------------------------- #
+
+def test_an_account_needs_no_label_and_a_patch_that_omits_it_keeps_it(tmp_path):
+    client = build_client(tmp_path)
+
+    bare = client.post('/api/accounts', json={'id': 'pea'})
+    assert bare.status_code == 201 and bare.get_json()['label'] is None
+
+    named = client.patch('/api/accounts/pea', json={'label': 'Mon PEA'})
+    assert named.get_json()['label'] == 'Mon PEA'
+    assert client.patch('/api/accounts/pea', json={}).get_json()['label'] == 'Mon PEA'
+    assert client.patch('/api/accounts/pea', json={'label': ''}).get_json()['label'] is None
+
+
+def test_a_second_account_with_the_same_identifiant_is_a_409_problem(tmp_path):
+    client = build_client(tmp_path)
+    client.post('/api/accounts', json={'id': 'pea'})
+
+    again = client.post('/api/accounts', json={'id': 'pea', 'label': 'Other'})
+
+    assert again.status_code == 409
+    assert again.get_json()['status'] == 409
+
+
+def test_no_answer_under_api_may_be_cached(tmp_path):
+    """A proxy's cache served a stale export, another session's ledger, and with
+    the PIN on, the file without a session: every ``/api`` answer says no-store."""
+    client, opened = build_client_and_store(
+        tmp_path, accounts=_EXPORTABLE_ACCOUNTS, events=_EXPORTABLE)
+
+    for path in ('/api/export/events.csv', '/api/export/events.xlsx',
+                 '/api/export/portfolio.csv', '/api/events', '/api/accounts'):
+        response = client.get(path)
+        assert response.headers.get('Cache-Control') == 'no-store', path
+    opened.close()
+
+
+def test_the_head_reads_the_first_deposit_and_the_grants_off_the_ledger():
+    """PP-2: « Premier versement » is the ledger's, and a grant is counted as
+    contributed *and said so* (« dont 180,88 € d'actions gratuites »)."""
+    from application import portfolio_facts
+    from application.events.schemas import Event, EventType
+
+    events = [
+        Event(date(2022, 3, 1), EventType.DEPOSIT, amount=1000.0, account='cto'),
+        Event(date(2022, 4, 1), EventType.GRANT, 'AI.PA', 'Air Liquide',
+              quantity=1, unit_price=180.88, account='cto'),
+        Event(date(2030, 1, 1), EventType.GRANT, 'AI.PA', 'Air Liquide',
+              quantity=1, unit_price=999.0, account='cto'),
+    ]
+    facts = portfolio_facts._ledger_facts(events, date(2026, 8, 5))
+
+    assert facts == {'first_deposit': '2022-03-01', 'granted': 180.88}
+
+
+def test_the_net_if_sold_is_the_sum_of_the_accounts_to_the_cent():
+    """PP-2: one rounding per account, then added: no cent of drift on the total."""
+    from application import portfolio_facts
+
+    accounts = [
+        {'id': 'pea', 'total_value': 20000.004, 'projected_tax': 3898.98},
+        {'id': 'cto', 'total_value': 8000.004, 'projected_tax': 1475.21},
+    ]
+    net = portfolio_facts._net_if_sold_today(28000.008, accounts)
+
+    # 16 101,02 + 6 524,79: the accounts' own figures, not 22 625,818 rounded.
+    assert net['net_if_sold_today'] == pytest.approx(22625.81, abs=1e-6)

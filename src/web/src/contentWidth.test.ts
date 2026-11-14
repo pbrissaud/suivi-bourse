@@ -79,9 +79,8 @@ describe('the layout widths are the ones DESIGN.md sets', () => {
     expect(Number(rem) * 16).toBe(Number(px))
   })
 
-  it('sets the conversation on the column and reading widths', () => {
-    expect(AGENT_CHAT).toMatch(/\bmax-w-column\b/)
-    expect(AGENT_CHAT).toMatch(/\blg:max-w-reading\b/)
+  it('sets the conversation on the reading width', () => {
+    expect(AGENT_CHAT).toMatch(/\bmax-w-reading\b/)
   })
 
   it('writes no width the tokens already name', () => {
@@ -133,10 +132,13 @@ describe('the accounts detail has no ragged row', () => {
     ]
       .map((match) => match[2])
       // The constant's own value is the one place the classes are written out.
-      .filter((classes) => classes !== 'grid grid-cols-1 gap-5 lg:grid-flow-col lg:auto-cols-fr')
+      .filter(
+        (classes) =>
+          classes !== 'grid grid-cols-1 items-start gap-5 lg:grid-flow-col lg:auto-cols-fr',
+      )
     expect(grids).toEqual([])
     expect(DETAIL).toContain(
-      "const FULL_ROW = 'grid grid-cols-1 gap-5 lg:grid-flow-col lg:auto-cols-fr'",
+      "const FULL_ROW = 'grid grid-cols-1 items-start gap-5 lg:grid-flow-col lg:auto-cols-fr'",
     )
   })
 })
@@ -172,34 +174,24 @@ describe('the type scale and the motifs stay on DESIGN.md', () => {
 
   it('writes no size off the ladder', () => {
     // Any variant prefix (`md:text-xl`), and an arbitrary `text-[…]` size.
-    expect(holding(/(?<![\w-])(?:[\w-]+:)*text-(?:xl|3xl|[5-9]xl|\[)/)).toEqual([])
+    expect(holding(/(?<![\w-])(?:[\w-]+:)*text-(?:xl|2xs|3xl|[5-9]xl|\[)/)).toEqual([])
   })
 
-  it('sets no figure in mono, and drops font-heavy', () => {
-    const className = /(['"`])((?:(?!\1)[^\n])*)\1/g
-    const mixed = all
-      .filter(({ text }) =>
-        [...text.matchAll(className)].some(
-          ([, , classes]) =>
-            /(?<![\w-])font-mono(?![\w-])/.test(classes) &&
-            /(?<![\w-])tabular(?![\w-])/.test(classes),
-        ),
-      )
-      .map(({ file }) => file)
-    expect(mixed).toEqual([])
+  it('has no Geist-tabular figure class left, and drops font-heavy', () => {
+    // A figure is `fig` (Geist Mono, tabular): the `tabular` class of #1281 is gone.
+    expect(holding(/(?<![\w-])tabular(?![\w-])/)).toEqual([])
     expect(holding(/font-heavy/)).toEqual([])
   })
 
   it('draws a dashed outline only where something can be put', () => {
     const REASONS: Record<string, string> = {
-      'features/accounts/components/AccountsBar.tsx': 'the slot for a new account',
       'features/data/components/UploadZone.tsx': 'a drop zone',
-      'features/data/components/Ledger.tsx': 'the ledger’s drop',
-      'components/FirstRun.tsx': 'the first-run declare button',
-      'features/dashboard/components/DashboardGrid.tsx': 'a free grid slot',
       'features/system/components/JobHistogram.tsx': 'a job hour with no pass (a drawing)',
       'features/dashboard/components/InvestmentRhythm.tsx': 'a month with no purchase (a drawing)',
       'features/accounts/components/AccountCurve.tsx': 'the contributed curve (a drawing)',
+      'features/agent/components/AgentStats.tsx': 'the weekly chart’s grid (a drawing)',
+      'features/dashboard/components/PortfolioChart.tsx':
+        'the contributed curve’s legend (a drawing)',
     }
     expect(holding(/(?:border|outline)-(?:\[[^\]]*\] )?dashed/).sort()).toEqual(
       Object.keys(REASONS).sort(),

@@ -284,45 +284,102 @@ interface DeclaredCurrency {
   adopting: boolean
 }
 
-/** How the file is to be read — the gesture's parameters (#813, #835). */
-export interface ImportOptions {
-  /** Judge and count, and **write nothing**: the forecast the owner may refuse. */
-  dryRun?: boolean
-  /** *These are real orders, write them* — the rows the ledger already has. */
-  writeDuplicates?: boolean
-  /**
-   * The groups of identical lines in the file to write **whole** (#1267): the
-   * index of each group's first copy. Sent as form fields, not on the query
-   * string — see `upload`.
-   */
-  writeRepeats?: readonly number[]
-  /**
-   * **Where each account the file names is to go** (#835) — file label to the id
-   * of a declared account. Sent as one JSON object, on the query string with the
-   * rest of *how the file is to be read*.
-   *
-   * Its **presence** is itself an answer: it says the modal is collecting the
-   * correspondence, so the preview reports the account column rather than
-   * refusing a file over the very question it is being asked to put. That is why
-   * it is sent from the first preview on, empty object and all.
-   */
-  mapping?: Record<string, string>
-  /** The labels to declare as accounts with the import — repeated `declare=`. */
-  declaring?: readonly string[]
-  /** Decline the reporting currency the file offers. Absent means *take it up*. */
-  declineCurrency?: boolean
-  /**
-   * **The one question about the foreign-quoted lines** (#1261). Absent means
-   * unanswered: on a forecast it converts nothing, and on a write it keeps the
-   * behaviour of a caller that never heard of the question.
-   */
-  amountsIn?: AmountsIn
-  /**
-   * The `SYMBOL:CCY` pairs the last forecast listed — write only. The server
-   * applies the answer to exactly these, without a lookup, so it converts what
-   * the forecast judged.
-   */
-  foreign?: readonly string[]
+// ------------------------------------------------------------------------- //
+// The import in two steps (IMPLEMENTATION.md § 3.4), and the dry run of a write
+// (§ 3.5). The preview persists nothing; the commit takes its token back.
+// ------------------------------------------------------------------------- //
+
+export const IMPORT_ROW_STATUSES = ['new', 'duplicate', 'unknown_security', 'unreadable'] as const
+
+export type ImportRowStatus = (typeof IMPORT_ROW_STATUSES)[number]
+
+/** What made a line a duplicate: `isin` or `symbol`, `date`, then `quantity`+`price` or `amount`. */
+export type ImportMatchCriterion = 'isin' | 'symbol' | 'date' | 'quantity' | 'price' | 'amount'
+
+export interface ImportPreviewRow {
+  /** 1-based position among the file's lines: the number a resolution names. */
+  row: number
+  status: ImportRowStatus
+  /** Why an `unreadable` line is, in the server's words (English: the front says it by `reason_code`). */
+  reason: string | null
+  /** A stable name for that reason, which the page words in French. */
+  reason_code: string | null
+  /** The values the reason quotes: `value`, and for a number `field`. */
+  reason_values: Record<string, string> | null
+  date: string | null
+  event_type: LedgerEventType | null
+  symbol: string | null
+  /** The ISIN the file gave, if any. */
+  isin: string | null
+  name: string | null
+  quantity: number | null
+  unit_price: number | null
+  fee: number | null
+  amount: number | null
+  notes: string | null
+  /** The account the line goes into: the one it names, else the picked one. */
+  account: string | null
+  /** Set on a `duplicate`: the held event it repeats, and what matched. */
+  matched_event_id: string | null
+  matched_on: ImportMatchCriterion[] | null
+}
+
+export interface ImportPreview {
+  token: string
+  filename: string
+  account_id: string
+  /** The file names an account per line (the app's own export does). */
+  has_accounts: boolean
+  /** The lines that name no account: the ones the picked account decides. */
+  unnamed_rows: number
+  /** The reporting currency, to say what a foreign line's amounts are read as. */
+  base_currency: string | null
+  /** Securities about to be written that are quoted outside the base, in a file that states no unit. */
+  foreign_lines: ImportForeignLine[]
+  /** Securities whose currency could not be checked in time. */
+  unverified: string[]
+  counts: Record<ImportRowStatus, number>
+  rows: ImportPreviewRow[]
+}
+
+export interface ImportForeignLine {
+  symbol: string
+  /** The currency the security is quoted in. */
+  currency: string
+  rows: number
+}
+
+/** What the owner says a security's amounts in the file are written in. */
+export interface ImportAmountsIn {
+  symbol: string
+  currency: string
+  amounts_in: 'base' | 'quote'
+}
+
+export interface ImportResolution {
+  row: number
+  /** The ticker the owner says the line's security is. */
+  security: string
+}
+
+export interface ImportCommitReceipt {
+  imported: number
+  duplicate: number
+  unknown_security: number
+  unreadable: number
+}
+
+/** The effect line's data: what writing a candidate event does to its account's cash. */
+export interface EventEffect {
+  account: string
+  cash_before: number
+  cash_after: number
+  /** The magnitude of the cash movement, fee included. */
+  amount: number
+  fee: number
+  direction: 'debit' | 'credit' | 'none'
+  /** For a sale: the gain (or, negative, the loss) it realises; `null` otherwise. */
+  realised_gain?: number | null
 }
 
 export const dataApi = {
@@ -350,29 +407,24 @@ export const dataApi = {
    * skipped by the server, and the answer counts what actually left.
    */
   deleteEvents: (ids: readonly string[]) => send<BulkRemoval>(ROUTES.events, 'DELETE', { ids }),
-  // The way in (#811), and since #813 it is made twice on purpose: once with
-  // `dryRun` for the forecast, once without it to commit — **the same file**,
-  // re-sent. There is no pending-import id to hold instead, because holding one
-  // would be the table this lot deleted under another name.
-  importEvents: (files: readonly File[], options: ImportOptions = {}) =>
-    upload<ImportReceipt>(
-      ROUTES.eventsImport,
-      files,
-      [
-        ...(options.dryRun ? ['dry_run=1'] : []),
-        ...(options.writeDuplicates ? ['write_duplicates=1'] : []),
-        // The correspondence and its two companions (#835). `mapping` is sent
-        // whenever there is one to send, empty object included: the parameter's
-        // presence is what tells the preview it is being asked a question rather
-        // than being asked to judge.
-        ...(options.mapping ? [`map=${encodeURIComponent(JSON.stringify(options.mapping))}`] : []),
-        ...(options.declaring ?? []).map((label) => `declare=${encodeURIComponent(label)}`),
-        ...(options.declineCurrency ? ['adopt_currency=0'] : []),
-        ...(options.amountsIn ? [`amounts_in=${options.amountsIn}`] : []),
-        ...(options.foreign ?? []).map((pair) => `foreign=${encodeURIComponent(pair)}`),
-      ],
-      { write_repeat: (options.writeRepeats ?? []).map(String) },
-    ),
+  /** Read `file` against `accountId`'s ledger: the account of the lines that name none. */
+  previewImport: (file: File, accountId: string) =>
+    upload<ImportPreview>(ROUTES.eventsImportPreview, [file], [], {
+      account_id: [accountId],
+    }),
+  commitImport: (
+    token: string,
+    associate: readonly ImportResolution[] = [],
+    foreign: readonly ImportAmountsIn[] = [],
+  ) =>
+    send<ImportCommitReceipt>(ROUTES.eventsImportCommit, 'POST', {
+      token,
+      associate,
+      ...(foreign.length > 0 ? { foreign } : {}),
+    }),
+  /** `id` previews an edit of that event rather than a new one. */
+  previewEvent: (draft: EventDraft, id?: string) =>
+    send<EventEffect>(ROUTES.eventsPreview, 'POST', id ? { ...draft, id } : draft),
   // The way back out (#710, #796). It answers bytes and a name rather than a
   // payload, and it is the one call whose result no cache holds: a file is
   // handed to the reader, not rendered.

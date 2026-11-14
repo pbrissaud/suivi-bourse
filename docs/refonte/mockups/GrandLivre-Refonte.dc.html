@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Grand livre — refonte</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}a:hover{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.tb{display:inline-flex;height:32px;align-items:center;gap:6px;padding:0 12px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.tb:hover{background:var(--muted)}
+.flt{display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:none;font:inherit;color:var(--muted-foreground);cursor:pointer;text-decoration:none;white-space:nowrap}
+.flt:hover{color:var(--foreground)}
+#gl-q:focus{border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent)}
+.row:hover{background:var(--muted)}
+.row:hover span[data-name]{text-decoration:underline;text-underline-offset:4px}
+.hdr button{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer}
+.hdr button:hover{color:var(--foreground)}
+</style>
+</helmet>
+<div data-theme="light" style="display: flex; flex-wrap: wrap; align-items: stretch; min-height: 900px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="ledger" hint-size="200px,900px"></dc-import>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Grand livre" subtitle="" hint-size="100%,56px"></dc-import>
+
+<div style="width: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 32px 32px 56px; font-size: 14px; line-height: 20px">
+
+<!-- Filtres et actions de page -->
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: 4px">
+<div style="position: relative; flex: 0 1 260px; min-width: 180px">
+<span style="position: absolute; left: 10px; top: 8px; display: flex; color: var(--muted-foreground)"><x-import component-from-global-scope="SuiviBourse.Icons.Search" class-name="size-4" aria-hidden="true"></x-import></span>
+<label for="gl-q" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Rechercher</label>
+<input id="gl-q" type="search" placeholder="Rechercher" style="width: 100%; height: 32px; box-sizing: border-box; padding: 0 10px 0 32px; border: 1px solid var(--input); border-radius: 8px; background: var(--background); color: var(--foreground); font: inherit; font-size: 14px; outline: none">
+</div>
+<div role="group" aria-label="Filtres" style="display: flex; align-items: center; gap: 20px; font-size: 13px; color: var(--muted-foreground)">
+<button type="button" class="flt" aria-haspopup="listbox">Tous les types<x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></button>
+<button type="button" class="flt" aria-haspopup="listbox">Tous les comptes<x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></button>
+<button type="button" class="flt" aria-haspopup="listbox">Depuis le début<x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></button>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; margin-left: auto">
+<a href="GrandLivre-Import-Refonte.dc.html" class="tb"><x-import component-from-global-scope="SuiviBourse.Icons.Upload" class-name="size-4" aria-hidden="true"></x-import>Importer</a>
+<button type="button" class="tb"><x-import component-from-global-scope="SuiviBourse.Icons.Download" class-name="size-4" aria-hidden="true"></x-import>Exporter</button>
+<a href="GrandLivre-Saisie.dc.html" class="tb" style="background: var(--primary); border-color: var(--primary); color: var(--primary-foreground)">Saisir un événement</a>
+</div>
+</div>
+
+<!-- Table -->
+<div role="table" aria-label="Vos événements" style="font-size: 13px; line-height: 18px">
+<div role="row" class="hdr" style="display: grid; grid-template-columns: {{cols}}; align-items: end; padding: 16px 0 8px; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<span role="columnheader"><input type="checkbox" aria-label="Sélectionner les événements affichés" style="width: 16px; height: 16px; margin: 0; accent-color: var(--primary)"></span>
+<span role="columnheader" aria-sort="descending" style="padding-right: 12px; color: var(--foreground); font-weight: 500"><button type="button">Date</button></span>
+<span role="columnheader" style="padding: 0 12px"><button type="button">Type</button></span>
+<span role="columnheader" style="padding: 0 12px">Événement</span>
+<span role="columnheader" style="padding: 0 12px; text-align: right">Quantité</span>
+<span role="columnheader" style="padding: 0 12px; text-align: right">Prix unitaire</span>
+<span role="columnheader" style="padding: 0 12px; text-align: right"><button type="button">Montant</button></span>
+<span role="columnheader" style="padding-left: 12px"><button type="button">Compte</button></span>
+</div>
+
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="16">
+<div role="row" class="row" style="display: grid; grid-template-columns: {{cols}}; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border)">
+<span role="cell"><input type="checkbox" aria-label="Sélectionner l’événement du {{r.date}}" style="width: 16px; height: 16px; margin: 0; accent-color: var(--primary)"></span>
+<span role="cell" class="fig" style="padding: 6px 12px 6px 0; white-space: nowrap">{{r.date}}</span>
+<span role="cell" style="padding: 6px 12px; color: var(--muted-foreground)">{{r.type}}</span>
+<a href="Ledger-Saisie.dc.html" role="cell" style="display: flex; flex-direction: column; min-width: 0; padding: 6px 12px; color: inherit; text-decoration: none">
+<span data-name style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500">{{r.name}}</span>
+<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{r.note}}</span>
+</a>
+<span role="cell" class="fig" style="padding: 6px 12px; text-align: right; color: {{r.qtyColor}}">{{r.qty}}</span>
+<span role="cell" class="fig" style="padding: 6px 12px; text-align: right; color: {{r.priceColor}}">{{r.price}}</span>
+<span role="cell" class="fig" style="padding: 6px 12px; text-align: right; font-weight: 500">{{r.amount}}</span>
+<span role="cell" style="padding-left: 12px; color: var(--muted-foreground)">{{r.account}}</span>
+</div>
+</sc-for>
+</div>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const cols = '28px 104px 92px minmax(240px, 2fr) 84px 110px 120px 120px';
+    const row = (date, type, name, note, qty, price, amount, account) => ({
+      date, type, name, note, account, amount,
+      qty: qty || '—', price: price || '—',
+      qtyColor: qty ? 'var(--foreground)' : 'var(--border)',
+      priceColor: price ? 'var(--foreground)' : 'var(--border)',
+    });
+    const rows = [
+      row('1ᵉʳ oct. 2026', 'Achat', 'Amundi MSCI World', 'CW8 · Versement programmé mensuel', '1', '541,20 €', '−542,55 €', 'PEA'),
+      row('1ᵉʳ oct. 2026', 'Achat', 'Amundi PEA Nasdaq-100', 'PUST · Versement programmé mensuel', '5', '80,92 €', '−405,09 €', 'PEA'),
+      row('1ᵉʳ oct. 2026', 'Dividende', 'TotalEnergies', 'TTE · Acompte sur dividende', '', '', '+79,30 €', 'Compte-titres'),
+      row('1ᵉʳ oct. 2026', 'Versement', 'Virement depuis le compte courant', '', '', '', '+450,00 €', 'PEA'),
+      row('1 sept. 2026', 'Achat', 'Amundi PEA Nasdaq-100', 'PUST · Versement programmé mensuel', '5', '79,69 €', '−398,93 €', 'PEA'),
+      row('1 sept. 2026', 'Versement', 'Virement depuis le compte courant', '', '', '', '+450,00 €', 'PEA'),
+      row('3 août 2026', 'Achat', 'Amundi MSCI World', 'CW8 · Versement programmé mensuel', '1', '528,64 €', '−529,70 €', 'PEA'),
+      row('3 août 2026', 'Achat', 'Amundi PEA Nasdaq-100', 'PUST · Versement programmé mensuel', '5', '78,10 €', '−390,97 €', 'PEA'),
+      row('31 juil. 2026', 'Versement', 'Virement depuis le compte courant', '', '', '', '+450,00 €', 'PEA'),
+      row('15 juil. 2026', 'Vente', 'Orange', 'ORA · Ordre au marché, solde de la ligne', '40', '12,71 €', '+506,40 €', 'Compte-titres'),
+      row('1 juil. 2026', 'Achat', 'Amundi PEA Nasdaq-100', 'PUST · Versement programmé mensuel', '5', '77,30 €', '−386,96 €', 'PEA'),
+      row('1 juil. 2026', 'Versement', 'Virement depuis le compte courant', '', '', '', '+450,00 €', 'PEA'),
+      row('1 juil. 2026', 'Dividende', 'Air Liquide', 'AI · Solde du dividende', '', '', '+32,00 €', 'PEA'),
+      row('1 juin 2026', 'Achat', 'Amundi PEA Nasdaq-100', 'PUST · Versement programmé mensuel', '6', '74,85 €', '−449,55 €', 'PEA'),
+      row('1 juin 2026', 'Versement', 'Virement depuis le compte courant', '', '', '', '+450,00 €', 'PEA'),
+      row('15 mai 2026', 'Dividende', 'Air Liquide', 'AI · Acompte sur dividende', '', '', '+64,00 €', 'PEA'),
+      row('14 mai 2026', 'Dividende', 'Schneider Electric', 'SU · Dividende annuel', '', '', '+21,00 €', 'Compte-titres'),
+      row('4 mai 2026', 'Achat', 'Amundi MSCI World', 'CW8 · Versement programmé mensuel', '1', '512,40 €', '−513,45 €', 'PEA'),
+    ];
+    return { cols, rows };
+  }
+}
+</script>
+</body>
+</html>

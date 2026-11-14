@@ -111,17 +111,7 @@ def survey(store, rows: Sequence[Event], base: str) -> Survey:
     """
     target, _ = fx.normalise(base)
     counts = _money_rows(rows)
-
-    found: Dict[str, str] = {}
-    to_ask: List[str] = []
-    for symbol in sorted(counts):
-        currency = quotes.quote_currency(store, symbol) or _LOOKED_UP.get(symbol)
-        if currency:
-            found[symbol] = currency
-        else:
-            to_ask.append(symbol)
-
-    unverified = _ask(to_ask, found)
+    found, unverified = lookup(store, sorted(counts))
 
     lines = []
     for symbol in sorted(found):
@@ -129,6 +119,23 @@ def survey(store, rows: Sequence[Event], base: str) -> Survey:
         if main is not None and main != target:
             lines.append(ForeignLine(symbol, main, counts[symbol]))
     return Survey(tuple(lines), tuple(sorted(unverified)))
+
+
+def lookup(store, symbols: Sequence[str]) -> Tuple[Dict[str, str], List[str]]:
+    """``({symbol: currency}, unverified)`` for ``symbols``: what the store and
+    the process know, then Yahoo for the rest, within the lookup bounds.
+
+    A symbol Yahoo cannot resolve (invented, or Yahoo down) is *unverified*.
+    """
+    found: Dict[str, str] = {}
+    to_ask: List[str] = []
+    for symbol in symbols:
+        currency = quotes.quote_currency(store, symbol) or _LOOKED_UP.get(symbol)
+        if currency:
+            found[symbol] = currency
+        else:
+            to_ask.append(symbol)
+    return found, _ask(to_ask, found)
 
 
 def _ask(symbols: Sequence[str], found: Dict[str, str]) -> List[str]:
@@ -250,5 +257,5 @@ def _scaled(value: Optional[float], rate: float) -> Optional[float]:
 
 __all__ = [
     'LOOKUP_TIMEOUT_S', 'LOOKUP_BUDGET_S', 'Unconvertible', 'BadPair', 'ForeignLine', 'Survey',
-    'survey', 'pairs', 'lines', 'convert',
+    'survey', 'lookup', 'pairs', 'lines', 'convert',
 ]

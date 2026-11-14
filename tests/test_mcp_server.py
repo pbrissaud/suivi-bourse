@@ -448,7 +448,7 @@ def test_the_agent_and_the_browser_are_served_the_same_account(tmp_path):
         assert set(row) == set(by_id[row['id']]), row['id']
 
     carrying = by_id[accounts_module.DEFAULT_ACCOUNT]
-    assert carrying['taxation_model'] == model.id
+    assert carrying['taxation_model_id'] == model.id
     assert carrying['taxation_kind'] == 'flat_realised'
 
 
@@ -1152,6 +1152,10 @@ def rich_runtime(tmp_path):
     quotes.record_quote(
         opened, 'MC.PA', datetime.now(timezone.utc) - timedelta(hours=1),
         150.0, {'currency': 'EUR'}, 150.0, 1.0)
+    # A close before the latest quote's day, for the day's move.
+    quotes.record_quote(
+        opened, 'AAPL', datetime.now(timezone.utc) - timedelta(days=3),
+        190.0, {'currency': 'USD'}, 175.0, 0.92)
     quotes.record_quote(
         opened, 'AAPL', datetime.now(timezone.utc) - timedelta(hours=1),
         200.0, {'currency': 'USD', 'exchange': 'NMS', 'quote_type': 'EQUITY',
@@ -1201,6 +1205,22 @@ def rich_runtime(tmp_path):
     return runtime
 
 
+def priced_totals_runtime(tmp_path):
+    """One priced line: the totals' ``gain_total`` is only a figure when every held
+    line has a value, and ``rich_runtime`` keeps an unpriced one on purpose."""
+    today = datetime.now(timezone.utc).date()
+    runtime, opened = build_runtime(tmp_path, events=[
+        Event(today - timedelta(days=100), EventType.BUY, 'AAPL', 'Apple Inc',
+              quantity=1, unit_price=10.0)])
+    quotes.record_quote(opened, 'AAPL', datetime.now(timezone.utc),
+                        12.0, {'currency': 'EUR'}, 12.0, 1.0)
+    perf_series.write_portfolio_totals(opened, [
+        PortfolioTotalPoint(day=today, cash_balance=0.0, holdings_value=12.0,
+                            total_value=12.0, net_contributed=10.0, xirr=None,
+                            gain_absolu=2.0, twr_index=100.0)])
+    return runtime
+
+
 def test_every_member_a_tool_publishes_is_served_with_a_value(tmp_path):
     """**Schema ⊆ observed**, per tool, on the rich portfolio.
 
@@ -1218,6 +1238,10 @@ def test_every_member_a_tool_publishes_is_served_with_a_value(tmp_path):
             (tmp_path / state).mkdir()
             other = benchmark_runtime(tmp_path / state, state)
             observed |= set(observed_paths(payload(call(other, name))))
+        if name == 'get_portfolio_totals':
+            (tmp_path / 'priced').mkdir()
+            observed |= set(observed_paths(payload(call(
+                priced_totals_runtime(tmp_path / 'priced'), name))))
         unseen = schema_paths(tool.output_schema) - observed
         assert not unseen, (name, sorted(unseen))
 

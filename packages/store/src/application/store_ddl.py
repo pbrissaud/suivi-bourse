@@ -3,9 +3,16 @@
 _DDL_DECLARED = """
 CREATE TABLE IF NOT EXISTS account (
     id         VARCHAR PRIMARY KEY,
-    label      VARCHAR NOT NULL);
+    label      VARCHAR);                            -- optional: readers fold `label ?? id`
 
 CREATE TABLE IF NOT EXISTS symbol (symbol VARCHAR PRIMARY KEY);
+
+-- The ISINs an import tied to a ticker (§ 3.4), so that a later file naming
+-- only the ISIN finds its security. No key on `symbol`: it is a hint, and a
+-- ticker the ledger forgot must not hold a delete back.
+CREATE TABLE IF NOT EXISTS symbol_isin (
+    isin    VARCHAR PRIMARY KEY,
+    symbol  VARCHAR NOT NULL);
 
 -- The owner's own taxation models (#752). Reusable across accounts,
 -- so they have an identity of their own rather than living on the account.
@@ -141,10 +148,13 @@ CREATE TABLE IF NOT EXISTS schema_step (
     step        VARCHAR PRIMARY KEY,
     applied_at  TIMESTAMPTZ NOT NULL);
 
--- **The agent's provider, and its key in clear** (#1114). One row. Because
--- of ``api_key`` this file now holds a secret: no route may ever serve the
--- store file or a dump of a whole table, and the key leaves the server as its
--- last four characters only (``agent.describe``).
+-- **The agent's switch and its reasoning level** (#1114). One row. It held the
+-- one provider and its key in clear until the « Relevé » redesign; those
+-- columns stay for the stores that have them, and ``agent_provider`` below holds
+-- the providers (the step ``move_agent_provider`` moved the old one). Because of
+-- ``api_key`` this file holds a secret: no route may ever serve the store file or
+-- a dump of a whole table, and a key leaves the server as its last four
+-- characters only (``agent.describe``).
 CREATE TABLE IF NOT EXISTS agent_config (
     id          INTEGER PRIMARY KEY CHECK (id = 1),
     enabled     BOOLEAN NOT NULL DEFAULT FALSE,
@@ -157,6 +167,42 @@ CREATE TABLE IF NOT EXISTS agent_config (
     thinking    VARCHAR DEFAULT 'low',
     updated_at  TIMESTAMPTZ NOT NULL);
 
+-- **The agent's providers** (« Relevé » redesign). Several rows, one of them the
+-- default; the keys are in clear as ``agent_config.api_key`` was, and leave the
+-- server as their last four characters only (``agent.describe``). ``enabled``
+-- and ``thinking`` stay on the ``agent_config`` row, which no longer holds a
+-- provider: the migration moved the one it held here.
+CREATE TABLE IF NOT EXISTS agent_provider (
+    id             VARCHAR PRIMARY KEY,
+    label          VARCHAR,
+    kind           VARCHAR NOT NULL,
+    base_url       VARCHAR,
+    api_key        VARCHAR,
+    key_set_at     TIMESTAMPTZ,
+    default_model  VARCHAR,
+    is_default     BOOLEAN NOT NULL DEFAULT FALSE,
+    last_test_at   TIMESTAMPTZ,
+    created_at     TIMESTAMPTZ NOT NULL);
+
+-- **What each model response of each thread cost in tokens.** An index of the
+-- thread files, which stay the truth: ``agent_usage.record`` replaces a
+-- thread's rows from its messages on every save, and the migration filled it
+-- from the threads that existed. ``seq`` is the response's place in the
+-- thread's messages.
+CREATE TABLE IF NOT EXISTS agent_usage (
+    thread_id           VARCHAR NOT NULL,
+    seq                 INTEGER NOT NULL,
+    responded_at        TIMESTAMPTZ NOT NULL,
+    model               VARCHAR NOT NULL,
+    provider            VARCHAR,
+    input_tokens        BIGINT NOT NULL,
+    output_tokens       BIGINT NOT NULL,
+    cache_read_tokens   BIGINT NOT NULL,
+    cache_write_tokens  BIGINT NOT NULL,
+    requests            INTEGER NOT NULL,
+    tool_calls          INTEGER NOT NULL,
+    PRIMARY KEY (thread_id, seq));
+
 -- **The PIN and what it opens** (#1203). One row, absent while the PIN is off,
 -- so a store from before it boots unlocked. Written and read by ``auth_gate``
 -- alone: no settings route, MCP tool or export reads it. ``revoked`` is a JSON
@@ -166,11 +212,28 @@ CREATE TABLE IF NOT EXISTS auth_secret (
     id                INTEGER PRIMARY KEY CHECK (id = 1),
     pin_hash          VARCHAR NOT NULL,
     session_secret    VARCHAR NOT NULL,
-    token_hash        VARCHAR,
-    token_created_at  TIMESTAMPTZ,
+    token_hash        VARCHAR,       -- legacy: moved to access_tokens, no longer read
+    token_created_at  TIMESTAMPTZ,   -- legacy
     revoked           VARCHAR NOT NULL DEFAULT '{}',
     session_seconds   INTEGER,
+    enabled_at        TIMESTAMPTZ,   -- when the code was first set; NULL reads as updated_at
     updated_at        TIMESTAMPTZ NOT NULL);
+
+-- **The access tokens** (#1313): the bearers that open ``/api`` and ``/mcp``
+-- without the PIN. ``scopes`` is a comma-joined subset of ``api``, ``mcp``;
+-- ``lifetime`` is ``90d``, ``1y`` or ``never``, kept so a regeneration restarts
+-- the same clock. Only the SHA-256 of the secret is stored; ``prefix`` is the
+-- public id the list shows. Written and read by ``access_tokens`` alone.
+CREATE TABLE IF NOT EXISTS access_tokens (
+    id            VARCHAR PRIMARY KEY,     -- uuid4 hex
+    label         VARCHAR NOT NULL,
+    scopes        VARCHAR NOT NULL,
+    lifetime      VARCHAR NOT NULL,
+    prefix        VARCHAR NOT NULL,
+    token_hash    VARCHAR NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL,
+    expires_at    TIMESTAMPTZ,
+    last_used_at  TIMESTAMPTZ);
 
 -- What the owner declares **about themself** (#1116), confirmed in the UI and
 -- never written by the agent. An absent row is an absence. ``value`` is JSON,
@@ -232,6 +295,30 @@ CREATE TABLE IF NOT EXISTS job_schedule (
     PRIMARY KEY (job, member));
 """
 
+# Where the app speaks when the owner is not looking (§ 3.6). ``secret`` is the
+# SMTP password or the webhook / ntfy token, **in clear like the agent's key**
+# (``agent_config.api_key``): no route serves the table, and the secret leaves
+# the server as its last four characters only. ``scopes`` is a JSON list of
+# advisory kinds (plus ``job_failed``); ``options`` a JSON object of the
+# non-secret settings a kind needs (the SMTP host, port, user and sender).
+# ``advisory_dispatch`` remembers which ``user`` advisories were already sent,
+# so an advisory derived on every read is pushed once per time it stands.
+_DDL_NOTIFICATIONS = """
+CREATE TABLE IF NOT EXISTS notification_channel (
+    id          VARCHAR PRIMARY KEY,     -- uuid4 hex
+    kind        VARCHAR NOT NULL,        -- 'ntfy' | 'email' | 'webhook' | 'apprise'
+    target      VARCHAR NOT NULL,        -- topic URL | recipient | URL | apprise URL
+    secret      VARCHAR,
+    options     VARCHAR NOT NULL DEFAULT '{}',
+    scopes      VARCHAR NOT NULL DEFAULT '[]',
+    enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL);
+
+CREATE TABLE IF NOT EXISTS advisory_dispatch (
+    key      VARCHAR PRIMARY KEY,
+    sent_at  TIMESTAMPTZ NOT NULL);
+"""
+
 DDL = ''.join((
     _DDL_DECLARED,
     _DDL_DERIVED_FROM_EVENTS,
@@ -240,6 +327,7 @@ DDL = ''.join((
     _DDL_DERIVED_FROM_COMPUTATION,
     _DDL_SETTINGS_AND_FACTS,
     _DDL_JOB_STATE,
+    _DDL_NOTIFICATIONS,
 ))
 
 TABLES = (
@@ -248,8 +336,9 @@ TABLES = (
     'symbol_quote', 'price_point', 'symbol_split',
     'account_metrics', 'portfolio_totals',
     'setting', 'installation_fact', 'advisory_ack', 'schema_step',
-    'agent_config', 'auth_secret', 'profile_fact', 'proposal',
-    'job_slot', 'job_pass', 'job_schedule',
+    'agent_config', 'agent_provider', 'agent_usage', 'auth_secret', 'access_tokens',
+    'profile_fact', 'proposal', 'job_slot', 'job_pass', 'job_schedule', 'symbol_isin',
+    'notification_channel', 'advisory_dispatch',
 )
 
 #: The tables whose surrogate key this store hands out — see
@@ -257,7 +346,9 @@ TABLES = (
 #: so: every other table is keyed by something the domain already names.
 KEYED_TABLES = ('event',)
 
+NOTIFICATIONS_DDL = _DDL_NOTIFICATIONS
+
 DEFAULT_ACCOUNT_ROW = ('default', 'Default account')
 
 
-__all__ = ['DDL', 'TABLES', 'KEYED_TABLES', 'DEFAULT_ACCOUNT_ROW']
+__all__ = ['DDL', 'NOTIFICATIONS_DDL', 'TABLES', 'KEYED_TABLES', 'DEFAULT_ACCOUNT_ROW']

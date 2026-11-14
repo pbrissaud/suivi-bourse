@@ -12,11 +12,13 @@ so the ingestion publishes the ledger before the performance pass reads it.
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Type
+from typing import (Any, Dict, Iterator, List, Mapping, Optional, Sequence,
+                    Tuple, Type)
 
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from application import instants, job_history
 from application.jobs import base
 from application.jobs.backfill import BackfillJob
 from application.jobs.context import JobContext, MarketClient
@@ -124,10 +126,63 @@ def history_jobs() -> List[str]:
     return [cls.id for cls in JOBS if cls.kind == 'job']
 
 
-def describe() -> List[Dict[str, Any]]:
-    """``GET /api/jobs``: every job, as the System page lists it."""
-    return [{'id': cls.id, 'label_key': cls.label_key, 'kind': cls.kind,
-             'in_health': cls.in_health} for cls in JOBS]
+#: What a pass said, as the code the front words in the reader's language.
+_STATES = {job_history.OK: 'ok', job_history.ATTENTION: 'attention',
+           job_history.ERROR: 'error', job_history.IDLE: 'idle'}
+NEVER_RUN = 'never'
+
+
+def _scheduled(scheduler, cls) -> Tuple[Optional[Any], Optional[datetime]]:
+    """The interval entry of ``cls`` (or ``None``), and the soonest next run."""
+    entries = [scheduler.get_job(t.scheduler_id) for t in cls.triggers
+               if isinstance(t, (base.Interval, base.Daily))] \
+        if scheduler is not None else []
+    entries = [entry for entry in entries if entry is not None]
+    runs = [e.next_run_time for e in entries if e.next_run_time is not None]
+    return (entries[0] if entries else None), (min(runs) if runs else None)
+
+
+def _cadence(cls, jobs: 'Jobs', entry) -> Optional[Dict[str, Any]]:
+    """How often it runs, as data: ``{'every': seconds}`` or ``{'on_write': True}``."""
+    if cls is ScrapeJob:
+        return {'every': int(jobs.ctx.regular_interval)}
+    interval = getattr(getattr(entry, 'trigger', None), 'interval', None)
+    if interval is not None:
+        return {'every': int(interval.total_seconds())}
+    if any(isinstance(t, base.OnWrite) for t in cls.triggers):
+        return {'on_write': True}
+    return None
+
+
+def describe(jobs: Optional['Jobs'] = None, history=None,
+             scheduler=None) -> List[Dict[str, Any]]:
+    """``GET /api/jobs``: every job, as the System page lists it.
+
+    Given the running ``jobs``, each also says its ``state`` (a code: the last
+    pass's outcome, or ``never``), ``last_run_at``, ``next_run_at`` and
+    ``cadence`` (``{'every': seconds}``, ``{'on_write': True}`` or ``None``).
+    Nothing here is prose: the front words it in the reader's language.
+    """
+    rows = []
+    for cls in JOBS:
+        row = {'id': cls.id, 'label_key': cls.label_key, 'kind': cls.kind,
+               'in_health': cls.in_health}
+        if jobs is not None:
+            last = history.last_pass(cls.id) if history is not None else None
+            entry, next_run = _scheduled(scheduler, cls)
+            if cls is ScrapeJob:
+                from application.jobs.scrape import scrape_next_runs
+                soon = [r for r in scrape_next_runs(scheduler).values() if r]
+                next_run = min(soon) if soon else None
+            row.update({
+                'state': _STATES.get(last.outcome, 'ok') if last
+                else NEVER_RUN,
+                'last_run_at': instants.iso(last.at) if last else None,
+                'next_run_at': instants.iso(next_run),
+                'cadence': _cadence(cls, jobs, entry),
+            })
+        rows.append(row)
+    return rows
 
 
 __all__ = ['JOBS', 'Jobs', 'build', 'build_scheduler', 'register',

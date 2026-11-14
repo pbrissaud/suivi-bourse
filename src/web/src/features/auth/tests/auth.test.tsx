@@ -16,9 +16,7 @@ const PROBLEM = { 'Content-Type': 'application/problem+json' }
 function locked(signIn: () => Response | Promise<Response> = () => signedIn()) {
   const tries: string[] = []
   server.use(
-    http.get(ROUTES.authStatus, () =>
-      HttpResponse.json({ enabled: true, authenticated: false, token_created_at: null }),
-    ),
+    http.get(ROUTES.authStatus, () => HttpResponse.json({ enabled: true, authenticated: false })),
     http.post(ROUTES.authPin, async ({ request }) => {
       tries.push(((await request.json()) as { pin: string }).pin)
       return signIn()
@@ -38,22 +36,22 @@ function refused(status: number, members: Record<string, unknown> = {}) {
   )
 }
 
-const code = () => screen.getByRole('textbox', { name: 'Entrez votre code' })
+const code = () => screen.getByRole('textbox', { name: 'Code d’accès' })
 
 describe('the boot', () => {
   it('draws the PIN screen and nothing of the app, then the app once the code is right', async () => {
     const tries = locked()
     const { user } = renderApp({ url: '/settings' })
 
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Entrez votre code' }),
-    ).toBeVisible()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Code d’accès' })).toBeVisible()
     expect(screen.getByRole('main')).toBeInTheDocument()
     expect(document.title).toBe('Code · SuiviBourse')
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
     await waitFor(() => expect(code()).toHaveFocus())
 
-    // Sent at the sixth digit, without a press on the button.
+    // No plane, no button: the code is sent at the sixth digit.
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.queryByText('SB_RESET_AUTH=1')).not.toBeInTheDocument()
     await user.type(code(), '123456')
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeVisible()
@@ -64,30 +62,31 @@ describe('the boot', () => {
     let left = 2
     locked(() => refused(401, { remaining: --left }))
     const { user } = renderApp()
-    await screen.findByRole('heading', { level: 1, name: 'Entrez votre code' })
+    await screen.findByRole('heading', { level: 1, name: 'Code d’accès' })
 
     await user.type(code(), '000000')
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Code incorrect. Dernier essai avant une attente de 30 s.',
-    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('Code incorrect · dernier essai')
     expect(code()).toHaveValue('')
 
     await user.type(code(), '000000')
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/^Code incorrect\.$/))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/^Code incorrect$/))
   })
 
   it('counts down a throttled wait with the slots disabled', async () => {
     locked(() => refused(429, { retry_after: 28 }))
     const { user } = renderApp()
-    await screen.findByRole('heading', { level: 1, name: 'Entrez votre code' })
+    await screen.findByRole('heading', { level: 1, name: 'Code d’accès' })
 
     await user.type(code(), '000000')
 
-    // Drawn, and announced once in the status region beside it.
-    expect(await screen.findAllByText('Trop d’essais. Réessayez dans 0:28.')).toHaveLength(2)
+    // Announced once in the status region, drawn with the clock in mono, and the
+    // reset the server owes a forgotten code is named.
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Trop d’essais · réessayez dans 0:28'),
+    )
     expect(code()).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Déverrouiller' })).toBeDisabled()
-    expect(screen.getByRole('status')).toHaveTextContent('Trop d’essais. Réessayez dans 0:28.')
+    expect(screen.getByText('0:28')).toHaveClass('fig')
+    expect(screen.getByText('SB_RESET_AUTH=1')).toBeInTheDocument()
   })
 
   it('says an unreadable status and offers to ask again', async () => {
@@ -96,7 +95,7 @@ describe('the boot', () => {
       http.get(ROUTES.authStatus, () =>
         fail
           ? HttpResponse.json({ status: 503 }, { status: 503 })
-          : HttpResponse.json({ enabled: false, authenticated: false, token_created_at: null }),
+          : HttpResponse.json({ enabled: false, authenticated: false }),
       ),
     )
     const { user } = renderApp({ url: '/settings' })
@@ -125,44 +124,46 @@ describe('a session that ends under the page', () => {
     )
     const { user } = renderApp({ url: '/settings' })
 
-    const dialog = await screen.findByRole('dialog', { name: 'Entrez votre code' })
+    const dialog = await screen.findByRole('dialog', { name: 'Code d’accès' })
     expect(within(dialog).getByText(/Votre session a pris fin/)).toBeInTheDocument()
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     await user.keyboard('{Escape}')
-    expect(screen.getByRole('dialog', { name: 'Entrez votre code' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Code d’accès' })).toBeInTheDocument()
+    // The page behind is out of sight and of the accessibility tree, not just covered.
+    expect(screen.queryByRole('heading', { level: 1, name: 'Réglages' })).not.toBeInTheDocument()
 
     await user.type(within(dialog).getByRole('textbox'), '123456')
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
-    expect(await screen.findByRole('region', { name: 'L’agent' })).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Agent' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Réglages' })).toBeVisible()
     expect(reads).toBe(2)
   })
 
   it('keeps what was typed through a refused write, and does not send it again', async () => {
     let writes = 0
     server.use(
-      http.post(ROUTES.agentTest, () => {
+      http.post(ROUTES.agentProviderTest, () => {
         writes += 1
         return refused(401)
       }),
       http.post(ROUTES.authPin, () => signedIn()),
     )
     const { user } = renderApp({ url: '/settings' })
-    const block = await screen.findByRole('region', { name: 'L’agent' })
-    await user.click(await within(block).findByRole('button', { name: 'Configurer' }))
-    const sheet = await screen.findByRole('dialog', { name: 'Le fournisseur de l’agent' })
-    await user.click(within(sheet).getByRole('radio', { name: /Anthropic/ }))
-    await user.type(within(sheet).getByLabelText('Clé d’API'), 'test-key-0123456789abcd')
-    await user.click(within(sheet).getByRole('button', { name: 'Tester la connexion' }))
+    const block = await screen.findByRole('region', { name: 'Agent' })
+    await user.click(await within(block).findByRole('button', { name: 'Ajouter un fournisseur' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Ajouter un fournisseur' })
+    await user.type(within(sheet).getByLabelText('Clé API'), 'test-key-0123456789abcd')
+    await user.click(within(sheet).getByRole('button', { name: 'Tester' }))
 
-    const dialog = await screen.findByRole('dialog', { name: 'Entrez votre code' })
+    const dialog = await screen.findByRole('dialog', { name: 'Code d’accès' })
     await user.type(within(dialog).getByRole('textbox'), '123456')
     await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: 'Entrez votre code' })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('dialog', { name: 'Code d’accès' })).not.toBeInTheDocument(),
     )
 
     // The sheet is still open, and holds what was typed.
-    expect(within(sheet).getByLabelText('Clé d’API')).toHaveValue('test-key-0123456789abcd')
+    expect(within(sheet).getByLabelText('Clé API')).toHaveValue('test-key-0123456789abcd')
     expect(writes).toBe(1)
   })
 
@@ -181,7 +182,7 @@ describe('a session that ends under the page', () => {
     await user.type(input, 'Combien vaut mon PEA ?')
     await user.click(screen.getByRole('button', { name: 'Envoyer' }))
 
-    expect(await screen.findByRole('dialog', { name: 'Entrez votre code' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'Code d’accès' })).toBeInTheDocument()
     // Behind the modal, so out of the accessibility tree: found by its label.
     await waitFor(() =>
       expect(screen.getByLabelText('Votre question')).toHaveValue('Combien vaut mon PEA ?'),
@@ -193,82 +194,52 @@ describe('the Sécurité section', () => {
   function pinOff() {
     let enabled = false
     server.use(
-      http.get(ROUTES.authStatus, () =>
-        HttpResponse.json({ enabled, authenticated: enabled, token_created_at: null }),
-      ),
+      http.get(ROUTES.authStatus, () => HttpResponse.json({ enabled, authenticated: enabled })),
       http.post(ROUTES.authEnable, async ({ request }) => {
         const { pin } = (await request.json()) as { pin: string }
         if (pin !== '246810') return refused(400)
         enabled = true
-        return HttpResponse.json({
-          token: 'tok-shown-once',
-          token_created_at: '2026-10-16T08:00:00+00:00',
-        })
+        return HttpResponse.json({ enabled: true })
       }),
     )
   }
 
-  it('says what no code means, asks the new code twice, and shows the token once', async () => {
+  it('states that no code is set, and asks the new code twice', async () => {
     pinOff()
     const { user } = renderApp({ url: '/settings' })
     const block = await screen.findByRole('region', { name: 'Sécurité' })
-    const toggle = await within(block).findByRole('switch', { name: 'Demander un code' })
-    expect(toggle).not.toBeChecked()
-    expect(
-      within(block).getByText('Sans code, toute personne sur votre réseau ouvre l’app.'),
-    ).toBeInTheDocument()
-    // Off, the section is that one row.
-    expect(within(block).queryByRole('button')).not.toBeInTheDocument()
-    expect(within(block).queryByRole('combobox')).not.toBeInTheDocument()
+    const enable = await within(block).findByRole('button', { name: 'Activer le code' })
+    expect(within(block).getByText('Désactivé')).toBeInTheDocument()
+    // Off, no auto-lock and no tokens: both exist only with a code.
+    expect(within(block).queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(within(block).queryByText('Jetons d’accès', { exact: false })).not.toBeInTheDocument()
 
-    await user.click(toggle)
-    // Only once the dialog's action succeeds.
-    expect(toggle).not.toBeChecked()
+    await user.click(enable)
     const dialog = await screen.findByRole('dialog', { name: 'Activer le code' })
     await user.type(within(dialog).getByLabelText('Nouveau code'), '246810')
     await user.type(within(dialog).getByLabelText('Confirmez le code'), '246811')
     await user.click(within(dialog).getByRole('button', { name: 'Activer le code' }))
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Les deux codes diffèrent.')
 
-    await user.clear(within(dialog).getByLabelText('Confirmez le code'))
-    await user.type(within(dialog).getByLabelText('Confirmez le code'), '246810')
+    // The confirmation starts over and has the focus: what is typed next is
+    // the whole of it, and the first entry is left alone.
+    expect(within(dialog).getByLabelText('Confirmez le code')).toHaveValue('')
+    expect(within(dialog).getByLabelText('Confirmez le code')).toHaveFocus()
+    expect(within(dialog).getByLabelText('Nouveau code')).toHaveValue('246810')
+    await user.keyboard('246810')
     await user.click(within(dialog).getByRole('button', { name: 'Activer le code' }))
 
-    const shown = await screen.findByRole('dialog', { name: 'Votre jeton d’accès' })
-    expect(within(shown).getByText('tok-shown-once')).toBeInTheDocument()
-    expect(
-      within(shown).getByText(
-        `curl -H "Authorization: Bearer tok-shown-once" ${window.location.origin}/api/positions`,
-      ),
-    ).toBeInTheDocument()
-    expect(within(shown).getByText('Il ne sera plus affiché.')).toBeInTheDocument()
-    expect(within(shown).queryByRole('button', { name: 'Fermer' })).not.toBeInTheDocument()
-    expect(toggle).toBeChecked()
-    await user.keyboard('{Escape}')
-    expect(within(shown).getByText('tok-shown-once')).toBeInTheDocument()
-
-    await user.click(within(shown).getByRole('button', { name: 'J’ai copié le jeton' }))
-    await waitFor(() => expect(screen.queryByText('tok-shown-once')).not.toBeInTheDocument())
-    expect(
-      within(block).getByText(/^MCP et API, Authorization: Bearer … · créé le 16/),
-    ).toBeInTheDocument()
     expect(await screen.findByText('Code activé')).toBeInTheDocument()
-    // Just enabled, the lifetime is the default.
-    expect(
-      within(block).getByRole('combobox', { name: 'Verrouillage automatique' }),
-    ).toHaveTextContent('30 jours')
+    // No token is made by enabling: the list is empty, and « Créer un jeton » is its way on.
+    expect(await within(block).findByRole('button', { name: 'Créer un jeton' })).toBeVisible()
+    expect(within(block).getByRole('radio', { name: '30 jours' })).toBeChecked()
   })
 
   function pinOn(lifetime: () => Response | Promise<Response>) {
     const sent: unknown[] = []
     server.use(
       http.get(ROUTES.authStatus, () =>
-        HttpResponse.json({
-          enabled: true,
-          authenticated: true,
-          token_created_at: null,
-          session_seconds: 2592000,
-        }),
+        HttpResponse.json({ enabled: true, authenticated: true, session_seconds: 2592000 }),
       ),
       http.post(ROUTES.authLifetime, async ({ request }) => {
         sent.push(await request.json())
@@ -282,22 +253,19 @@ describe('the Sécurité section', () => {
     const sent = pinOn(() => HttpResponse.json({ session_seconds: 900 }))
     const { user } = renderApp({ url: '/settings' })
     const block = await screen.findByRole('region', { name: 'Sécurité' })
-    const lock = await within(block).findByRole('combobox', { name: 'Verrouillage automatique' })
-    expect(lock).toHaveTextContent('30 jours')
+    const group = await within(block).findByRole('radiogroup', { name: 'Verrouillage automatique' })
+    expect(
+      within(group)
+        .getAllByRole('radio')
+        .map((one) => one.textContent),
+    ).toEqual(['15 min', '1 h', '1 jour', '7 jours', '30 jours'])
+    expect(within(group).getByRole('radio', { name: '30 jours' })).toBeChecked()
 
-    await user.click(lock)
-    expect(screen.getAllByRole('option').map((one) => one.textContent)).toEqual([
-      '15 minutes',
-      '1 heure',
-      '1 jour',
-      '7 jours',
-      '30 jours',
-    ])
-    await user.click(screen.getByRole('option', { name: '15 minutes' }))
+    await user.click(within(group).getByRole('radio', { name: '15 min' }))
 
     expect(await within(block).findByText('✓ Enregistré')).toBeInTheDocument()
     expect(sent).toEqual([{ seconds: 900 }])
-    expect(lock).toHaveTextContent('15 minutes')
+    expect(within(group).getByRole('radio', { name: '15 min' })).toBeChecked()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
@@ -305,10 +273,9 @@ describe('the Sécurité section', () => {
     pinOn(() => refused(503))
     const { user } = renderApp({ url: '/settings' })
     const block = await screen.findByRole('region', { name: 'Sécurité' })
-    const lock = await within(block).findByRole('combobox', { name: 'Verrouillage automatique' })
+    const group = await within(block).findByRole('radiogroup', { name: 'Verrouillage automatique' })
 
-    await user.click(lock)
-    await user.click(screen.getByRole('option', { name: '1 heure' }))
+    await user.click(within(group).getByRole('radio', { name: '1 h' }))
 
     expect(
       await within(block).findByText(
@@ -316,19 +283,20 @@ describe('the Sécurité section', () => {
       ),
     ).toBeInTheDocument()
     // The row goes back to what the server holds.
-    await waitFor(() => expect(lock).toHaveTextContent('30 jours'))
+    await waitFor(() =>
+      expect(within(group).getByRole('radio', { name: '30 jours' })).toBeChecked(),
+    )
   })
 
   it('opens the code dialog when the session lapsed under the auto-lock row', async () => {
     pinOn(() => refused(401))
     const { user } = renderApp({ url: '/settings' })
     const block = await screen.findByRole('region', { name: 'Sécurité' })
-    const lock = await within(block).findByRole('combobox', { name: 'Verrouillage automatique' })
+    const group = await within(block).findByRole('radiogroup', { name: 'Verrouillage automatique' })
 
-    await user.click(lock)
-    await user.click(screen.getByRole('option', { name: '1 heure' }))
+    await user.click(within(group).getByRole('radio', { name: '1 h' }))
 
-    expect(await screen.findByRole('dialog', { name: 'Entrez votre code' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'Code d’accès' })).toBeInTheDocument()
     expect(
       within(block).getByText(
         'Non enregistré : la session a pris fin, entrez le code puis choisissez à nouveau.',
@@ -338,35 +306,45 @@ describe('the Sécurité section', () => {
 
   it('refuses to turn the code off with a wrong current code, in an alertdialog', async () => {
     server.use(
-      http.get(ROUTES.authStatus, () =>
-        HttpResponse.json({ enabled: true, authenticated: true, token_created_at: null }),
-      ),
+      http.get(ROUTES.authStatus, () => HttpResponse.json({ enabled: true, authenticated: true })),
       http.post(ROUTES.authDisable, () => refused(403)),
     )
     const { user } = renderApp({ url: '/settings' })
     const block = await screen.findByRole('region', { name: 'Sécurité' })
-    const toggle = await within(block).findByRole('switch', { name: 'Demander un code' })
-    expect(toggle).toBeChecked()
+    const off = await within(block).findByRole('button', { name: 'Désactiver' })
 
-    await user.click(toggle)
-    const dialog = await screen.findByRole('alertdialog', { name: 'Désactiver le code' })
+    await user.click(off)
+    const dialog = await screen.findByRole('alertdialog', { name: 'Désactiver le code d’accès ?' })
     await user.type(within(dialog).getByLabelText('Code actuel'), '999999')
-    await user.click(within(dialog).getByRole('button', { name: 'Désactiver le code' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Désactiver' }))
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Code actuel incorrect.')
-    expect(toggle).toBeChecked()
-    // Escape closes the dialog, and gives the focus back to the switch.
+    // Escape closes the dialog, and gives the focus back to the button.
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
-    await waitFor(() => expect(toggle).toHaveFocus())
+    await waitFor(() => expect(off).toHaveFocus())
+  })
+
+  it('says since when the code is on', async () => {
+    server.use(
+      http.get(ROUTES.authStatus, () =>
+        HttpResponse.json({
+          enabled: true,
+          authenticated: true,
+          enabled_since: '2026-11-02T09:14:00+00:00',
+        }),
+      ),
+    )
+    renderApp({ url: '/settings' })
+    const block = await screen.findByRole('region', { name: 'Sécurité' })
+
+    expect(await within(block).findByText('Actif depuis le 2 nov. 2026')).toBeInTheDocument()
   })
 
   it('changes the code in a dialog, and gives the focus back to its row', async () => {
     let sent: unknown = null
     server.use(
-      http.get(ROUTES.authStatus, () =>
-        HttpResponse.json({ enabled: true, authenticated: true, token_created_at: null }),
-      ),
+      http.get(ROUTES.authStatus, () => HttpResponse.json({ enabled: true, authenticated: true })),
       http.post(ROUTES.authChange, async ({ request }) => {
         sent = await request.json()
         return HttpResponse.json({ enabled: true })
@@ -394,27 +372,31 @@ describe('the Sécurité section', () => {
     expect(within(again).getByLabelText('Nouveau code')).toHaveValue('')
     expect(within(again).getByLabelText('Confirmez le code')).toHaveValue('')
   })
+})
 
-  it('signs this device out back to the PIN screen', async () => {
-    let out = false
+describe('the sidebar', () => {
+  it('offers « Verrouiller » beside Réglages only while a code is set, and locks', async () => {
+    const off = renderApp()
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.queryByRole('button', { name: 'Verrouiller' })).not.toBeInTheDocument()
+    off.unmount()
+
+    let loggedOut = false
     server.use(
-      http.get(ROUTES.authStatus, () =>
-        HttpResponse.json({ enabled: true, authenticated: !out, token_created_at: null }),
-      ),
+      http.get(ROUTES.authStatus, () => HttpResponse.json({ enabled: true, authenticated: true })),
       http.post(ROUTES.authLogout, () => {
-        out = true
+        loggedOut = true
         return new HttpResponse(null, { status: 204 })
       }),
     )
-    const { user } = renderApp({ url: '/settings' })
-    const block = await screen.findByRole('region', { name: 'Sécurité' })
+    const { user } = renderApp()
+    await screen.findByRole('heading', { level: 1 })
+    await user.click(await screen.findByRole('button', { name: 'Verrouiller' }))
 
-    await user.click(await within(block).findByRole('button', { name: 'Se déconnecter' }))
-
-    expect(
-      await screen.findByRole('heading', { level: 1, name: 'Entrez votre code' }),
-    ).toBeVisible()
-    expect(out).toBe(true)
+    await waitFor(() => expect(loggedOut).toBe(true))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Code d’accès' })).toBeVisible()
+    // The lock screen holds none of the page that was behind it.
+    expect(screen.queryByRole('navigation', { name: 'Sections' })).not.toBeInTheDocument()
   })
 })
 
@@ -424,19 +406,15 @@ describe('the palette', () => {
     await screen.findByRole('heading', { level: 1 })
     await user.keyboard('{Control>}k{/Control}')
     const palette = await screen.findByRole('dialog')
-    expect(within(palette).queryByText('Se déconnecter')).not.toBeInTheDocument()
+    expect(within(palette).queryByText('Verrouiller')).not.toBeInTheDocument()
     unmount()
 
     server.use(
-      http.get(ROUTES.authStatus, () =>
-        HttpResponse.json({ enabled: true, authenticated: true, token_created_at: null }),
-      ),
+      http.get(ROUTES.authStatus, () => HttpResponse.json({ enabled: true, authenticated: true })),
     )
     const again = renderApp()
     await screen.findByRole('heading', { level: 1 })
     await again.user.keyboard('{Control>}k{/Control}')
-    expect(
-      await within(await screen.findByRole('dialog')).findByText('Se déconnecter'),
-    ).toBeVisible()
+    expect(await within(await screen.findByRole('dialog')).findByText('Verrouiller')).toBeVisible()
   })
 })

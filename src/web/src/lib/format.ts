@@ -221,6 +221,12 @@ function formatted(locale: string, date: Date, options: Intl.DateTimeFormatOptio
     .join('')
 }
 
+/**
+ * **The one form of a date: the locale's medium one** (« Relevé ») — `6 nov. 2026`,
+ * `1ᵉʳ oct. 2026`, `Nov 6, 2026`. In a table too: in mono the digits line up
+ * anyway, so the `02/03/2026` form is gone. A date and a time read
+ * `6 nov. 2026, 09:14` ({@link formatDateTime}).
+ */
 export function formatDateTime(locale: string, value: string | null | undefined): string {
   if (!value) return ABSENT
   const date = new Date(value)
@@ -252,24 +258,6 @@ function localDay(value: string | number | Date | null | undefined): Date | null
   const day = typeof value === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null
   const date = day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3])) : new Date(value)
   return Number.isNaN(date.getTime()) ? null : date
-}
-
-/**
- * **A day in figures, `dd/mm/yyyy`** (#1264) — `fr-FR` and `en-GB` both write
- * `02/07/2026`. For a table: ten mono characters that line up down the column
- * and carry no `ᵉʳ`, which `formatDate` puts on the first of the month.
- */
-export function formatDay(
-  locale: string,
-  value: string | number | Date | null | undefined,
-): string {
-  const date = localDay(value)
-  if (date === null) return ABSENT
-  return new Intl.DateTimeFormat(locale, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(date)
 }
 
 export type AxisUnit = 'day' | 'month' | 'year'
@@ -399,7 +387,6 @@ export function useFormatters() {
       dateTime: (value: string | null | undefined) => formatDateTime(locale, value),
       date: (value: string | number | Date | null | undefined) => formatDate(locale, value),
       axisDate: (day: string, unit: AxisUnit) => formatAxisDate(locale, day, unit),
-      day: (value: string | number | Date | null | undefined) => formatDay(locale, value),
       daySpan: (
         from: string | number | Date | null | undefined,
         to: string | number | Date | null | undefined,

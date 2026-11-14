@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import urllib.error
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -46,7 +47,7 @@ def test_every_published_item_passes_validate_and_none_has_a_null_model():
 
 def test_a_refused_item_is_listed_with_its_reason_and_the_rest_stays():
     items = taxation_registry.fetch(_serving([FLAT, FUTURE]), DOCS)
-    assert items[0] == {**FLAT, 'refused': None}
+    assert items[0] == {**FLAT, 'effective_from': None, 'source': None, 'refused': None}
     assert 'a_kind_from_later' in items[1]['refused']
 
 
@@ -176,3 +177,59 @@ def test_the_route_keeps_unreachable_for_a_503(http):
 
     http.application.config['TAXATION_REGISTRY_FETCH'] = fails
     assert http.post('/api/taxation-models/registry').get_json()['reason'] == 'unreachable'
+
+
+def test_the_newest_version_in_force_is_listed_and_a_future_one_is_not():
+    versions = [{**FLAT, 'effective_from': '2025-01-01', 'parameters': {'rate': 0.1}},
+                {**FLAT, 'effective_from': '2026-01-01', 'parameters': {'rate': 0.2}},
+                {**FLAT, 'effective_from': '2027-01-01', 'parameters': {'rate': 0.3}}]
+    (item,) = taxation_registry.fetch(_serving(versions), DOCS, today=date(2026, 11, 9))
+    assert item['parameters'] == {'rate': 0.2}
+
+
+def test_the_list_narrows_to_a_country():
+    other = {**FLAT, 'id': 'yy/flat', 'country': 'YY'}
+    items = taxation_registry.fetch(_serving([FLAT, other]), DOCS, country='yy')
+    assert [i['id'] for i in items] == ['yy/flat']
+
+
+def test_every_published_item_carries_its_day_and_its_source():
+    for item in json.loads(PUBLISHED.read_text(encoding='utf-8')):
+        assert date.fromisoformat(item['effective_from'])
+        assert item['source'].startswith('https://')
+
+
+def test_france_2026_is_the_catalogue_of_the_redesign():
+    fr = {i['id']: i for i in json.loads(PUBLISHED.read_text(encoding='utf-8')) if i['country'] == 'FR'}
+    assert {'rate_before': 0.128, 'rate_after': 0, 'threshold_years': 5,
+            'social_rate': 0.186} == {k: fr['fr/pea']['parameters'][k] for k in (
+                'rate_before', 'rate_after', 'threshold_years', 'social_rate')}
+    assert fr['fr/pea-pme']['parameters'] == fr['fr/pea']['parameters']
+    assert fr['fr/compte-titres']['parameters'] == {'rate': 0.128, 'social_rate': 0.186}
+    av = fr['fr/assurance-vie']['parameters']
+    assert (av['rate_before'], av['rate_after'], av['threshold_years'], av['social_rate']) \
+        == (0.128, 0.075, 8, 0.172)
+    assert fr['fr/per']['kind'] == 'bracketed_realised'
+
+
+def test_the_route_imports_several_ids_at_once_and_skips_a_name_already_held(http):
+    http.application.config['TAXATION_REGISTRY_FETCH'] = _serving(
+        [FLAT, {**FLAT, 'id': 'xx/two', 'name': 'Two'}, {**FLAT, 'id': 'yy/one', 'country': 'YY'}])
+
+    first = http.post('/api/taxation-models/registry',
+                      json={'ids': ['xx/flat', 'xx/two'], 'country': 'XX'})
+    assert first.status_code == 201
+    assert [m['name'] for m in first.get_json()['models']] == ['Flat', 'Two']
+
+    again = http.post('/api/taxation-models/registry', json={'ids': ['xx/flat']})
+    assert again.get_json() == {'models': [], 'skipped': ['xx/flat']}
+    assert len(http.get('/api/taxation-models').get_json()['models']) == 2
+
+
+def test_an_import_with_an_unknown_or_refused_id_writes_nothing(http):
+    http.application.config['TAXATION_REGISTRY_FETCH'] = _serving([FLAT, FUTURE])
+    for ids in (['xx/flat', 'no/such'], ['xx/flat', 'xx/new']):
+        answer = http.post('/api/taxation-models/registry', json={'ids': ids})
+        assert answer.status_code == 422
+    assert http.post('/api/taxation-models/registry', json={'ids': 'xx/flat'}).status_code == 400
+    assert http.get('/api/taxation-models').get_json()['models'] == []

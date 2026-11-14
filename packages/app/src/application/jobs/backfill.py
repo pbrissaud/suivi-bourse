@@ -295,6 +295,7 @@ class BackfillJob(base.Job):
             """Any outcome that is not a failure: the same records on which ``failures`` falls back to 0."""
             self.backward_retry_at.pop(symbol, None)
             self.unreachable.pop(symbol, None)
+            quotes.take_back(symbol)
 
         oldest_timestamp = quotes.oldest_ts(self.ctx.config_manager.store, symbol)
         end_date = self.backward_anchor(symbol, ceiling)
@@ -336,6 +337,7 @@ class BackfillJob(base.Job):
                 self.backward_retry_at, symbol, runtime_state.BACKWARD, now)
             if failures >= scheduling.BACKWARD_GIVE_UP:
                 self.unreachable[symbol] = target
+                quotes.give_up(symbol)
                 fields['terminal'] = runtime_state.TERMINAL_UNREACHABLE
             self.record_backward_failure(symbol, now)
             publish(anchor=end_date, oldest=oldest_timestamp,

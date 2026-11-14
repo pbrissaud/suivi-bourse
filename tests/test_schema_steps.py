@@ -28,6 +28,13 @@ RELEASED = (
     'forget_ticker_names',
     'add_auth_session_seconds',
     'add_backward_failed_at',
+    'move_token_to_access_tokens',
+    'move_agent_provider',
+    'backfill_agent_usage',
+    'make_account_label_optional',
+    'forget_dashboard_layout',
+    'add_notification_channels',
+    'add_auth_enabled_at',
 )
 
 
@@ -245,6 +252,24 @@ def test_the_ticker_names_are_forgotten_once_and_only_those(tmp_path):
             opened.close()
 
 
+def test_the_saved_dashboard_layout_is_forgotten_and_nothing_else(tmp_path):
+    """The dashboard is fixed now: its layout row goes, its neighbours stay."""
+    path, connection = _before(tmp_path, 'forget_dashboard_layout')
+    connection.execute(
+        "INSERT INTO setting (key, value) VALUES "
+        "('dashboard_layout', '{}'), ('theme', '{}')")
+    connection.close()
+
+    for _ in range(2):  # the second open runs nothing, and changes nothing
+        opened = store_module.open_store(path, schema_steps.STEPS)
+        try:
+            assert opened.query(
+                "SELECT key FROM setting WHERE key IN ('dashboard_layout', 'theme')"
+            ) == [('theme',)]
+        finally:
+            opened.close()
+
+
 def test_the_session_lifetime_step_keeps_the_pin_and_reads_the_default(tmp_path):
     """A store whose PIN was set before #1313 keeps it, and its sessions live
     the default 30 days until the owner chooses less."""
@@ -263,5 +288,25 @@ def test_the_session_lifetime_step_keeps_the_pin_and_reads_the_default(tmp_path)
         assert state.pin_hash == 'scrypt$00$00'
         assert state.session_seconds is None
         assert state.lifetime == 30 * 86400
+    finally:
+        opened.close()
+
+
+def test_a_store_with_a_mandatory_label_gets_an_optional_one(tmp_path):
+    """A label that only repeats its id is cleared; one that says something stays."""
+    path = tmp_path / 'old.duckdb'
+    store_module.open_store(path, schema_steps.STEPS).close()
+    connection = duckdb.connect(str(path))
+    with store_steps.rebuilding(connection, 'account'):
+        connection.execute('ALTER TABLE account ALTER COLUMN label SET NOT NULL')
+    connection.execute("INSERT INTO account VALUES ('pea', 'pea'), ('cto', 'Mon CTO')")
+    connection.execute("DELETE FROM schema_step WHERE step = 'make_account_label_optional'")
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        assert opened.query("SELECT id, label FROM account WHERE id <> 'default' ORDER BY id") \
+            == [('cto', 'Mon CTO'), ('pea', None)]
+        opened.execute("INSERT INTO account VALUES ('x', NULL)")
     finally:
         opened.close()

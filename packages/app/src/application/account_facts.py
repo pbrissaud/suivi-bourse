@@ -67,7 +67,7 @@ class Account(TypedDict):
     transfer_fees: Optional[float]
     # `account_facts.declared_only` drops each of these where there is none.
     # The taxation model this account carries (#752) — absent where none.
-    taxation_model: NotRequired[str]
+    taxation_model_id: NotRequired[str]
     # The day the wrapper was opened, **as its owner declared it** (#918). It
     # cannot be derived: a transferred PEA's ledger starts years late.
     opened_on: NotRequired[str]
@@ -83,6 +83,10 @@ class Account(TypedDict):
     # gain, an aged wrapper with no date, an assiette one unvalued line makes
     # unknown. A projected zero and a zero nobody could compute differ.
     projected_tax: NotRequired[float]
+    # `projected_tax` as its two parts, absent wherever it is: the income tax
+    # (IR) and the social levies (PS), whose sum is `projected_tax`.
+    projected_income_tax: NotRequired[float]
+    projected_social_levy: NotRequired[float]
     # The latent gain `projected_tax` was computed on — not the head's `Gain`,
     # which adds realised, dividends and fees.
     projected_base: NotRequired[float]
@@ -231,7 +235,7 @@ def _usable(models: dict, carried: dict, roster) -> Dict[str, Any]:
 
     A refused row is logged here, once, and then simply is not in this map: the
     payload cannot tell *refused* from *never declared*, and does not need to —
-    both publish no projection, and `taxation_model` rides on the declaration
+    both publish no projection, and `taxation_model_id` rides on the declaration
     either way.
     """
     usable: Dict[str, Any] = {}
@@ -279,7 +283,7 @@ def _with_account_facts(row: dict, carried: dict, opened_on: dict,
     was declared with, the day its index counts from, and the projection where
     there is a model to project it through."""
     return {**row, **declared_only({
-        'taxation_model': carried.get(row['id']),
+        'taxation_model_id': carried.get(row['id']),
         'opened_on': instants.iso(opened_on.get(row['id'])),
         'first_payment': instants.iso(payments.get(row['id'])),
         # **The index says what day it is based at** (#887). `twr_index` is
@@ -327,12 +331,20 @@ def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
     facts = dict(kind=model.kind, parameters=model.parameters,
                  opened_on=opened_on.get(row['id']),
                  first_payment=payments.get(row['id']), now=today)
-    tax = taxation_projection.projected_tax(
-        latent_gain=latent.get(row['id']), **facts)
+    base = _assiette(model.kind, row, latent.get(row['id']))
+    tax = taxation_projection.projected_tax(latent_gain=base, **facts)
     changes_on = taxation_projection.rate_changes_on(**facts)
+    split = taxation_projection.projected_split(latent_gain=base, **facts)
+    # **Rounded once, here, to the cent**, and the two parts are made to add up:
+    # every screen then prints the figure it was handed, and the sum of the two
+    # lines, of the accounts and of the portfolio's own total all agree.
+    tax = None if tax is None else round(tax, 2)
+    income = None if split is None or tax is None else round(split[0], 2)
     return {
         'taxation_kind': model.kind,
         'projected_tax': tax,
+        'projected_income_tax': income,
+        'projected_social_levy': None if income is None else round(tax - income, 2),
         # **The base rides with the figure**, and only where there is a figure.
         # The panel states a `Gain` of its own four paces up — latent *plus*
         # realised, dividends and fees — and the projection reads the latent
@@ -341,10 +353,26 @@ def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
         # three on a real account. Published rather than re-derived from
         # `projected_tax / rate`, which is not the base on a ladder and is a
         # division by zero on a mature wrapper.
-        'projected_base': None if tax is None else latent.get(row['id']),
+        'projected_base': None if tax is None else base,
         'projected_rates': taxation_projection.applied_rates(**facts),
         'projected_rate_changes_on': instants.iso(changes_on),
     }
+
+
+def _assiette(kind: str, row: dict, latent: Optional[float]) -> Optional[float]:
+    """What the rate is applied to.
+
+    An aged wrapper (PEA, assurance-vie) is taxed on the **whole gain of the
+    envelope** when it is emptied — value minus net contributions, so realised
+    gains and dividends that stayed inside count — where the other kinds read
+    the latent gain of their lines. An emptied wrapper holds nothing to tax, and
+    an assiette one unvalued line makes unknown stays unknown.
+    """
+    if kind != taxation.AGED_FLAT_REALISED or latent is None:
+        return latent
+    if not row.get('total_value'):
+        return 0.0
+    return row.get('gain_absolu')
 
 
 def declared_only(facts: dict) -> dict:

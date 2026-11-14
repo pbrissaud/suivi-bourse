@@ -39,7 +39,8 @@ import { HttpResponse, http } from 'msw'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { type RouteName, ROUTES } from '@/lib/api'
-import { anAgentConfig, aTotals, aTotalsPayload } from '@/test/factories'
+import { aProvider, aStats } from '@/features/agent/tests/agentFixtures'
+import { aTotals, aTotalsPayload } from '@/test/factories'
 import { setViewportWidth } from '@/test/media'
 import { renderApp } from '@/test/render'
 import { server } from '@/test/server'
@@ -60,10 +61,13 @@ import { server } from '@/test/server'
 const WRITE_ONLY_ROUTES = [
   'settings',
   'event',
-  // A gesture, and the plainest one on this list: nothing on any page is
-  // rendered on the strength of an upload in flight — the receipt is what the
-  // gesture answers, and it is the reader's own act rather than a read.
-  'eventsImport',
+  // The effect line of the event sheet: a dry run answering the typed fields.
+  'eventsPreview',
+  // The import's two steps and the event write's dry run: each answers the
+  // reader's own press, and nothing is drawn from them while in flight.
+  'eventsImportPreview',
+  'eventsImportCommit',
+  'eventsPreview',
   'account',
   'accountReassignment',
   // One taxation model, written and removed and never read on its own: the
@@ -72,12 +76,18 @@ const WRITE_ONLY_ROUTES = [
   'installationFactAcknowledgement',
   'advisoryAcknowledgement',
   'storeOrphans',
+  // The settings page's gestures on providers, channels and tokens: each answers
+  // the reader's own press (a test, a default, a regeneration, a removal), and the
+  // lists they change are the reads above.
+  'agentProvider',
+  'agentProviderTest',
+  'agentProviderDefault',
+  'notificationChannel',
+  'notificationChannelTest',
+  'token',
+  'tokenRegenerate',
   // Keep or release an unfollowed ETF's series: a gesture on one ETF (#1312).
   'benchmarkReference',
-  // The agent's key is written and forgotten, never read; the connection
-  // test answers the reader's own press, and its answer is a receipt (#1115).
-  'agentKey',
-  'agentTest',
   // A tweakcn import answers the reader's own press; the stored theme is read
   // through `theme` (#1248).
   'themeImport',
@@ -122,17 +132,29 @@ const WRITE_ONLY_ROUTES = [
   'authEnable',
   'authChange',
   'authDisable',
-  'authToken',
   'authLifetime',
   // The ticker field's own keystrokes inside EventForm (#1268): any surface
   // opening the form would be red by construction (#775 against #729), so its
   // in-flight silence is proven in `data.test.tsx` instead.
   'securities',
+  // « Lancer » answers the reader's own press (202), and the journal's file is
+  // an `href` the browser follows: neither is a read a surface is drawn from.
+  'jobRun',
+  'logsDownload',
 ] as const satisfies readonly RouteName[]
+
+/**
+ * **Declared by the API chantiers of the « Relevé » redesign for pages that are
+ * not built yet** (the settings sections W9, the System page W10): no surface
+ * reads them today, so the net has nothing to visit. Each page chantier removes
+ * its routes from here when it wires them, and the net then covers them.
+ */
+const AWAITING_THEIR_PAGE = ['installationFacts'] as const satisfies readonly RouteName[]
 
 /** Every route a page reads — the net, computed and never written down twice. */
 const READ_ROUTES: readonly string[] = (Object.keys(ROUTES) as RouteName[])
   .filter((name) => !(WRITE_ONLY_ROUTES as readonly string[]).includes(name))
+  .filter((name) => !(AWAITING_THEIR_PAGE as readonly string[]).includes(name))
   .map((name) => ROUTES[name])
 
 // ------------------------------------------------------------------------- //
@@ -261,14 +283,10 @@ const SURFACES: readonly Surface[] = [
       ),
   },
   {
-    name: 'les titres, une fiche ouverte',
-    url: '/shares',
-    heading: 'Titres',
-    open: async ({ user }) => {
-      const title = await screen.findByRole('button', { name: 'Zeta Alpha' })
-      await user.click(title)
-      return screen.findByRole('dialog')
-    },
+    // The title's own page (`/shares/<symbol>`), which the sheet became.
+    name: 'la fiche d’un titre',
+    url: '/shares/ZZA',
+    heading: 'Zeta Alpha',
   },
   {
     // Under 768 px the table is a list (#1338), and the net reads the list as
@@ -285,7 +303,7 @@ const SURFACES: readonly Surface[] = [
   // and *the reference is still being fetched* are two different screens, and
   // guessing either one before the answer lands puts a gesture in front of a
   // reader who has already made it.
-  { name: 'la référence', url: '/benchmark', heading: 'Référence' },
+  { name: 'la comparaison', url: '/benchmark', heading: 'Comparaison' },
   { name: 'le grand livre', url: '/ledger', heading: 'Grand livre' },
   {
     // The account's own panel, which is where a taxation model is chosen and
@@ -328,14 +346,28 @@ const SURFACES: readonly Surface[] = [
     open: async ({ user }) => {
       await user.click(await screen.findByRole('button', { name: /^Rechercher/ }))
       const field = await screen.findByRole('searchbox', {
-        name: 'Rechercher dans votre portefeuille',
+        name: 'Rechercher',
       })
       await user.type(field, 'alpha')
       return field
     },
   },
   { name: 'les réglages', url: '/settings', heading: 'Réglages' },
+  {
+    // The access tokens are read only while a code is set.
+    name: 'les réglages, un code d’accès posé',
+    url: '/settings',
+    heading: 'Réglages',
+    handlers: () =>
+      server.use(
+        http.get(ROUTES.authStatus, () =>
+          HttpResponse.json({ enabled: true, authenticated: true, session_seconds: 2592000 }),
+        ),
+      ),
+  },
+  { name: 'le thème', url: '/settings/theme', heading: 'Thème' },
   { name: 'le système', url: '/system', heading: 'Système' },
+  { name: 'le journal', url: '/system/logs', heading: 'Journal' },
   {
     // The agent (#1117, #1196), switched on, its recent threads in the column:
     // *Aucune conversation gardée* is a claim about the threads' directory,
@@ -345,6 +377,14 @@ const SURFACES: readonly Surface[] = [
     heading: 'Agent',
     handlers: () => server.use(...agentHandlers()),
     open: () => screen.findByRole('link', { name: /^Ma question/ }),
+  },
+  {
+    // The agent's statistics: the hero, the bar, the weeks and the two tables
+    // are all drawn from one read, and nothing is said over it in flight.
+    name: 'les statistiques de l’agent',
+    url: '/agent/stats',
+    heading: 'Statistiques',
+    handlers: () => server.use(...agentHandlers()),
   },
   {
     // And a thread read back by its address: nothing of it is drawn, not even
@@ -380,11 +420,9 @@ const EVENTS_PROPOSAL = {
 /** The agent switched on, with one kept thread. */
 function agentHandlers() {
   return [
-    http.get(ROUTES.agentConfig, () =>
-      HttpResponse.json(
-        anAgentConfig({ enabled: true, provider: 'anthropic', model: 'claude-sonnet-5-5' }),
-      ),
-    ),
+    http.get(ROUTES.agentConfig, () => HttpResponse.json({ enabled: true, reasoning: 'low' })),
+    http.get(ROUTES.agentProviders, () => HttpResponse.json([aProvider()])),
+    http.get(ROUTES.agentStats, () => HttpResponse.json(aStats())),
     http.get(ROUTES.agentThreads, () =>
       HttpResponse.json([{ id: 't1', title: 'Ma question', created_at: null, updated_at: null }]),
     ),

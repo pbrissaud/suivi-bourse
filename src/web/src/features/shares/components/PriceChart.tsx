@@ -8,22 +8,13 @@
  * left because it changes nothing visible; these four make the archive's shape
  * legible by moving between its rungs.
  *
- * **The resolution has one announcer.** The *aggregated by X* caption reads the
- * `resolution` the API states rather than naming a bucketing of its own — the
- * server's bucket and the storage ladder are two facts about one graph, and
- * *two announcers for one fact* is the defect the map found independently on
- * four pages. It also stops a sparse far end reading as an outage.
+ * The event overlay is **a band under the plot rather than dots inside it**:
  *
- * The event overlay is **a band under the plot rather than dots inside it**,
- * and that is a decision with two halves:
- *
- *  A `<button>` is what carries both; a Recharts dot is a shape.
  *  - **it is laid out in the chart's own width, on the chart's own abscissa.**
  *    The `XAxis` below is a **category** axis — Recharts' default, one step per
  *    point whatever the interval before it — so `features/shares/lib/shares.ts` gives each day
  *    the *rank* of the point it names and the band spans the plot area: there
- *    is one statement of the x-axis rather than two, which is the same rule the
- *    resolution caption follows one line above. A fraction of the elapsed time
+ *    is one statement of the x-axis rather than two. A fraction of the elapsed time
  *    was the second statement, and the two part company worst on `1M`, where
  *    the raw series mixes a point every 120 s in session with one per hour or
  *    per day out of it. The inset below mirrors the `YAxis` width and the
@@ -33,7 +24,7 @@
  * real portfolio carries `×2`, `×2`, `×3`, `×3` over four days: drawn per event
  * those points overlap, and three purchases read as one with nothing saying so.
  * Days that land on one point, or close enough for their labels to touch, are one
- * marker (#1273): it names its dates and selects the lines of all of them.
+ * marker (#1273): it names its dates.
  */
 import { useQuery } from '@tanstack/react-query'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts'
@@ -41,13 +32,13 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } fro
 import { ChartReading } from '@/components/ChartReading'
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
+import { Segmented } from '@/components/Segmented'
 import type { LedgerEvent } from '@/features/data/lib/api'
 import { CHART_WINDOWS, type ChartWindow, sharesApi } from '@/features/shares/lib/api'
 import { useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { problemMessageKey } from '@/lib/problem'
-import { eventMarkers } from '@/features/shares/lib/shares'
-import { cn } from '@/lib/utils'
+import { averageCostSeries, eventMarkers } from '@/features/shares/lib/shares'
 
 /** The `YAxis` width plus the `LineChart` left margin: where the plot starts. */
 const PLOT_INSET_LEFT = 77
@@ -64,10 +55,8 @@ interface PriceChartProps {
    * about which day carries what.
    */
   events?: readonly LedgerEvent[]
-  /** The selected days. The selection is made of **days**, never of events. */
-  selectedDays?: readonly string[]
-  /** Clicking a marker: select the days it holds and take the list to them, or `[]` to let it go. */
-  onSelectDays?: (days: readonly string[]) => void
+  /** The average purchase price, drawn as a dashed line and named in the legend. */
+  averageCost?: number | null
 }
 
 export function PriceChart({
@@ -75,8 +64,7 @@ export function PriceChart({
   window,
   onWindowChange,
   events = [],
-  selectedDays = [],
-  onSelectDays,
+  averageCost = null,
 }: PriceChartProps) {
   const { t } = useI18n()
   const f = useFormatters()
@@ -89,29 +77,28 @@ export function PriceChart({
   // unit. `null` while the dial is unanswered, which `formatCurrency` renders as
   // the plain number rather than guessing.
   const currency = series.data?.base_currency ?? null
-  const markers = eventMarkers(events, symbol, series.data?.points ?? [])
+  const points = series.data?.points ?? []
+  const markers = eventMarkers(events, symbol, points)
+  const steps = averageCost === null ? null : averageCostSeries(events, symbol, points, averageCost)
+  const plotted = points.map((point, index) => ({ ...point, average: steps?.[index] ?? null }))
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h3 className="label">{t('shares.chart.title')}</h3>
-        {/* One control, one radio group — the reader sets the range once. */}
-        <div role="radiogroup" aria-label={t('shares.chart.range')} className="flex gap-1">
-          {CHART_WINDOWS.map((candidate) => (
-            <button
-              key={candidate}
-              type="button"
-              role="radio"
-              aria-checked={candidate === window}
-              onClick={() => onWindowChange(candidate)}
-              className={cn(
-                'rounded px-2 py-1 text-xs',
-                candidate === window ? 'bg-secondary font-medium' : 'text-muted-foreground',
-              )}
-            >
-              {t('shares.chart.window', { window: candidate })}
-            </button>
-          ))}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b">
+        <h3 className="pb-2.5 text-prose font-medium">{t('shares.chart.title')}</h3>
+        <div className="pb-2">
+          <Segmented
+            label={t('shares.chart.range')}
+            mode="radio"
+            size="compact"
+            bordered
+            options={CHART_WINDOWS.map((candidate) => ({
+              value: candidate,
+              label: t('shares.chart.window', { window: candidate }),
+            }))}
+            value={window}
+            onChange={onWindowChange}
+          />
         </div>
       </div>
 
@@ -125,10 +112,6 @@ export function PriceChart({
         <EmptyState title={t('shares.chart.empty')} />
       ) : (
         <>
-          {/* The one announcer, and it says what was **served**. */}
-          <p className="text-xs text-muted-foreground">
-            {t('shares.chart.resolution', { resolution: series.data.resolution })}
-          </p>
           {/* **No live region on this surface, and the reason is the cache key**
               (#1003). `['prices', symbol, window]` carries the window, so
               pressing *1A* refetches and this block renders `null` while the
@@ -145,7 +128,7 @@ export function PriceChart({
                 {/* **Named, and not hidden** (#1003): the `<svg>` Recharts
                     renders is focusable and its arrows walk the series, so the
                     name is what tells a reader where they have landed. */}
-                <LineChart data={series.data.points} aria-label={t('shares.chart.plot')}>
+                <LineChart data={plotted} aria-label={t('shares.chart.plot')}>
                   {/* **The chrome comes from the tokens** (#841).
                       Left to itself Recharts paints a `#ccc` grid and `#666`
                       gradations, and it paints the *same two greys on both
@@ -192,6 +175,19 @@ export function PriceChart({
                     stroke="var(--border)"
                     tick={{ fill: 'var(--muted-foreground)' }}
                   />
+                  {averageCost === null ? null : (
+                    // A series of its own rather than a reference line: the axis
+                    // domain then spans it, so it is drawn on any window.
+                    <Line
+                      type="stepAfter"
+                      dataKey="average"
+                      stroke="var(--muted-foreground)"
+                      strokeDasharray="5 4"
+                      dot={false}
+                      isAnimationActive={false}
+                      connectNulls={false}
+                    />
+                  )}
                   <Line
                     type="monotone"
                     dataKey="price"
@@ -215,9 +211,9 @@ export function PriceChart({
             />
           </figure>
 
-          {/* A band with nothing in it does not exist: a symbol whose events are
-              all outside the visible range shows no rail rather than an empty
-              one. */}
+          {/* The days the ledger bought on: one dot per plotted point, announcing
+              its count. Not a control — the events are listed under the chart. A
+              band with nothing in it does not exist. */}
           {markers.length === 0 ? null : (
             <div
               role="group"
@@ -226,15 +222,12 @@ export function PriceChart({
               style={{ marginLeft: PLOT_INSET_LEFT, marginRight: PLOT_INSET_RIGHT }}
             >
               {markers.map((marker) => {
-                // A line of the list grows the marker that holds its day.
-                const selected = marker.days.some((day) => selectedDays.includes(day))
                 const from = marker.days[0]
                 const to = marker.days[marker.days.length - 1]
                 return (
-                  <button
+                  <span
                     key={from}
-                    type="button"
-                    aria-pressed={selected}
+                    role="img"
                     aria-label={
                       from === to
                         ? t('shares.events.marker', { count: marker.count, date: f.date(from) })
@@ -244,30 +237,53 @@ export function PriceChart({
                             to: f.date(to),
                           })
                     }
-                    onClick={() => onSelectDays?.(selected ? [] : marker.days)}
-                    // A 24 px hit box, the rail's own height.
                     className="absolute top-0 flex h-6 min-w-6 -translate-x-1/2 flex-col items-center"
                     style={{ left: `${marker.offset * 100}%` }}
                   >
-                    {/* The point **grows** on selection — the one thing the
-                        marker owes the reader who clicked a line of the list. */}
-                    <span
-                      aria-hidden
-                      className={cn(
-                        'block rounded-full bg-foreground',
-                        selected ? 'size-3 ring-2 ring-ring/40' : 'size-2',
-                      )}
-                    />
+                    <span aria-hidden className="block size-2 rounded-full bg-foreground" />
                     {marker.count > 1 ? (
-                      <span aria-hidden className="block text-2xs text-muted-foreground">
+                      <span aria-hidden className="block text-xs text-muted-foreground">
                         {t('shares.events.count', { count: marker.count })}
                       </span>
                     ) : null}
-                  </button>
+                  </span>
                 )
               })}
             </div>
           )}
+
+          <p
+            className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground"
+            style={{ paddingLeft: PLOT_INSET_LEFT }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <span aria-hidden className="block h-0.5 w-3.5 bg-price" />
+              {t('shares.chart.legend.price')}
+            </span>
+            {markers.length === 0 ? null : (
+              <span className="inline-flex items-center gap-2">
+                <span aria-hidden className="block size-2 rounded-full bg-foreground" />
+                {t('shares.chart.legend.buys')}
+              </span>
+            )}
+            {averageCost === null ? null : (
+              <span className="inline-flex items-center gap-2">
+                <svg aria-hidden width="14" height="2" className="shrink-0">
+                  <line
+                    x1="0"
+                    x2="14"
+                    y1="1"
+                    y2="1"
+                    stroke="var(--muted-foreground)"
+                    strokeWidth="2"
+                    strokeDasharray="5 4"
+                  />
+                </svg>
+                {t('shares.chart.legend.avgCost')}{' '}
+                <span className="fig text-foreground">{f.currency(averageCost, currency)}</span>
+              </span>
+            )}
+          </p>
         </>
       )}
     </section>

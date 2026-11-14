@@ -8,13 +8,7 @@
  */
 
 import { get, ROUTES } from '@/lib/api'
-import type {
-  Converted,
-  Fundamentals,
-  Position,
-  Positions as PositionsResponse,
-  Price as Quote,
-} from '@/lib/api.gen'
+import type { Converted, Fundamentals, Position, Positions, Price as Quote } from '@/lib/api.gen'
 
 /**
  * The window a chart asks for. The four are the **rungs of the retention
@@ -42,7 +36,14 @@ function priceAtPath(symbol: string, day: string): string {
 // The hot read of the portfolio (#712 §11)
 // ------------------------------------------------------------------------- //
 
-export type { Converted, Fundamentals, Position, PositionsResponse, Quote }
+export type { Converted, Fundamentals, Position, Quote }
+
+/**
+ * The positions payload. `latent_gain_pct` is the ratio of the securities'
+ * latent gain on their cost only (B2 adds it); optional until the generated
+ * client carries it, and shown as stated, never recomputed here.
+ */
+export type PositionsResponse = Positions & { latent_gain_pct?: number | null }
 
 /**
  * What the store actually served, **announced rather than guessed**.

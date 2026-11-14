@@ -130,7 +130,7 @@ describe('the navigation, eight entries in six and two', () => {
       'Titres',
       'Comptes',
       'Grand livre',
-      'Référence',
+      'Comparaison',
       'Agent',
       'Système',
       'Réglages',
@@ -151,7 +151,7 @@ describe('the navigation, eight entries in six and two', () => {
     // A route that renders a stub is a promise; this one renders the surface —
     // the dials, and the store the reader came to read.
     expect(await screen.findByRole('heading', { level: 1, name: 'Réglages' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Sur cet appareil' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Affichage' })).toBeInTheDocument()
   })
 
   it('answers on its own address, so a bookmark on the settings survives', async () => {
@@ -193,7 +193,7 @@ describe('the navigation, eight entries in six and two', () => {
 
     await user.click(screen.getByRole('button', { name: 'Afficher ou masquer la navigation' }))
     const drawer = await screen.findByRole('dialog', { name: 'Navigation' })
-    expect(within(drawer).getAllByRole('link')).toHaveLength(8)
+    expect(within(within(drawer).getByRole('navigation')).getAllByRole('link')).toHaveLength(8)
   })
 
   it('closes once a page is chosen, by an entry or by Back (#1375)', async () => {
@@ -290,11 +290,12 @@ describe('the bell is the one global indicator (#829)', () => {
     renderApp()
 
     await waitFor(() => expect(toneOf(bell())).toBe('text-attention'))
-    // One health card, one installation fact: the fixture's own two.
-    await waitFor(() => expect(bell()).toHaveAccessibleName(/2 entrées ouvertes/))
+    // The health card and the installation facts left the panel (#829): the
+    // count is the user register's, and there is none here.
+    await waitFor(() => expect(bell()).toHaveAccessibleName(/aucune notification non lue/))
   })
 
-  it('opens onto a panel that says the state in prose, and leads to the settings', async () => {
+  it('opens onto a panel that leaves the state to Système, and leads there', async () => {
     server.use(http.get(ROUTES.health, () => HttpResponse.json(aFrozenScrape())))
     const { user } = renderApp()
     await waitFor(() => expect(bell()).toHaveAccessibleName(/demande votre attention/))
@@ -302,11 +303,10 @@ describe('the bell is the one global indicator (#829)', () => {
     await user.click(bell())
     const panel = await screen.findByRole('dialog', { name: 'Notifications' })
 
-    // The card the sidebar's own used to be: the same sentence, in the one
-    // place that survives the three sidebar states.
-    expect(within(panel).getByText('Le relevé des cours s’est arrêté')).toBeInTheDocument()
-    // Health is **repaired, never dismissed**: a link, and no acknowledgement.
-    expect(within(panel).getByRole('link', { name: 'Voir dans Système' })).toBeInTheDocument()
+    // The technical state is the icon's colour and Système's sentence; the
+    // panel holds the user register only, and points to Système in its footer.
+    expect(within(panel).queryByText('Le relevé des cours s’est arrêté')).not.toBeInTheDocument()
+    expect(within(panel).getByRole('link', { name: 'Système' })).toBeInTheDocument()
   })
 
   it('has no sidebar card left to disagree with it', async () => {
@@ -355,7 +355,7 @@ describe('the density, the reader’s third preference', () => {
     await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })
 
     await user.click(within(nav()).getByRole('link', { name: 'Réglages' }))
-    const group = await screen.findByRole('radiogroup', { name: 'Densité des tableaux' })
+    const group = await screen.findByRole('radiogroup', { name: 'Densité des tables' })
     expect(
       within(group)
         .getAllByRole('radio')
@@ -373,7 +373,7 @@ describe('the density, the reader’s third preference', () => {
     )
 
     const { user, unmount } = renderApp({ url: '/settings' })
-    await chooseInSettings(user, 'Densité des tableaux', 'Compact')
+    await chooseInSettings(user, 'Densité des tables', 'Compact')
     await user.click(within(nav()).getByRole('link', { name: 'Titres' }))
     await waitFor(() =>
       expect(screen.getByRole('table')).toHaveAttribute('data-density', 'compact'),

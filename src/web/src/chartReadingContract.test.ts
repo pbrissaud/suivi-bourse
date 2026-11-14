@@ -31,19 +31,13 @@ import { describe, expect, it } from 'vitest'
 const SOURCE = path.join(path.resolve(import.meta.dirname), '.')
 
 /**
- * The one surface whose plot is hidden on purpose, and the reason.
- *
- * The allocation ring mounts **no tooltip at all**, so Recharts' arrow keys have
- * no index to move and a focusable ring answers no key. Its legend beside it
- * already names every slice with its exact percentage, which makes the arcs a
- * repeat of the text — exactly the case `ShareBar`'s rule was written for. An
- * entry here is a claim that both halves hold, and adding one should be as hard
- * as writing its sentence.
+ * The surfaces whose plot is hidden on purpose, and the reason — none today
+ * (the allocation ring that was the one has gone, the share bars being no plot).
+ * An entry here is a claim that both halves hold (no tooltip to navigate, a text
+ * that already says it all), and adding one should be as hard as writing its
+ * sentence.
  */
-const HIDDEN_ON_PURPOSE: Record<string, string> = {
-  'features/shares/components/Allocation.tsx':
-    'no tooltip is mounted, so nothing navigates, and the legend is already the whole reading',
-}
+const HIDDEN_ON_PURPOSE: Record<string, string> = {}
 
 /** Every `.tsx` the product writes by hand — `ui/` is the registry's, not ours. */
 function sources(directory: string = SOURCE): string[] {
@@ -179,7 +173,6 @@ describe('every plot the product mounts', () => {
       // `HeroChart` drew a sparkline until the dashboard grid (D25) put the
       // real chart, `PortfolioChart`, under the hero in its place.
       'features/dashboard/components/PortfolioChart.tsx',
-      'features/shares/components/Allocation.tsx',
       'features/shares/components/PriceChart.tsx',
     ])
   })

@@ -281,8 +281,15 @@ def _external_flow_by_date(cash_flows, grant_flows) -> Dict[date, float]:
 
 
 def _xirr_cashflows(cash_flows, grant_flows,
-                    terminal_value: float, today: date) -> List[Tuple[date, float]]:
-    """Build the investor-perspective cashflows for XIRR: contributions negative, terminal value positive."""
+                    terminal_value: float, today: date,
+                    valued_on: Optional[date] = None) -> List[Tuple[date, float]]:
+    """Build the investor-perspective cashflows for XIRR: contributions negative, terminal value positive.
+
+    The terminal value is dated at ``valued_on``, the day the newest price it
+    rests on belongs to, and never before the last flow it includes. With
+    ``today`` there, the rate drifted by a hundredth every time the clock
+    turned over prices that had not moved (a weekend, the small hours).
+    """
     cfs: List[Tuple[date, float]] = []
     for d, amount in cash_flows:
         if d <= today:
@@ -290,7 +297,9 @@ def _xirr_cashflows(cash_flows, grant_flows,
     for d, value in grant_flows:
         if value and d <= today:
             cfs.append((d, -value))            # in-kind contribution
-    cfs.append((today, terminal_value))
+    terminal_day = min(today, valued_on) if valued_on else today
+    terminal_day = max([terminal_day] + [d for d, _ in cfs])
+    cfs.append((terminal_day, terminal_value))
     return cfs
 
 
@@ -320,7 +329,8 @@ def compute_account(timeline: Timeline, account: Account, symbols,
                     price_at: PriceAt, start: date, today: date,
                     carried: Collection[str] = (),
                     first_quoted: Optional[Mapping[str, date]] = None,
-                    seed: Optional[DailyPerf] = None
+                    seed: Optional[DailyPerf] = None,
+                    valued_on: Optional[date] = None
                     ) -> Performance:
     """Compute one account's daily valuation series, TWR, XIRR and absolute gain.
 
@@ -375,14 +385,17 @@ def compute_account(timeline: Timeline, account: Account, symbols,
         terminal = daily[-1].total_value
         if perf.has_external_flow:
             perf.xirr = xirr(
-                _xirr_cashflows(cash_flows, grant_flows, terminal, today))
+                _xirr_cashflows(cash_flows, grant_flows, terminal, today,
+                                valued_on))
     return perf
 
 
 def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols,
                             price_at: PriceAt, start: date, today: date,
                             per_account: Dict[str, Performance],
-                            seed: Optional[DailyPerf] = None) -> Optional[Performance]:
+                            seed: Optional[DailyPerf] = None,
+                            valued_on: Optional[date] = None
+                            ) -> Optional[Performance]:
     """Aggregate all accounts into a global performance (no tag).
 
     ``seed``: the total's point before the first day aggregated, as for
@@ -427,7 +440,8 @@ def compute_portfolio_total(timeline: Timeline, accounts: List[Account], symbols
         terminal = daily[-1].total_value
         if total.has_external_flow:
             total.xirr = xirr(
-                _xirr_cashflows(all_cash, all_grant, terminal, today))
+                _xirr_cashflows(all_cash, all_grant, terminal, today,
+                                valued_on))
     return total
 
 

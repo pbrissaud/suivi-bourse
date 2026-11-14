@@ -13,7 +13,7 @@
  * drift, and the reader is not the one who can act on it.
  */
 import { ApiProblem } from '@/lib/api'
-import type { MessageKey, MessageValues } from '@/lib/i18n'
+import { isMessageKey, type MessageKey, type MessageValues } from '@/lib/i18n'
 
 /** Mirrors `packages/app/src/api/problem.py`. Relative URI references, as RFC 9457 allows. */
 export const PROBLEM_TYPES = {
@@ -98,6 +98,14 @@ export const PROBLEM_TYPES = {
    */
   providerRefused: '/problems/provider-refused',
   /**
+   * A notification channel did not take the test notice: the **destination**
+   * refused it or did not answer. It carries `kind`, `host` (where it went) and
+   * `reason` (`refused` or `unreachable`); read it through `problemMessage`.
+   * A `424`, deliberately not a `5xx`: a proxy may replace a `502`'s body, and
+   * the app would be blamed for what the destination did.
+   */
+  channelRefused: '/problems/channel-refused',
+  /**
    * An import asked for its amounts to be converted, and no rate is known for
    * one of the days (#1261). It carries `symbol`, `currency`, `base` and `date`,
    * the first day without a rate; read it through `problemMessage` below.
@@ -131,6 +139,7 @@ const MESSAGES: Record<string, MessageKey> = {
   // `problemMessage` below.
   [PROBLEM_TYPES.taxationModelInUse]: 'problem.taxationModelInUse',
   [PROBLEM_TYPES.providerRefused]: 'problem.providerRefused',
+  [PROBLEM_TYPES.channelRefused]: 'problem.channelRefused',
   // Reached without its four members, what is left to say is that the request
   // was refused; the sentence that names the pair and the day is
   // `problemMessage`'s.
@@ -227,6 +236,7 @@ export function problemMessage(error: unknown): {
       }
     }
   }
+  if (overdrawn(error)) return { message: 'problem.overdraft', values: {} }
   if (error instanceof ApiProblem && error.type === PROBLEM_TYPES.invalidFile) {
     // **The refused file of a batch is named** (#1266): one refused file refuses
     // them all, and the reader's next move is to remove that one.
@@ -235,6 +245,13 @@ export function problemMessage(error: unknown): {
     // second exception to *never by `detail`*, for `providerRefused`'s reason:
     // the reader acts on it in the file, where those words mean something.
     const file = refusedFile(error)
+    // A refusal the server names by `code` is worded here, in French: no
+    // English `detail` reaches the reader (import preview).
+    const code = text(error, 'code')
+    const refusal = `problem.invalidFile.code.${code}`
+    if (code !== null && isMessageKey(refusal)) {
+      return { message: refusal, values: { file: file ?? '' } }
+    }
     const reason = error.detail?.trim() || null
     if (file !== null && reason !== null) {
       return { message: 'problem.invalidFile.named.reason', values: { file, reason } }
@@ -252,6 +269,18 @@ export function problemMessage(error: unknown): {
       return {
         message: 'problem.taxationModelInUse.accounts',
         values: { count: accounts.length, accounts: accounts.join(', ') },
+      }
+    }
+  }
+  if (error instanceof ApiProblem && error.type === PROBLEM_TYPES.channelRefused) {
+    const host = text(error, 'host')
+    if (host !== null) {
+      return {
+        message:
+          text(error, 'reason') === 'unreachable'
+            ? 'problem.channelRefused.unreachable'
+            : 'problem.channelRefused.refused',
+        values: { host },
       }
     }
   }
@@ -282,9 +311,17 @@ export function refusedFile(error: unknown): string | null {
  * or `null` when the refusal is about no field in particular.
  */
 export function refusedKey(error: unknown): string | null {
+  // An overdraft has a sentence of its own, said where refusals without a field
+  // are, and not the generic « cette valeur est refusée » on the amount.
+  if (overdrawn(error)) return null
   return error instanceof ApiProblem && error.type === PROBLEM_TYPES.badRequest
     ? text(error, 'key')
     : null
+}
+
+/** A withdrawal larger than the account's cash, which the server refuses with a `code`. */
+export function overdrawn(error: unknown): boolean {
+  return error instanceof ApiProblem && text(error, 'code') === 'overdraft'
 }
 
 /**

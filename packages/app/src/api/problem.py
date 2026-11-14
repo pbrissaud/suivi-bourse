@@ -19,6 +19,7 @@ TYPE_FOREIGN_ORIGIN = '/problems/foreign-origin'
 TYPE_MODEL_IN_USE = '/problems/taxation-model-in-use'
 TYPE_REFUSED = '/problems/refused'
 TYPE_PROVIDER_REFUSED = '/problems/provider-refused'
+TYPE_CHANNEL_REFUSED = '/problems/channel-refused'
 TYPE_CURRENCY_UNCONVERTIBLE = '/problems/currency-unconvertible'
 TYPE_PROPOSAL_STALE = '/problems/proposal-stale'
 
@@ -99,7 +100,7 @@ def unprocessable(detail: str, key: Optional[str] = None):
     return problem(422, 'Invalid setting', detail, TYPE_INVALID_SETTING, key=key or None)
 
 
-def unprocessable_request(detail: str, key: Optional[str] = None):
+def unprocessable_request(detail: str, key: Optional[str] = None, **extra: Any):
     """422 — the request parsed, and what it asks for is not something the app takes.
 
     One helper for every parameter and form field (#932), under
@@ -108,7 +109,8 @@ def unprocessable_request(detail: str, key: Optional[str] = None):
     saying what *this is not one of the values* already says. The title is
     fixed; the front renders none.
     """
-    return problem(422, 'Invalid request', detail, TYPE_BAD_REQUEST, key=key or None)
+    return problem(422, 'Invalid request', detail, TYPE_BAD_REQUEST,
+                   key=key or None, **extra)
 
 
 def model_in_use(detail: str, accounts: Sequence[str]):
@@ -123,12 +125,15 @@ def model_in_use(detail: str, accounts: Sequence[str]):
                    accounts=list(accounts))
 
 
-def unprocessable_file(detail: str, file: Optional[str] = None):
+def unprocessable_file(detail: str, file: Optional[str] = None,
+                       code: Optional[str] = None):
     """422 — the file parsed as far as it could, and it is not a ledger.
 
-    ``file`` names the part of a batch that was refused (#1266).
+    ``file`` names the part of a batch that was refused (#1266); ``code`` says
+    why in a form the front words in its own language.
     """
-    return problem(422, 'Invalid file', detail, TYPE_INVALID_FILE, file=file)
+    return problem(422, 'Invalid file', detail, TYPE_INVALID_FILE, file=file,
+                   code=code)
 
 
 def currency_unconvertible(detail: str, symbol: str, currency: str, base: str,
@@ -161,6 +166,17 @@ def provider_refused(detail: str, provider: str, reason: str):
     """
     return problem(502, 'Provider refused', detail, TYPE_PROVIDER_REFUSED,
                    provider=provider, reason=reason)
+
+
+def channel_refused(detail: str, kind: str, host: Optional[str] = None,
+                    reason: Optional[str] = None):
+    """424 — an outbound notification channel did not take the test notice (§ 3.6).
+
+    The destination failed, not this app: ``host`` names it and ``reason`` says
+    whether it ``refused`` or did not answer (``unreachable``).
+    """
+    return problem(424, 'Channel refused', detail, TYPE_CHANNEL_REFUSED,
+                   kind=kind, host=host or None, reason=reason)
 
 
 def foreign_origin(detail: str):

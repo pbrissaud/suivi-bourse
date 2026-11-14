@@ -3,12 +3,15 @@
 The store runs the list and does not compose it: a step that writes through a
 module above the store is declared here, so the store imports none of them.
 """
+import secrets
+
 from logfmt_logger import getLogger
 
 from application import auth_gate
 from application import benchmarks
 from application import entries
 from application import store_steps
+from application.store_ddl import NOTIFICATIONS_DDL
 
 # The store's logger, so the line reads as it did when the step lived there.
 logger = getLogger("store")
@@ -94,6 +97,15 @@ def _add_agent_thinking(connection) -> None:
                            "VARCHAR DEFAULT 'low'")
 
 
+def _forget_dashboard_layout(connection) -> None:
+    """Drop the saved dashboard layout: the dashboard is fixed now.
+
+    Nothing reads the row any more; deleting it keeps ``setting`` from carrying
+    a dead key for ever. Idempotent: a store without the row deletes nothing.
+    """
+    connection.execute("DELETE FROM setting WHERE key = 'dashboard_layout'")
+
+
 def _follow_the_references(connection) -> None:
     """Follow what the install already compares against (#1312).
 
@@ -133,6 +145,52 @@ def _follow_the_references(connection) -> None:
             [key, ','.join(followed)])
 
 
+def _move_agent_provider(connection) -> None:
+    """Move the one provider ``agent_config`` held into ``agent_provider``.
+
+    It becomes the default provider, keeping its key, address and model. The
+    old columns are emptied so the key is not stored twice; ``enabled`` and
+    ``thinking`` stay where they are. A no-op on a store that never configured
+    a provider, and on one that already holds providers.
+    """
+    if connection.execute('SELECT 1 FROM agent_provider').fetchone():
+        return
+    row = connection.execute(
+        'SELECT provider, base_url, api_key, key_set_at, model, updated_at '
+        'FROM agent_config WHERE id = 1 AND provider IS NOT NULL').fetchone()
+    if row is None:
+        return
+    kind, base_url, api_key, key_set_at, model, updated_at = row
+    connection.execute(
+        'INSERT INTO agent_provider (id, label, kind, base_url, api_key, '
+        'key_set_at, default_model, is_default, last_test_at, created_at) '
+        'VALUES (?, NULL, ?, ?, ?, ?, ?, TRUE, NULL, ?)',
+        [secrets.token_hex(6), kind, base_url, api_key, key_set_at, model,
+         updated_at])
+    connection.execute(
+        'UPDATE agent_config SET provider = NULL, model = NULL, '
+        'model_name = NULL, base_url = NULL, api_key = NULL, key_set_at = NULL')
+
+
+def _backfill_agent_usage(connection) -> None:
+    """Index the tokens of the threads saved before ``agent_usage`` existed."""
+    # Imported here: the module loads Pydantic AI, which a boot that has no
+    # such step to run has no use for.
+    from application import agent_usage
+    agent_usage.backfill(connection)
+
+
+def _add_notification_channels(connection) -> None:
+    """Give a store the tables the outbound channels live in (§ 3.6).
+
+    The DDL creates them on every open, which is what a store from before this
+    release gets; the step is the record that the generation exists, and it is
+    the same ``IF NOT EXISTS`` statement, so a store that already has them
+    changes nothing.
+    """
+    connection.execute(NOTIFICATIONS_DDL)
+
+
 #: Every step, oldest first, under the names stores in the wild already carry.
 #: The rules of :data:`store_steps.STEPS` hold over this list as a whole: a name is an
 #: identity forever, and a new step — the store's own included — is appended
@@ -147,6 +205,13 @@ STEPS = store_steps.STEPS + (
     ('forget_ticker_names', _forget_ticker_names),
     ('add_auth_session_seconds', auth_gate.add_session_seconds),
     ('add_backward_failed_at', _add_backward_failed_at),
+    ('move_token_to_access_tokens', auth_gate.move_token_to_access_tokens),
+    ('move_agent_provider', _move_agent_provider),
+    ('backfill_agent_usage', _backfill_agent_usage),
+    ('make_account_label_optional', store_steps._make_account_label_optional),
+    ('forget_dashboard_layout', _forget_dashboard_layout),
+    ('add_notification_channels', _add_notification_channels),
+    ('add_auth_enabled_at', auth_gate.add_enabled_at),
 )
 
 __all__ = ['STEPS']

@@ -11,7 +11,7 @@ import secrets
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Callable, Deque, Dict, Mapping, Optional
+from typing import Callable, Deque, Dict, Mapping, Optional, Tuple
 
 PIN_PATTERN = re.compile(r'[0-9]{6}')
 
@@ -66,16 +66,43 @@ def verify_pin(pin: str, stored: Optional[str]) -> bool:
 
 
 def session_seconds(stored) -> int:
-    """The lifetime a stored value means: ``NULL`` is the default, and no stored
-    value outlives :data:`SESSION_DAYS`."""
+    """The lifetime a stored value means: ``NULL`` is the default, a value that
+    is no preset snaps to the nearest one, and none outlives :data:`SESSION_DAYS`."""
     if not isinstance(stored, int) or isinstance(stored, bool) or stored <= 0:
         return DEFAULT_SESSION_SECONDS
-    return min(stored, DEFAULT_SESSION_SECONDS)
+    return min(SESSION_PRESETS, key=lambda preset: abs(preset - stored))
 
 
-def new_token() -> str:
-    """The access token — a bearer on ``/mcp`` and ``/api`` — shown once."""
-    return secrets.token_urlsafe(32)
+#: What a token may open: ``/api`` for a script, ``/mcp`` for Claude Desktop.
+TOKEN_SCOPES = ('api', 'mcp')
+
+#: How long a token lives, by the name the form offers; ``None`` never expires.
+TOKEN_LIFETIMES = {'90d': timedelta(days=90), '1y': timedelta(days=365),
+                   'never': None}
+
+#: A bearer is looked up by its hash; the prefix is only the public id the
+#: list shows, so an owner can tell which token a script holds.
+PREFIX_BYTES = 4
+
+
+def new_token() -> Tuple[str, str]:
+    """``(prefix, token)``: a new access token — a bearer on ``/mcp`` and
+    ``/api`` — shown once. The prefix is 8 hex characters, drawn apart from the
+    secret and carried in front of it."""
+    prefix = secrets.token_hex(PREFIX_BYTES)
+    return prefix, f'sb_{prefix}_{secrets.token_urlsafe(32)}'
+
+
+def token_expiry(lifetime: str, now: datetime) -> Optional[datetime]:
+    """When a token made ``now`` with this ``lifetime`` stops opening anything."""
+    span = TOKEN_LIFETIMES[lifetime]
+    return None if span is None else now + span
+
+
+def token_opens(scopes, expires_at: Optional[datetime], scope: str,
+                now: datetime) -> bool:
+    """Whether a token with these ``scopes`` still opens the ``scope`` mount."""
+    return scope in scopes and (expires_at is None or now < expires_at)
 
 
 def hash_token(token: str) -> str:
@@ -178,5 +205,6 @@ __all__ = [
     'Admission', 'Throttle', 'SESSION_DAYS', 'SESSION_PRESETS',
     'DEFAULT_SESSION_SECONDS', 'FREE_ATTEMPTS', 'session_seconds',
     'is_pin', 'hash_pin', 'verify_pin', 'new_token', 'hash_token',
-    'token_matches', 'purge_revoked',
+    'token_matches', 'purge_revoked', 'TOKEN_SCOPES', 'TOKEN_LIFETIMES',
+    'token_expiry', 'token_opens',
 ]

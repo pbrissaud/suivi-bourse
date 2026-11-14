@@ -279,12 +279,9 @@
      DESIGN.md names: label 12/16 (`text-xs`), mono 13 (`text-sm`), body 14/20
      (`text-md` and `text-base`, which `<body>` reads), prose 15/22
      (`text-prose`), section title 20/28 (`text-2xl`), figure 28/32
-     (`text-4xl`), hero 60/64 (`text-hero`), and the term 16/24 (`text-lg`), the
-     rung of a term under a figure. `--text-2xs` is the tickers' 11 px. The
-     rungs `xl`, `3xl`, `5xl`, `6xl` and `7xl` are gone, and a guard
+     (`text-4xl`), hero 56/1.05 (`text-hero`), and the term 16/24 (`text-lg`), the
+     rung of a term under a figure. The rungs `xl`, `3xl`, `5xl`, `6xl` and `7xl` are gone, and a guard
      (`contentWidth.test.ts`) keeps them from coming back. */
-  --text-2xs: 0.6875rem;
-  --text-2xs--line-height: 1rem;
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
@@ -303,12 +300,12 @@
   --text-4xl--line-height: 2rem;
 
   /* **The one figure a screen leads with, and it is the only fluid rung.**
-     DESIGN.md sets it at 60/64, which a phone cannot hold: a six-figure amount
-     at 60 px is wider than a 390 px screen. The `clamp` reaches 60 px from
+     DESIGN.md sets it at 56 px, which a phone cannot hold: a six-figure amount
+     at 56 px is wider than a 390 px screen. The `clamp` reaches 56 px from
      978 px and floors at 36 px, so the value stays on one line on a phone. */
-  --text-hero: clamp(2.25rem, 1rem + 4.5vw, 3.75rem);
-  --text-hero--line-height: calc(64 / 60);
-  --tracking-hero: -0.03em;
+  --text-hero: clamp(2.25rem, 1rem + 4.5vw, 3.5rem);
+  --text-hero--line-height: 1.05;
+  --tracking-hero: -0.02em;
 
   /* **The 976 px reflow target, as a breakpoint of its own.** It is the width
      the redesign was measured at — the worst realistic case, a narrow laptop
@@ -322,7 +319,6 @@
      purpose: inlined at build time, so no theme served by /api/theme.css can
      reach them. Tables and charts take no token: they fill the column. */
   --container-column: 45rem; /* 720: a form, the conversation under 1 024 px */
-  --container-settings: 65rem; /* 1 040: the Settings page, a 220 px gutter and its rows */
   --container-reading: 48rem; /* 768: the conversation from 1 024 px */
   /* From here the dashboard grid has three tracks: a statement gains a
      neighbour instead of a longer row. */
@@ -372,6 +368,53 @@
   color: var(--color-muted-foreground);
 }
 
+/**
+ * **The words and the separators of a figure are Geist.** One face laid over
+ * the mono for these code points only: the space family, the decimal comma
+ * and point, and the lowercase Latin letters (a month, « mois », « en »).
+ * Capitals stay mono, so a code reads as one: `CW8.PA`, `EUR`, `Mo`. A comma in Geist Mono takes a whole digit
+ * cell (« 67 726 , 28 € »), and a month in mono reads like a terminal
+ * (« 10 janv. 2022 »). The digits, the signs, `%`, `€` and `:` stay mono, so
+ * a column still lines up: every row carries the same comma.
+ */
+@font-face {
+  font-family: "Figure words";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/geist/files/geist-latin-wght-normal.woff2")
+    format("woff2-variations");
+  unicode-range:
+    U+0020, U+002C, U+002E, U+0061-007A, U+00A0, U+00DF-00F6, U+00F8-00FF, U+0153, U+2009, U+202F;
+}
+
+/**
+ * **Every figure is Geist Mono with fixed-width digits** (« Relevé », November
+ * 2026, reversing #1281 and the figure half of #838): an amount, a percentage,
+ * a quantity, a date, a time, a version, an identifier. The digits line a
+ * column up; the words and separators come from Geist (above), so no negative
+ * word spacing is needed to close `42 658,79 €`; a figure never wraps. Words
+ * stay in Geist. A figure inside a sentence is `fig` too, at the sentence's size.
+ */
+@utility fig {
+  font-family: "Figure words", var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/**
+ * **The statement** (« Relevé », DESIGN.md › Typography): the one sentence a
+ * screen leads with when the answer is a sentence and not a figure — 28/34,
+ * Geist 600, −0.01em. Its figures are `fig` at the same size. Hero and
+ * statement never share a screen.
+ */
+@utility statement {
+  font-size: var(--text-4xl);
+  line-height: 2.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -381,12 +424,6 @@
        size is read off the ladder here like it is everywhere else. */
     @apply bg-background text-base text-foreground;
     letter-spacing: var(--tracking-normal);
-  }
-  /* Numbers in a portfolio are read *down a column*, so their glyphs have to
-     line up. Tabular figures are the difference between a table you can scan
-     and one you have to read. */
-  .tabular {
-    font-variant-numeric: tabular-nums;
   }
   html {
     @apply font-sans;

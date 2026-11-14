@@ -39,7 +39,7 @@ export function ThemeLeaveDialog({
           <Button
             type="button"
             className="pointer-coarse:min-h-11"
-            variant="ghost"
+            variant="outline"
             onClick={onStay}
           >
             {t('settings.theme.leave.stay')}
@@ -47,13 +47,14 @@ export function ThemeLeaveDialog({
           <Button
             type="button"
             className="pointer-coarse:min-h-11"
-            variant="secondary"
+            variant="outline"
             disabled={busy}
             onClick={onDiscard}
           >
             {t('settings.theme.leave.discard')}
           </Button>
           <Button
+            variant="primary"
             type="button"
             className="pointer-coarse:min-h-11"
             disabled={busy}

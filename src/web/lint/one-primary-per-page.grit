@@ -1,0 +1,14 @@
+engine biome(1.0)
+language js(typescript,jsx)
+
+// DESIGN.md: one filled `primary` button per screen; every other action is an
+// outline. Two `variant="primary"` inside one function (a screen is a
+// component) flag both. The rule reads the function's text: GritQL cannot
+// count siblings.
+JsxAttribute() as $hit where {
+  $hit <: r"variant=\"primary\"",
+  $hit <: within or { JsFunctionDeclaration(), JsArrowFunctionExpression() } as $screen where {
+    $screen <: r"[\s\S]*variant=\"primary\"[\s\S]*variant=\"primary\"[\s\S]*"
+  },
+  register_diagnostic(span = $hit, message = "[one-primary-per-page] One filled primary button per screen: every other action is an outline (DESIGN.md › Buttons)")
+}

@@ -3,11 +3,9 @@
  * the deletion on the reduction (#814, #834).
  *
  * The gesture every table app has: tick rows, delete the ticked rows. The
- * button is **rendered only with a selection** (#1278), in the summary line under
- * the ledger's toolbar: with nothing ticked no destructive control exists on
- * the page, and the line itself is always there, so ticking a box moves nothing
- * under the pointer. Emptying the ledger is no gesture of its own any more: no
- * filter, tick the header, delete.
+ * button is **rendered only with a selection** (#1278), on the ledger's control
+ * line: with nothing ticked no destructive control exists on the page. Emptying
+ * the ledger is no gesture of its own: no filter, tick the header, delete.
  *
  * **The confirmation is kept**, and it states the count. The count in the box
  * is the **table's** — what is ticked, said before the click. The count in the
@@ -19,15 +17,9 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import { ConfirmDestructive } from '@/components/ConfirmDestructive'
 import { Refusal } from '@/components/Refusal'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { dataApi } from '@/features/data/lib/api'
 import { useI18n } from '@/lib/i18n'
 import { problemSentence } from '@/lib/problem'
@@ -67,17 +59,10 @@ export function BulkDelete({ selected, onDeleted }: BulkDeleteProps) {
 
   return (
     <>
-      {/* **The colour of what it does** (#838): the drawing gives this control
-          a destructive outline where every other button on the row is
-          neutral or ink — it is the one gesture on the bar that removes
-          something, and the box behind it is what asks. The tone is
-          `destructive`, an action that cannot be undone, and not `--loss`,
-          which is money going away (#1283): a sign colour never paints an
-          action. */}
       <Button
         type="button"
         variant="outline"
-        className="h-8 rounded-lg pointer-coarse:h-11 border-destructive/45 bg-transparent px-3 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive dark:bg-transparent dark:hover:bg-destructive/10"
+        className="pointer-coarse:min-h-11"
         onClick={() => {
           // A mutation error outlives its gesture, so reopening on another
           // selection would show a sentence about the previous one.
@@ -88,37 +73,22 @@ export function BulkDelete({ selected, onDeleted }: BulkDeleteProps) {
         {t('data.selection.delete')}
       </Button>
 
-      <Dialog open={open} onOpenChange={(next) => (next ? null : close())}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('data.bulk.confirm.title', { count: selected.length })}</DialogTitle>
-            <DialogDescription>{t('data.bulk.confirm.body')}</DialogDescription>
-          </DialogHeader>
-
-          <p className="text-sm text-muted-foreground">{t('data.bulk.confirm.undo')}</p>
-
-          {/* Rendered **here** and not on the page: the box stays open on a
-              failure, and Radix marks everything behind the overlay
-              `aria-hidden`, so a refusal outside it is a sentence nobody can
-              read while the only thing on screen is the box that produced it. */}
-          {remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
-
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="outline" onClick={close}>
-              {t('data.bulk.confirm.cancel')}
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              // A refetch can take the ticked rows away while the box is open.
-              disabled={remove.isPending || selected.length === 0}
-              onClick={() => remove.mutate(selected)}
-            >
-              {t('data.bulk.confirm.submit')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDestructive
+        open={open}
+        onOpenChange={(next) => (next ? null : close())}
+        title={t('data.bulk.confirm.title', { count: selected.length })}
+        line={t('confirm.events.line')}
+        confirmLabel={t('confirm.delete')}
+        pending={remove.isPending}
+        // A refetch can take the ticked rows away while the box is open.
+        disabled={selected.length === 0}
+        // Rendered **here** and not on the page: the box stays open on a
+        // failure, and Radix marks everything behind the overlay
+        // `aria-hidden`, so a refusal outside it is a sentence nobody can
+        // read while the only thing on screen is the box that produced it.
+        error={remove.error ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
+        onConfirm={() => remove.mutate(selected)}
+      />
     </>
   )
 }

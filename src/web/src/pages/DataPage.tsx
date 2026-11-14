@@ -52,7 +52,7 @@ export default function DataPage() {
 
   useEffect(() => {
     if (reduction === null) return
-    setFocus({ filters: reduction, named: true })
+    setFocus({ filters: reduction })
   }, [reduction])
 
   useEffect(() => {

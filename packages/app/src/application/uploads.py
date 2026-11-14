@@ -35,9 +35,12 @@ class UploadRefused(Exception):
     ``file`` names the part of a batch that was refused, when one was (#1266).
     """
 
-    def __init__(self, message: str, file: Optional[str] = None):
+    def __init__(self, message: str, file: Optional[str] = None,
+                 code: Optional[str] = None):
         super().__init__(message)
         self.file = file
+        #: A stable name for the refusal, which the front words in its language.
+        self.code = code
 
 
 class UploadTooLarge(Exception):
@@ -173,7 +176,7 @@ def _read(name: str, stream, root: str) -> Upload:
         raise UploadRefused(
             f"{name} is a v4 configuration file and this version does not read "
             f"one: a portfolio is a dated event ledger and nothing else. "
-            f"Describe those positions as dated events — {migration_page(root)}")
+            f"Describe those lines as dated events — {migration_page(root)}")
 
     suffix = Path(name).suffix.lower()
     if suffix not in IMPORT_SUFFIXES:

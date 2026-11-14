@@ -15,6 +15,7 @@ import {
   eventReduction,
   eventsMatching,
   EVENTS_SHOWN,
+  heldByAccount,
   heldTitles,
   SHARES_SHOWN,
   titlesMatching,
@@ -36,9 +37,9 @@ describe('the titles the palette offers', () => {
       aPosition({ account: 'beta', symbol: 'ZZA', name: 'Zeta Alpha' }),
       aPosition({ account: 'beta', symbol: 'ZZB', name: 'Zeta Beta' }),
     ])
-    expect(titles).toEqual([
-      { symbol: 'ZZA', name: 'Zeta Alpha' },
-      { symbol: 'ZZB', name: 'Zeta Beta' },
+    expect(titles.map(({ symbol, accounts }) => [symbol, accounts])).toEqual([
+      ['ZZA', ['alpha', 'beta']],
+      ['ZZB', ['beta']],
     ])
   })
 
@@ -57,13 +58,28 @@ describe('the titles the palette offers', () => {
       aPosition({ symbol: 'ZZA', name: 'Zeta Alpha' }),
       aPosition({ symbol: 'ZZB', name: 'Zeta Beta' }),
     ])
-    expect(titlesMatching(titles, 'zzb')).toEqual([{ symbol: 'ZZB', name: 'Zeta Beta' }])
-    expect(titlesMatching(titles, 'alpha')).toEqual([{ symbol: 'ZZA', name: 'Zeta Alpha' }])
+    expect(titlesMatching(titles, 'zzb').map((title) => title.symbol)).toEqual(['ZZB'])
+    expect(titlesMatching(titles, 'alpha').map((title) => title.symbol)).toEqual(['ZZA'])
 
     const many = Array.from({ length: 12 }, (_, index) =>
       aPosition({ symbol: `Z${index}`, name: `Zeta ${index}` }),
     )
     expect(titlesMatching(heldTitles(many), '')).toHaveLength(SHARES_SHOWN)
+  })
+})
+
+describe('what a title and an account are worth', () => {
+  it('sums the converted values, and gives none when a held line has no price', () => {
+    const priced = (account: string, symbol: string, price: number) =>
+      aPosition({ account, symbol, quantity: 10, price })
+    const positions = [
+      priced('alpha', 'ZZA', 10),
+      priced('beta', 'ZZA', 5),
+      aPosition({ account: 'beta', symbol: 'ZZB', price: null }),
+    ]
+    expect(heldTitles(positions).map((title) => title.value)).toEqual([150, null])
+    expect(heldByAccount(positions).get('alpha')).toEqual({ titles: 1, value: 100 })
+    expect(heldByAccount(positions).get('beta')).toEqual({ titles: 2, value: null })
   })
 })
 

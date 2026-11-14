@@ -10,64 +10,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { SettingDescription } from '@/features/settings/lib/api'
-import type { RuntimeState } from '@/lib/api'
-import { cadenceReach, changedValues, draftFrom } from '@/features/settings/lib/installation'
-import { aRuntime, defaultSettings } from '@/test/factories'
-
-function runtimeWith(symbols: RuntimeState['symbols']): RuntimeState {
-  return aRuntime({ symbols })
-}
-
-function symbol(overrides: Partial<RuntimeState['symbols'][number]> = {}) {
-  return {
-    symbol: 'ZZA',
-    next_run: null,
-    failure_count: 0,
-    closed: false,
-    held: true,
-    ...overrides,
-  }
-}
-
-describe('what a new cadence reaches', () => {
-  it('splits on the last pass’s market state, and the two add up', () => {
-    const reach = cadenceReach(
-      runtimeWith([
-        symbol({ symbol: 'ZZA', closed: false }),
-        symbol({ symbol: 'ZZB', closed: false }),
-        symbol({ symbol: 'ZZC', closed: true }),
-      ]),
-    )
-
-    // The property that lets a reader tell *asleep* from *misconfigured*.
-    expect(reach).toEqual({ now: 2, atMarketOpen: 1 })
-    expect((reach?.now ?? 0) + (reach?.atMarketOpen ?? 0)).toBe(3)
-  })
-
-  it('counts a symbol that has never completed a pass as reached', () => {
-    // It is armed to fire immediately, so it reads the new value on a pass that
-    // has already begun. Re-arming it would push the bootstrap a whole cadence
-    // into the future.
-    expect(cadenceReach(runtimeWith([symbol({ closed: null })]))).toEqual({
-      now: 1,
-      atMarketOpen: 0,
-    })
-  })
-
-  it('leaves a sold line out of both figures', () => {
-    // The backfill's set is no longer the scrape's: a sold line is
-    // reconstructed and not polled, so no cadence reaches it either way.
-    expect(cadenceReach(runtimeWith([symbol({ held: false, closed: true })]))).toEqual({
-      now: 0,
-      atMarketOpen: 0,
-    })
-  })
-
-  it('says nothing at all while the runtime read has not landed', () => {
-    // A read that has not landed is not a fact — `0 titres` would be a claim.
-    expect(cadenceReach(undefined)).toBeNull()
-  })
-})
+import { changedValues, draftFrom } from '@/features/settings/lib/installation'
+import { defaultSettings } from '@/test/factories'
 
 describe('what the form sends', () => {
   const settings: SettingDescription[] = defaultSettings()

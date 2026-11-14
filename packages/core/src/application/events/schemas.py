@@ -335,7 +335,8 @@ class Account:
     the store's schema.
     """
     id: str
-    label: str = ''
+    # Optional: a reader shows ``label ?? id``.
+    label: Optional[str] = None
 
 
 @dataclass

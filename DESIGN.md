@@ -37,16 +37,22 @@ colors:
   dark-chart-5: "oklch(0.55 0.08 50)"
 typography:
   hero:
-    fontFamily: Geist
-    fontWeight: 600
-    fontSize: 60px
-    lineHeight: 64px
-    letterSpacing: -0.03em
+    fontFamily: Geist Mono
+    fontWeight: 500
+    fontSize: 56px
+    lineHeight: 1.05
+    letterSpacing: -0.02em
   figure:
+    fontFamily: Geist Mono
+    fontWeight: 500
+    fontSize: 28px
+    lineHeight: 32px
+  statement:
     fontFamily: Geist
     fontWeight: 600
     fontSize: 28px
-    lineHeight: 32px
+    lineHeight: 34px
+    letterSpacing: -0.01em
   page-title:
     fontFamily: Geist
     fontWeight: 500
@@ -80,10 +86,9 @@ typography:
     fontFamily: Geist
     fontSize: 13px
     lineHeight: 18px
-  ticker:
-    fontFamily: Geist Mono
-    fontSize: 11px
-    lineHeight: 16px
+  mono:
+    fontFamily: Figure words, Geist Mono
+    fontVariantNumeric: tabular-nums
 rounded:
   md: 8px
   card: 14px
@@ -112,13 +117,21 @@ components:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.primary-foreground}"
     rounded: "{rounded.md}"
+    height: 32px
+    heightInForm: 36px
   button-secondary:
     borderColor: "{colors.border}"
     textColor: "{colors.foreground}"
     rounded: "{rounded.md}"
-  chip:
-    borderColor: "{colors.border}"
-    rounded: "{rounded.full}"
+    height: 32px
+    heightInForm: 36px
+  sheet:
+    width: 460px
+  dialog:
+    width: 440px
+    rounded: 14px
+  popover:
+    rounded: 14px
   agent-thread-column:
     backgroundColor: "{colors.muted}"
     width: 240px
@@ -126,8 +139,6 @@ components:
     width: 200px
   content-column:
     maxWidth: 720px
-  content-settings:
-    maxWidth: 1040px
   content-reading:
     maxWidth: 768px
 ---
@@ -161,14 +172,25 @@ the generic look we avoid), kubera.com (dark balance-sheet spreadsheet), sharesi
 (classic holdings table). Direction chosen against three rendered alternatives
 ("Le relevé", "Atelier", "Instrument"), see the Decisions Log.
 
+**Direction since November 2026: « Relevé ».** Atelier's warm planes stay; what changes is
+the voice of the figures and the economy of the page. Every figure is set in Geist Mono with
+tabular numerals, like a bank statement; tables and lists sit on the ground, separated by
+1 px `border` rules; text tabs replace segmented controls; one filled button per screen;
+and the copy follows one rule, **« l'état, pas l'explication »**: a screen states what is,
+it does not explain itself. The mockups are the *Refonte* page of the Design canvas
+(`docs/refonte/mockups/`), one row per page of the navigation.
+
 **Key characteristics:**
-- The value is the hero, with the cash it holds named under it, then the total gain on
-  its own line, then one plain row: since 1 January, today, IRR.
-- Sections are warm tinted planes, never boxes; Atelier carries no shadow.
-- Cards exist only where you decide something.
+- The value is the hero in mono, then its variation over the chart's period, then the
+  total gain on one line with the net contribution; the figures on the right are the first
+  deposit, the cash and the net if everything were sold today.
+- Sections are warm tinted planes, never boxes; Atelier carries no shadow, floating
+  surfaces neither.
+- Cards exist only where you decide something; a destructive decision is a centred dialog.
 - Colour means something: ink for action, mint for money made, red for money lost, and the
   chart hues to tell the parts of a drawing apart.
-- Avoid unnecessary supporting text, descriptive copy, and redundant UI microcopy
+- No supporting text, no page subtitle that is not a dated fact, no help sentence, no ⓘ,
+  no pill, no arrow glyph but the « ← » of a back link.
 
 ## Content
 
@@ -185,6 +207,27 @@ the generic look we avoid), kubera.com (dark balance-sheet spreadsheet), sharesi
   quantité ou la date. »
 - **One word per thing**, everywhere: the three return measures of *Return figures*
   below, and one term per page, action and figure across the app, the docs and the agent.
+  The glossary (November 2026): a **titre** is the instrument, a **ligne** is what the
+  owner holds of it (never « position ») ; **grand livre**, never « registre » ; a
+  **compte** has an **identifiant** (short, shown in the ledger and the imports), an
+  optional **libellé** and a **modèle d'imposition** — it has no type ; **Libellé** names
+  anything the owner names, never « Nom » ; **prix moyen d'achat**, never « PRU » ;
+  **Comparaison** is the page that compares the portfolio with a fund (formerly
+  *Référence*) ; the background jobs are **Mise à jour des cours**, **Reconstruction de
+  l'historique**, **Calcul de la performance**, **Relecture du grand livre** ; a
+  **relevé** is a broker's file one imports ; **jeton d'accès** is an API/MCP token and
+  **tokens** are what a language model counts. Creating is **Ajouter X** (« Ajouter un
+  compte », « Ajouter un fonds », « Ajouter un fournisseur »), except « Saisir un événement »
+  and « Importer un relevé ». A period selector speaks in words: « 1 mois · Cette année ·
+  1 an · Tout ».
+- **« L'état, pas l'explication ».** A page title is fixed (« Système », never « Un titre à
+  vérifier ») ; the header's subtitle is a dated fact (« Cours au 6 nov. 2026, 17:35 »,
+  « Comparé du … au … ») or nothing ; a section has no subtitle unless it names a period or
+  an active filter ; no sentence tells the reader what a control does or what will happen.
+  The exceptions, all of them: the effect line under an event form (« 450,00 € arrivent sur
+  le PEA · liquidités 1 490,00 € »), the one-line « Irréversible. … » of a destructive
+  dialog, the sentence that says what is sent to an LLM provider, and the one-clause
+  description with its default under each *Avancé* setting.
 - **Numbers in the French locale:** `2 800,00 €`, `+3,22 %`, `−5,00 €` (a real minus,
   U+2212), compact axis amounts `17,5 k€`, dates `2 mars 2026` (`02/03/2026` in a
   table's date column, see *Return figures*).
@@ -214,10 +257,12 @@ keep their contrast.
 
 - `primary`, the ink, is the colour of interaction: primary buttons, focus rings, the caret,
   the selection, a pressed control. The current navigation item is the `sidebar-accent`
-  surface with its foreground, a hover held down. A link is `primary` and underlined at
-  rest. A weight bar is `muted-foreground`.
+  surface with its foreground, a hover held down. A link is `foreground`, underlined (offset 4) at rest; a text action is
+  `muted-foreground` underlined in `border`. A weight bar is `muted-foreground`.
 - `gain` and `loss` colour the sign and the digits of a figure, never a row background,
-  a pill fill or a whole card.
+  a pill fill or a whole card. The one mark they fill is the gain's share of the
+  two-colour bar under a value (dashboard, account, security): the contributed part is
+  `alloc-5`, the gain `gain`, the same colour as the gain figure under it.
 - Only a figure that can change sign takes `gain` or `loss`. A term whose sign is fixed by
   its nature (dividends received, always positive; transfer fees, always negative) stays
   neutral, `foreground` in its figure: colouring a sign known in advance tells nothing and
@@ -251,8 +296,8 @@ keep their contrast.
   rhythm strip) keeps 3:1 against the plane it sits on (WCAG 1.4.11). It is drawn at full
   opacity: a token at partial opacity is a new colour that no test measures.
 - A status, an event's kind and a fixed-sign figure carry no hue: an event marker is
-  `foreground`, a ledger type is a `muted` pill, a job that ran well is `foreground` with
-  its glyph.
+  `foreground`, a ledger type is a word in `muted-foreground`, a job that ran well is a
+  `muted-foreground` tick in its strip.
 - A semantic token (`--gain`, `--loss`, `--price`, `--attention`, `--alloc-*`…) is
   always an alias of a standard shadcn token, never a value of its own
   (`lint/semantic-token-alias.grit`, #1130).
@@ -277,159 +322,84 @@ and used everywhere. Geist is on the list of overused display faces; we accept i
 because in this app the display voice is the figure, not the font, and replacing a
 shipped face would cost every screen for no reader benefit.
 
-- **Hero (60/64, 600, -0.03em):** the one figure a screen leads with. One per screen. Fluid from 36 px on a narrow screen.
-- **Figure (28/32, 600):** a secondary figure that stands alone (an account in the dashboard's accounts section, a term of the accounts page's figures row).
-- **Page title (15/22, 500):** the page's `<h1>`, in the header bar, followed by its dated subtitle in Label-muted after a `·`. The same size at every width. Quiet on purpose: the bar is chrome and the navigation already says where the reader is; the page leads with its hero, not its name.
-- **Section title (20/28, 600):** sentence case. No uppercase, letter-spaced overlines,
-  no kicker above a heading. Also the rung of a figure that heads a section (its subtotal)
-  or stands under the hero.
-- **Term (16/24, 600):** a term under a figure (a sheet's price, average cost, quantity; the
-  benchmark's two returns). A figure inside a line takes its line's size.
-- **Prose (15/22):** the agent's answers and any explanatory paragraph.
-- **Body (14/20):** controls and labels in forms. Below the usual 16 px rule
-  on purpose: this is a dense tool UI; long reading text uses Prose.
-- **Table (13/18):** the cells of a table and the dense lines that read like one (a
-  ruled list on a phone). `text-sm` in the app,
-  `.table-text` in the design system.
-- **Label (12/16, 500):** meta and column headers, `muted-foreground`, never letter-spaced.
-- **Mono, the Ticker rung (11/16, Geist Mono):** every figure, in a table or not, is Geist with
-  `font-variant-numeric: tabular-nums` (#1281, which reverses the table half of #838).
-  Geist Mono is for identifiers only: tickers and account ids, at 11 px beside the name
-  they identify. Mono in the middle of a sentence, on a figure or on a version number is
-  a bug.
+**Every figure is Geist Mono** (« Relevé », November 2026, reversing #1281 and the figure
+half of #838): amounts, percentages, quantities, dates in a table column, times, versions,
+identifiers. The mono class carries `font-variant-numeric: tabular-nums`, and its face is
+`Figure words` laid over Geist Mono: the spaces, the decimal comma and point and the
+lowercase letters come from Geist, so `67 726,28 €` has no comma as wide as a digit and
+`10 janv. 2022` does not read like a terminal; the digits, the signs, `%`, `€` and the
+capitals stay mono, so a column lines up and a code (`CW8.PA`, `EUR`) reads as one. A
+figure never wraps. A figure inside a sentence is mono too, at the sentence's size
+(`figured()`). Words stay in Geist. A build's hash is a code, in plain `font-mono`.
 
-These ten rungs are the whole ladder: a size that is not one of them is a bug, in the app
-and in a mockup alike. A mockup names the rung (the design system's `.section-title`,
-`.prose`, `.table-text`…) rather than writing a literal size.
+- **Hero (56 px fluid from 36, Geist Mono 500, −0.02em, line-height 1.05):** the one
+  figure a screen leads with. One per screen.
+- **Statement (28/34, Geist 600, −0.01em):** the one sentence a screen leads with when the
+  answer is a sentence, not a figure (Comparaison: « 837,20 € de moins qu'en plaçant le même
+  argent dans le MSCI World. »). Its figures are mono at the same size. Hero and Statement
+  never share a screen.
+- **Figure (28/32, Geist Mono 500):** a secondary figure that stands alone (an account's
+  value, a section's own total).
+- **Page title (15/22, 500):** the page's `<h1>`, in the header bar, fixed, followed by a
+  dated subtitle in Label-muted after a `·` or by nothing.
+- **Section title (20/28, 600):** sentence case.
+- **Prose (15/22):** the agent's answers.
+- **Body (14/20):** controls, labels, row names.
+- **Table (13/18):** cells, dense lists, secondary rows, filters, text actions.
+- **Label (12/16, 500):** field labels and column headers, `muted-foreground`, never
+  letter-spaced.
+- **Mono:** not a size but a face; the rung above says which size.
+
+These rungs are the whole ladder: a size that is not one of them is a bug, in the app
+and in a mockup alike.
 
 ## Layout
 
-- **The shell:** a 200 px navigation (a 64 px rail when folded, a drawer under 768 px), then a 56 px header bar holding, in order, the fold, the page title with its dated subtitle, the search and the bell. Nothing else lives in the bar: language, light or dark, and table density are set in Settings › On this device.
-- **Navigation:** two groups and no group label. The top holds what the owner reads and records: Dashboard, Shares, Accounts, Ledger, Benchmark, Agent. The foot holds the administration: System, Settings.
-- **Content width is set per kind of content, never by one cap:**
-  - a table or a chart takes the full width of the content column;
-  - a form is one start-aligned column of 720 px (`max-w-column`);
-  - the Settings page is 1 040 px (`max-w-settings`), start-aligned, one sequence of titled sections: from 1 024 px each section is a `220px | 1fr` grid with a 40 px gap, the title and one sentence in the gutter (sticky) and the rows on the right; under 1 024 px it is one column under a one-line anchor index;
-  - the agent's conversation is described below (`max-w-column`, `lg:max-w-reading`);
-  - a paragraph keeps its measure, 65 characters (`max-w-prose`), inside any of these;
-  - a statement (a label on the left, its amount on the right) is never stretched: a grid gains a track instead. The dashboard grid gains its third track from 1 600 px (#1325).
+- **The shell:** a 200 px navigation (a 64 px rail when folded, a drawer under 768 px), then a 56 px header bar holding, in order, the fold, the page title with its dated subtitle or nothing, the search (⌘K) and the bell. Nothing else lives in the bar.
+- **Navigation:** two groups and no group label. The top holds what the owner reads and records: Tableau de bord, Titres, Comptes, Grand livre, Comparaison, Agent. The foot holds the administration: Système, Réglages. Journal is reached from Système › Installation, Statistiques from the agent's rail, Thème from Réglages › Affichage; each is a page with its own title and a « ← Parent » text link on its first line.
+- **The page's envelope** is `32px 32px 56px` of padding on every page. The first line of the content is the page's control line: on the left the tabs, the back link or the file name; on the right the page's actions (outline buttons, then the one filled button). A table page's filters share that line or the one under it. Page actions never get a row of their own.
+- **Content width is set per kind of content:** a table or a chart takes the full width; a form is a 460 px sheet on the right; Réglages takes the full width, each section a `220px | 1fr` grid inside its plane; the agent's conversation is centred at 768 px; a paragraph keeps 65 characters.
+- **Tables sit on the ground**, with no plane and no frame: a header row in Label, `border` rules under every row including the last, totals as the last row. Row heights: 40 px for one line of text, 48 px for a name with a sub-line and for totals. Figures right-aligned in mono. A sortable column is `foreground` 500 with `aria-sort`, no glyph. A clickable row underlines its name on hover (offset 4); no row background, no chevron.
+- **Lists inside a setting** (tokens, funds, tax models, providers, notification channels) are ruled rows directly in the section's plane under their name, ending on a « + Ajouter … » text row. Never a nested plane.
+- **A table page has no side panel**: its filters are text buttons on the control line (`muted-foreground`, 13 px, the chosen value in `foreground`, a ChevronDown 14 px), its selection's actions appear only with a selection.
+- **< 768 px:** single column; the Titres table becomes a ruled list; the sheets take the full width.
+- **Rhythm:** 20 px between sections, 12 px between a section title and its content.
+- **Sections side by side** share the row's width equally and keep their own height
+  (`items-start`): a short section is not stretched into an empty plane beside a long one.
 
-  The widths are tokens in `index.css` (`--container-column`, `--container-settings`, `--container-reading`, `--breakpoint-3xl`), out of a theme's reach. A page uses them and never writes a width of its own.
-- A table's totals are its last row, under the columns they sum (#1281).
-- A table page's table sits on the background, with no plane and no frame (#1273). The header, the `border` rows and the totals row are its structure; the closed shares are a disclosure row under the Shares total.
-- **< 768 px:** single column.
-- Under 768 px the Shares table is a list on the background (#1338): one ruled item per held line, the name and valuation on the first line, the ticker and the latent gain on the second, the totals as four ruled rows, and a sort select with a direction button in the toolbar. The closed lines and the sheet's per-account breakdown are lists too.
-- A table page has no side panel: its filters are a toolbar above the table, its
-  selection's actions appear only with a selection.
-- Under 768 px the ledger's toolbar leads with its gestures on a line of their own (Importer, Exporter, then Saisir at the right, whose visible label is the verb alone where the line is too narrow for the whole action); the reduction is one line under it: the search, Type, Période.
-- The Benchmark page names its period in the header subtitle, « Comparé du … au … », and its reference picker is the content's first row, « Comparer à » and the select, in every state that offers it. What shortens the period is said under the verdict. The head reads like the dashboard's: the gap, the verdict, then the two returns on one row. It sits on the ground; the chart, the rebuild status and the per-account table are sections.
-- The agent is a page, `/agent`: from 1 024 px a 240 px thread rail, full height and
-  flush with the navigation, and the conversation centred in the rest at most 768 px (`max-w-reading`);
-  below 1 024 px, the conversation alone, centred at most 720 px (`max-w-column`).
-- The accounts page: the accounts are a sticky bar of chips over the detail, at every width, each chip naming the account, its value and its share. The detail reads like the dashboard's head (one label, the account value as the hero, a line naming its cash and net contribution, the total gain on its own line, then one plain row with the IRR, the curve; no pills, as on the dashboard since #1280), then one row of secondary figures on the Figure rung, then its sections. Every row of the detail is shared equally by the blocks present, so an absent block never leaves a hole.
-- **Rhythm:** 20 px between sections, 24 px around the content, 12 px between a section
-  title and its content. Large gaps (40, 64) only separate the hero from the first
-  section and the page from its footer.
+### The section
 
-### The section (replaces "everything is a card")
+A section is a tinted plane: `muted` background, `rounded.section`, padding 20 px 24 px 24 px,
+no border, no shadow. Its first row holds the title on the left and, on the right, only a
+period or an active filter (« 12 derniers mois », « Dernières 24 h ») — never a figure that
+repeats the content, never a sentence. Rows inside are separated by `border`. A section never
+contains another section or a card. Réglages uses the same plane, its title in the 220 px
+gutter.
 
-A section is a tinted plane: `muted` background, `rounded.section`, padding 20 px 24 px, no
-border, no shadow of its own. Its first row holds the title on the left and the section's own
-subtotal on the right, like a line of a statement. Rows inside are separated by `border`.
+### The dashboard
 
-A section never contains another section. A long page is a sequence of sections; the
-dashboard alone lays its sections out on a grid the owner arranges (below).
-
-### The dashboard grid
-
-Under the hero, the dashboard's sections sit on a grid of **two widths**: half or full,
-20 px apart, one column under 768 px and three tracks from 1 600 px (a half section takes
-one track and a full section the whole row, so a statement gains a neighbour rather than a
-longer row). It is an ordered list of sections, each with a
-width, never a free two-dimensional placement, so the reading order is the focus order.
-The stored list is the same at every viewport: the track count only decides how it is drawn,
-and no width is ever written because of the screen.
-
-- **Packing (#1325).** Consecutive halves fill a row, two at two tracks and three at three.
-  A row that is not full keeps one track per half; a lone half that accepts the full width is
-  drawn across the row (its menu says why), and every other leftover track is a free cell:
-  blank when reading, a dashed "Place libre" outline per track when editing. A full section,
-  and a lone half drawn full, takes the whole row (`col-span-full`). No `grid-auto-flow:
-  dense`.
-- **Move and drag (#1325).** "Monter" / "Descendre" and the drag are one rule. A full section
-  jumps a whole row (a row of two or three halves moves as one); a half swaps with the
-  previous or next half in reading order, skipping full sections. The drop takes the menu's
-  result and the cards keep the spans they had when the drag began. A phone moves by rows of
-  two, as it always did.
-
-- A section takes the full width only if it **shows more** there (the movers: five
-  lines on half, ten across two tracks, fifteen across three, in columns of five, the first
-  line of each unruled; the allocation: a one-column legend on
-  half, the ring and the amounts across the full width, the legend in one column, two from
-  1 280 px and three from 1 600 px). A section that would only stretch is
-  half-only: the gain breakdown and the investment rhythm.
-- The default sections: the allocation, the gain breakdown and the investment rhythm, then
-  the movers (half). At three tracks that is three halves and the movers across the row; at
-  two, two rows of two. The benchmark waits under "Cartes masquées" on a fresh
-  install, without "Nouveau": nothing is new to an owner who arranged nothing. A card that
-  arrives later is appended hidden, with "Nouveau", to a layout the owner saved only.
-- The investment rhythm's month strip fills the height its row gives it, between 56 and
-  160 px, so a section beside a taller one does not read as empty.
-- The allocation's account view ends on a link, "Voir les comptes →", to the accounts page.
-- The gain breakdown is a statement: four ruled rows and a ruled-off total, like an
-  account section. No drawing, no window.
-- Two halves share a row and end on one line: the shorter one's last line (a total)
-  is pushed to the bottom. A half that accepts the full width and is alone on its
-  row is drawn full; a half-only section alone leaves the other half empty.
-- A section whose read is in flight holds its place as an empty plane, with nothing
-  in it (#795).
-
-**Edit mode** ("Modifier le tableau de bord", a Label link closing the grid, start-aligned,
-followed by "· N nouvelles cartes disponibles" when a card is new): the
-link's line gives way to a bar opening at the top of the grid, the title "Modifier le tableau de bord" in Section title on
-the left, "Réinitialiser" (ghost), "Annuler" (secondary) and "Terminé" (primary) on the
-right; under 768 px the bar sticks to the top. Each section's ⋯ menu sits at the end of
-its own title row, a 28 px ghost button (44 px on touch), `muted-foreground` turning
-`foreground` on hover and focus. On a desktop with a fine pointer, a ⠿ drag handle with
-the same look (and `cursor: grab`) sits before the title; dragging follows the menu's
-rule (a full section lands between two rows, a half takes another half's place) and
-keeps every section's width until the drop. Phones have the menu only. The sections'
-content is inert; the hero is neither dimmed nor movable. Hidden sections are listed in
-a "Cartes masquées" section under the grid, a chip "Nouveau" on the ones a release
-added. The empty half beside a half-only section shows "Place libre" in Label on a 1 px
-dashed `border` outline, in edit mode only. Resetting is confirmed in a card (a
-destructive confirmation).
-
-An account section reads like a statement and ends with the net:
-
-```
-Compte-titres                                        18 902,10 €
-Titre               Poids        Détenu   PRU   Valorisation   Latente
-...rows...
-Valorisation                                       18 902,10 €   +2 443,40 €
-Impôt latent, flat tax 30 %                          −733,02 €
-Ce qu'il vous resterait                            18 169,08 €
-```
+The dashboard is fixed (decision of 7 November 2026): no arrangeable grid, no edit mode, no
+hidden cards, no widths to choose. Its layout is the hero, the chart, then two half sections,
+*Rythme d'investissement* and *Valeur des titres*. *Mouvements* left the dashboard: the day's
+move reads in Titres, under the price. *Répartition* became *Valeur des titres*: the top four
+lines and « N autres lignes », no account view.
 
 ### The hero
 
-The portfolio value (decision 1A, #1099), then one line "dont X de liquidités" (drawn
-only with a cash ledger), then the total gain on its own line: the arrow and the signed
-amount on the Section title rung, coloured by sign, then "de gain total" in `text-sm`
-`muted-foreground`. Under it one row of three figures with no ground, no radius and no
-padding: gain since 1 January, today, IRR per year, each a muted label and its signed
-figure. An absent figure is left out, and with none the row is not drawn. No
-net-of-tax line on the dashboard. The time-weighted return, named *Performance*, lives
-behind the IRR's `ⓘ`, always with the day it counts from and the sentence that bridges the
-two. One performance figure per screen.
+« Valeur du portefeuille » in Body-muted, the value in Hero mono, and under it the variation
+over the chart's period in mono, coloured by sign: « +5 021,10 € (+11,6 %) depuis un an ». On
+the right, a three-row statement in Label over mono: *Premier versement*, *Liquidités*, *Net
+si tout vendu* (the net of the estimated tax of the accounts that carry a model; the accounts
+without one count gross). Under them a 10 px two-colour bar, then one line: *Versé net*, *Gain
+total* (signed, coloured, with its percentage) on the left, *TRI x % par an* alone on the
+right. The chart follows, full width, with its two readings (Montants · Performance) as text
+tabs on the left and the period as a segmented control in words on the right; the variation
+line and the chart share that period.
 
-Under them, the portfolio's chart across the hero's full width, with its readings and
-its range on one control bar: the reading on the left, the legend between, the range on
-the right (the French range label is "1ᵉʳ janv."). The real chart, never a decorative sparkline beside a
-dialog holding the real one.
-
-No statistics row under the chart: net contributions are the chart's dashed curve, and
-the securities are the value less the cash.
+The **gain total** of the hero is the one official gain of the app: latent + realised +
+dividends − fees, over the net contribution. Every other gain figure names its base beside it
+(« Plus-value des titres … · hors dividendes et liquidités » on Titres; « titres seuls » where
+the cash is excluded), and no screen shows two percentages of the same thing.
 
 ### Return figures
 
@@ -449,13 +419,13 @@ is in percent from the start of the visible window, never in base 100.
   A buy's or a sale's fee sits in the cost and the realised gain, never a figure of its own.
 - *Aujourd'hui* / *Today*: the day's move, in the hero's row and over the movers.
 - *Liquidités* / *cash*: the money an account holds uninvested; never « cash » in French.
-- Dates: `2 mars 2026`, the locale's medium form (`1ᵉʳ oct. 2026`), in prose, headings,
-  receipts and agent proposals; `02/03/2026` in a table's date column only, where the
-  digits line up.
-- A security is named by the symbol the owner recorded (`CW8.PA`), beside its name where
-  it has one: the name in Geist 500, the symbol after it in Geist Mono `2xs`, muted — on
-  Titres, in the ledger's « De quoi il s'agit » and in an account's last events alike. The
-  movers' badge cuts it to `CW8`. A page names the fund it is about once.
+- Dates: `6 nov. 2026`, the locale's medium form (`1ᵉʳ oct. 2026`), everywhere, tables
+  included (in mono the digits line up anyway); date and time as `6 nov. 2026, 09:14`;
+  a time alone as `17:35`. Never `06/11/2026`.
+- A security is named by the symbol the owner recorded (`CW8.PA`) in mono 500, with its
+  name under it in Table-muted — on Titres, in Système's list of followed titles, in an
+  import preview alike. In the ledger the name leads and « CW8 · libellé du courtier » is
+  the sub-line. A page names the fund it is about once.
 - *Aller au grand livre* / *Go to the ledger*: the one link an empty page offers to the
   ledger. The ledger's first-import state is not an empty state but `EntryPair`: two doors,
   one gesture each (the file picker; *Saisir un événement*), plus a quiet docs link.
@@ -463,17 +433,18 @@ is in percent from the start of the visible window, never in base 100.
 ## Elevation & Depth
 
 Flat. Atelier's shadow opacity is 0, so depth comes from the step between
-`background`, `muted` and `card`, not from shadows. Components still carry shadcn's
-`shadow-*` utilities (a card `shadow-sm`, a menu `shadow-md`), so a replacement theme's
-shadows show. Atelier draws none. No zero-offset glow, in either theme.
+`background`, `muted` and `card`, not from shadows. Floating surfaces (the ⌘K palette, a
+dialog, the notifications popover, a picker) are `background` with a 1 px `border` and a
+14 px radius, and draw no shadow of their own either. Components still carry shadcn's
+`shadow-*` utilities so a replacement theme's shadows show. No zero-offset glow.
 
 ## Shapes
 
 - `rounded.section` (18 px): sections.
-- `rounded.card` (14 px): cards. A card sits on a section, so 18 − 4 keeps the curves
-  concentric.
-- `rounded.md` (8 px): buttons, inputs, menus.
-- `rounded.full`: chips only.
+- `rounded.card` (14 px): cards, and every floating surface (dialog, popover, palette).
+- `rounded.md` (8 px): buttons, inputs, menus, the code block of a token snippet.
+- `rounded.full`: nothing in the Relevé direction — there are no pills and no chips. A
+  type or a status is a word in `muted-foreground`.
 - In code these are `--radius-section`, `--radius-card` and `--radius-md`, all derived from
   the theme's `--radius`; a mockup uses them and no other radius.
 - A dashed `border` outline marks a place where something can be put (a free grid slot, a
@@ -483,8 +454,10 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 
 ## Iconography
 
-- Lucide icons, 16 px in controls and navigation, stroke 2, coloured by the text they sit
-  with (`currentColor`). No emoji.
+- Lucide icons, 16 px in a button, a field, the search and the navigation; 14 px inside a
+  13 px line of text (a filter's ChevronDown, a disclosure's ChevronRight, the
+  TriangleAlert of a title to check); stroke 2, `currentColor`. No emoji, no ⓘ, no arrow
+  glyph in text except the « ← » of a back link and the ↑ of the agent's send button.
 - The navigation's set, one icon per page and reused wherever that page's object appears
   (the palette, the first run): LayoutDashboard (Dashboard), CircleDollarSign (Shares),
   Wallet (Accounts), Database (Ledger), Scale (Benchmark), Sparkles (Agent), Server
@@ -494,75 +467,112 @@ shadows show. Atelier draws none. No zero-offset glow, in either theme.
 
 ## Components
 
-- **Section:** see Layout. No hover state; the section itself is not interactive. In
-  the dashboard's edit mode its title row carries the ⋯ menu (see The dashboard grid).
-- **Card:** `card`, `rounded.card`, 14 px padding. Allowed only for something the
-  user decides (an agent proposal, a profile fact to confirm, a first-run step) or
-  selects (an account tile). A destructive confirmation is a Dialog (`alertdialog`, a
-  destructive primary), not a card. Never a card inside a card.
-  A decided proposal loses its buttons **and its frame**: one status line (decision 5A).
-- **Weight bar:** a 6 px `muted-foreground` bar with its percentage in Label, inside holding
-  rows and in a legend drawn without a ring (the dashboard's allocation at half width). In
-  an account's own rows it takes the account's identity hue.
-- **Chart axes (#1265):** the dashboard's chart, an account's curve and the benchmark chart draw their scale: three to five value ticks on a 1, 2, 2.5 or 5 step (amounts in compact currency, `17,5 k€`; returns in percent without trailing zeros, `+20 %`), and time ticks on calendar boundaries, the finest of days, weeks, months or years that fits (a January written as its year). Ticks are Label size, `muted-foreground`, tabular numerals; no axis line, no tick mark; the dashed `border` grid sits on the value ticks. Under 768 px the time ticks thin to four, never to none. The axis gives the scale, the tooltip and the reading give the figure.
-- **Buttons:** primary (filled `primary`), secondary (outlined `border`), both 32 px high,
-  44 px on touch. Focus-visible: 2 px `primary` ring, 2 px offset. Disabled: 50 %
-  opacity, no pointer events, the reason given in text next to it. A submit disabled only
-  because its own field is empty needs no sentence: the field's placeholder says what to enter.
-- **Chips (agent profile facts):** outlined, Label size; each opens a popover with
-  the value, its confirmation date, "Modifier" and "Oublier" (decision 13A).
-- **Agent page:** `/agent` and `/agent/<thread>`. Header: the provider and model;
-  "Nouveau fil" and "Fils récents" head the `muted` thread rail (a `border` on its right, no radius) from 1 024 px, and are
-  the header's buttons below. Tool calls are one muted shadcn `trace` line in plain
-  words, shimmering while the call runs; its chevron opens the raw call in a `code-block`, its JSON
-  coloured by shiki (2A). The CIF line "Simulations à partir de vos données
-  déclarées, pas un conseil en investissement." stays fixed under the input (3A).
-  States follow decision 4A. The conversation is the page's `<main>` content, its
-  `<h1>` and document title "Agent"; answers announced once complete (11A), the
-  announcement ending on the facts to confirm when the turn proposed some. An assistant turn
-  reads trace lines, then the answer, then its proposal cards (a proposal call keeps its trace
-  line). While a turn streams, one thing moves at a time: a running tool line, the pending
-  line "Préparation de la réponse…" (a running trace line, no chevron), or the growing text.
-- **PIN screen and Sécurité section (#1203, #1279):** the PIN screen is a single 360 px column on a
-  `muted` plane (`rounded.section`, no border, no shadow) centred on `background`: the product
-  name in Label `muted-foreground`, the heading "Entrez votre code" in Section title, six 44 px
-  slots (`card`, 1 px `border`, `rounded.md`, a dot for a filled slot) in one real
-  numeric input, and a full-width 44 px primary "Déverrouiller". The code is sent at the
-  sixth digit; a wrong code clears the slots and says so in `destructive`; a throttled
-  wait counts down from `Retry-After`, announced at its start and end only. "Code
-  oublié ?" is a collapsible naming `SB_RESET_AUTH`. Under 768 px there is no plane: the
-  column sits on the background, 14 px gutter, in the top third; under 340 px the slot gap
-  narrows to 4 px. A session that ends inside the app opens the same form in a modal,
-  non-dismissable dialog over the mounted page. The *Sécurité* settings section opens on
-  the row "Demander un code", whose `Switch` flips only once its Dialog's action
-  succeeds (on: the new code twice; off: the current code in an `alertdialog` with a
-  destructive primary). With the code off the section is that one row; with it on, four
-  more follow: Code, Verrouillage automatique (a `Select` saved on change, #1313), Jeton
-  d’accès and Cet appareil. Each procedure opens a Dialog, never a card under the row.
-  A regenerated token is shown once, in a Dialog without a close button that only
-  "J'ai copié le jeton" closes. Every Dialog gives the focus back to the control that
-  opened it.
-- **Agent section (#1279):** "Agent activé" is its first row, a `Switch` saved on change
-  and disabled until a connection has passed its test and a model is stored. "Fournisseur"
-  names the provider and the key by its last four; "Configurer" (primary, the first time)
-  or "Changer" opens a 420 px Sheet holding the procedure: the provider, its key ("leave
-  empty to keep …last4") or address, *Tester la connexion*, the model, *Enregistrer*.
-  "Modèle" and "Réflexion" are Selects saved on change: changing the model asks for no
-  key, and its list is asked of the provider on the Select's first opening, never when
-  the page loads.
-- **Mark (#1337):** a 28 px `sidebar-primary` tile, its corners 8/28 of its side (the buttons' `md` at 28 px, scaling with the mark), where the value (a solid line
-  ending on a dot) rises away from the net contributions (dotted, 60 %), both strokes in
-  `sidebar-primary-foreground`: the dashboard chart in one gesture, the gap between the two
-  being the wealth built. It owns no colour, so a replacement theme repaints it. Under 24 px
-  the strokes thicken and the contributions become a faint solid line (45 %), dots not
-  reading there. It heads the sidebar beside the wordmark ("SuiviBourse", Term rung) and
-  stands alone in the folded 64 px rail. The favicon (`favicon.svg`, 32 px and 180 px PNGs)
-  is drawn from the small variant; a tab reads no CSS variable, so it keeps Atelier's ink
-  (with a dark variant in an `@media (prefers-color-scheme: dark)`, which follows the operating
-  system's scheme, not the browser's tab bar or the app's own) and does not follow an imported
-  theme.
-- **Browser surfaces:** selection colour is `primary` at 25 %; caret and focus rings
-  are `primary`; scrollbars are thin and use `border`.
+- **Section:** see Layout. Not interactive.
+- **Card:** `card`, `rounded.card`, 14 px padding. Allowed only for something the user
+  decides (an agent proposal, a first-run step). Never a card inside a card or a section.
+- **Buttons:** on a page, 32 px high, 13/500, padding 0 12, `rounded.md`; in a sheet, a
+  dialog or the first run, 36 px, 14/500, padding 0 14. Outline (`border`, transparent) for
+  every secondary action; **one filled `primary` button per screen**; `destructive` filled
+  only in a destructive dialog, where it replaces the ink. A button carries no icon except
+  Importer (Upload), Exporter / Télécharger (Download) and « + Ajouter » rows (Plus), all
+  16 px. No ghost buttons on a page.
+- **Text action (`.act`):** an action on a row or in a footer that is not the row's main
+  one — « Modifier », « Régénérer », « Révoquer », « Journal », « Tout marquer lu » —
+  is a 13 px `muted-foreground` link, underlined (offset 3, `border` colour),
+  `foreground` on hover. One action per row at most; a row with nothing to do has none.
+- **Text tabs:** on a page, 15/22/500, gap 24, a 2 px `foreground` underline on the active
+  one sitting on the container's 1 px `border`; in a sheet, 14/20, gap 18, active 500,
+  inactive 400. They choose a view (Montants · Performance, Écart · Montants, Tout ·
+  Avertissements · Erreurs) or a type (Achat · Vente · Dividende…). No segmented control
+  except the chart's period and a setting's values (Verrouillage automatique, Apparence).
+- **Filter:** a text button, 13 px `muted-foreground`, value only (« Tous les comptes »,
+  « 7 derniers jours »), ChevronDown 14 px; the chosen value in `foreground`. Opens a
+  listbox popover (`background`, `border`, radius 14, no shadow) with a search field when
+  the list is long (the fund picker).
+- **Search field:** a framed `input` (1 px `input` border, `rounded.md`), 32 px on a page,
+  36 px in a sheet, Search icon inside, placeholder « Rechercher ». Never an underline.
+  The header's ⌘K button reads « Rechercher » too; its accessible name says what it
+  reaches (« Rechercher un titre, un compte… »).
+- **Fields (`.fld` / `.lbl`):** label 12/16/500 `muted-foreground`, field 36 px, `input`
+  border, `rounded.md`; an optional field says « Libellé · facultatif » with the suffix in
+  400; a date field shows `6 nov. 2026` in mono with CalendarDays 16 px; a select shows its
+  value with ChevronDown 16 px.
+- **Sheet (side panel):** 460 px, full height, `border-left`; header 20/28/600 + X;
+  body `gap 24`, `overflow-y: auto`; footer with the destructive text link on the left
+  (« Supprimer ce compte »), then Annuler and the filled button. Title « Modifier X » in
+  edition, the creating verb otherwise. The event sheet ends its body on the effect line.
+- **Destructive dialog:** centred, 440 px, radius 14, `border`, no shadow: a question as
+  title (« Purger 2 historiques ? »), a ruled list of what goes (key in Geist, value in
+  mono muted), one line « Irréversible. … » or « Immédiat. … », Annuler and a filled
+  `destructive` button carrying the verb. Used for purging histories, deleting a thread, an
+  event, an account, revoking a token.
+- **Notifications (the bell):** a 400 px popover under the bell, radius 14, no shadow. It
+  holds only what concerns the owner's figures, in plain French: a late price (« Le cours
+  d'Amundi PEA Nasdaq-100 n'a pas bougé depuis 16:25 · la valeur affichée peut être
+  légèrement en retard »), a finished import, an installed update. TriangleAlert 14 px on
+  the ones to look at, read ones in `muted-foreground`, time in mono on the right, « Tout
+  marquer lu » in the header, « L'état des tâches est dans Système » in the footer.
+  Technical facts (series rebuilt, orphans, tokens) never reach the bell.
+- **⌘K palette:** centred, 600 px, radius 14: a 16 px search line with `esc`, groups in
+  Label (Titres, Événements, Fils de l'agent; or Récents, Actions, Pages), rows 40 px with
+  a 16 px lucide icon (the sidebar's for a page), the match in 600, a sub-line in Table-muted,
+  the amount in mono on the right. No « G puis X » navigation shortcuts; « Verrouiller » locks. « Rien pour « x » » when empty.
+- **Chart axes (#1265):** unchanged: three to five value ticks, compact euros, dashed
+  `border` grid, Label mono ticks, no axis line.
+- **Agent page:** a 240 px `muted` rail (« Nouveau fil ⌘N », search, threads grouped by
+  day, « Statistiques » at the foot), the conversation centred at 768 px. The user's turn
+  has no bubble. A trace is a `<details>` line; hypotheses are a line of underlined values
+  the owner can change; proposals come under the answer as ruled rows with a checkbox, a
+  duplicate unchecked and marked « déjà dans le grand livre »; one filled button « Ajouter
+  N événements ». The composer is a plane with « Joindre un relevé », « @ une ligne ou un
+  compte », the provider · model picker and the ↑ send button, which never turns
+  `primary`. Under it, fixed: « Simulations à partir de vos données, jamais un conseil.
+  Vos chiffres sont envoyés à {fournisseur}. » (« restent sur ce serveur » only when the
+  provider's host is local). *Statistiques* is a page: a hero of tokens exchanged, a cache /
+  new / output bar, weekly stacked bars, Par modèle and Par fil tables; no price.
+- **Réglages:** sections Sécurité, Portefeuille, Agent, Notifications, Affichage, Avancé,
+  each a plane with its title in the 220 px gutter and no lead sentence. A switch is a
+  section's first row where it exists (« Agent activé »). *Sécurité*: Code d'accès (state +
+  Changer le code · Désactiver), Verrouillage automatique (15 min · 1 h · 1 jour · 7 jours ·
+  30 jours), Jetons d'accès · API et MCP as a ruled list (name, scopes and last use in
+  Table-muted, Régénérer · Révoquer as text actions, « + Créer un jeton »). *Portefeuille*:
+  Devise (fixed at first run), Fonds de comparaison list, Modèles d'imposition list.
+  *Agent*: Agent activé, Fournisseurs list (name, « Par défaut », Modifier), Réflexion.
+  *Notifications*: Dans l'application (switch), Canaux list (ntfy, e-mail, webhook,
+  Apprise: name · target, scope, Tester, Modifier, « + Ajouter un canal »). *Affichage*:
+  Apparence, Langue, Densité, Thème (« Personnaliser » opens the Thème page: the token list
+  with a modified marker and Rétablir, a side preview of real pages under tabs). *Avancé*:
+  each row a name, a one-clause description ending on « Par défaut X », a 32 px mono input
+  with its unit (min · sec · jours), Rétablir when modified.
+- **Système:** fixed title; *Tâches* (one ruled row per job: name and short state, a 24-tick
+  hour strip, « 17:35 · prochain 17:40 » in mono, one outline « Lancer »); under it the
+  followed titles, collapsible, in two columns (symbol mono + name, state: « à jour » muted
+  or « ⚠ figé depuis 16:25, 6 passages » in `foreground`), no action per title; *Données*
+  (cours conservés, événements, base de données, « Historiques orphelins · N » with Purger
+  in the sub-head) and *Installation* (version, « Signaler les nouvelles versions » switch,
+  en marche depuis, source des cours, Journal) side by side. No pause, no backup row.
+- **Journal:** a page: « ← Système », « ● En direct », Télécharger; tabs Tout ·
+  Avertissements · Erreurs, filters Toutes les tâches · 7 derniers jours, a search field;
+  ruled rows of time mono · level (info muted, ⚠ avert., ⚠ erreur) · task · raw message in
+  mono, day separators, a « détail » disclosure opening the traceback in a `muted` block.
+  A recovered retry is a warning, not an error.
+- **Import preview:** a page under Grand livre titled « Importer »: « ← Grand livre | file
+  name · N lignes », Autre fichier and the filled « Importer N événements »; tabs Tout ·
+  Nouveaux · Déjà présents · Illisibles, filters « Importer dans PEA » and the format;
+  the ledger's columns plus an *Issue* column (« Nouveau » muted, « Déjà présent · même
+  ISIN, date, quantité, prix », « ⚠ Titre inconnu » with an outline « Associer »).
+- **First run:** four centred steps (520 px, « n sur 4 » in mono): the currency (a select,
+  « Ne se change plus ensuite. »), the tax models of a country as checkboxes (« Écrire mon
+  propre modèle » as a link), the first account (Identifiant, Libellé · facultatif, Modèle
+  d'imposition), then three ruled doors: Importer un relevé (CSV ou Excel) · Saisir à la
+  main · Plus tard. One filled « Continuer », « ← Retour » as text.
+- **PIN screen:** centred, six 44 × 52 slots (`input` border, dot when filled), one line
+  under them: « Code d'accès », « Code incorrect · dernier essai » (`destructive` borders),
+  « Trop d'essais · réessayez dans 4:52 » with the reset command in a mono block. No plane,
+  no button: the code is sent at the sixth digit.
+- **Mark (#1337):** unchanged.
+- **Browser surfaces:** selection colour is `primary` at 25 %; caret and focus rings are
+  `primary`; scrollbars are thin and use `border`.
 
 ## States
 
@@ -570,6 +580,7 @@ Every block ships its four states:
 
 - **Nominal.**
 - **In flight:** the block holds its place as an empty plane, with nothing in it (#795).
+  A chart on the ground does too: its slot is a `muted` plane, never a bare gap.
 - **Empty:** an `EmptyState`, a title, why, and **one** action, as text on its plane
   (never outlined).
 - **Failed:** « Lecture impossible » where the content would have been, never a band; the
@@ -580,17 +591,23 @@ refused write shows a `Refusal` beside its button and keeps what was typed.
 
 ## Do's and Don'ts
 
-- Do keep one hero figure per screen and one performance figure (IRR) visible.
-- Do end every account section with the tax line and "Ce qu'il vous resterait".
-- Do set every figure, in a table or not, in Geist with tabular numerals; Geist Mono is
-  for tickers and account ids (#1281).
+- Do keep one hero figure (or one statement) per screen, and one gain percentage per screen
+  with its base written beside it.
+- Do set every figure in Geist Mono with tabular numerals, right-aligned in a column.
+- Do put every page's actions on its first control line, outline buttons then the one
+  filled one.
+- Do give every list inside a setting its « + Ajouter … » row and one text action per row
+  at most.
 - Do give every new component its empty, loading and error states before it ships.
-- Don't put a card on a page for anything the user does not decide or select.
-- Don't nest a section in a section or a card in a card.
-- Don't colour a row, a pill or a tile with `gain` or `loss`; colour the figure.
-- Don't use uppercase letter-spaced overlines or a kicker above a heading.
-- Don't go back to cream with a serif display (the category's generic look), and don't
-  give Atelier's tokens shadows for depth (component `shadow-*` classes are fine).
+- Don't write a page subtitle that is not a dated fact, a section subtitle that is not a
+  period or a filter, or a sentence that explains a control.
+- Don't put a card on a page for anything the user does not decide; don't nest planes.
+- Don't colour a row, a pill or a tile with `gain` or `loss`; colour the figure. Don't
+  draw a pill or a chip at all.
+- Don't use a glyph arrow (↓ ↑ → ▾) in text; the only exceptions are « ← » on a back
+  link and the agent's send button.
+- Don't show the technical state of the server in the bell: it belongs to Système.
+- Don't give a floating surface a shadow, and don't go back to cream with a serif display.
 
 ## Motion
 
@@ -601,10 +618,8 @@ refused write shows a `Refusal` beside its button and keeps what was typed.
   the new one (250 ms, ease-out). One movement, two triggers: a merged proposal
   and a refreshed value (the figures poll every minute, #1180). A change under
   0.1 % of the value is instant, so the cents do not twitch all day. Nothing
-  else animates on entry: the pills change instantly. `prefers-reduced-motion`
+  else animates on entry. `prefers-reduced-motion`
   turns it into an instant change.
-- **Dragging a dashboard section:** only the gesture moves; the other sections slide to
-  their new place (short, ease-in-out), and not at all under `prefers-reduced-motion`.
 
 ## Decisions Log
 
@@ -649,3 +664,13 @@ refused write shows a `Refusal` beside its button and keeps what was typed.
 | 2026-10-31 | The theme is edited as a form with a live preview (#1314) | A textarea of JSON asked the owner to know 40 token names and to apply blind. The form names the 16 colours the design reads, previews them on the real app before anything is saved, and keeps the JSON as an expert escape hatch for the keys it does not show. The preview is one stylesheet, not inline variables, so both grounds keep their own palette; the dark palette is previewed in dark whatever the device is set to. |
 | 2026-10-30 | The dashboard's third track (#1325) | Packing, move and drag rules for three tracks: consecutive halves fill rows of three; a lone half that accepts the full width is drawn across the row, other leftover tracks are free cells ("Place libre" in edit mode, one outline per track); a full section takes the whole row and jumps a whole row when moved; the stored list and `LAYOUT_VERSION` are untouched. The default order becomes allocation, gain breakdown, rhythm, movers, so three tracks show three halves then the movers across the row (saved layouts are untouched). The movers show fifteen lines in columns of five across three tracks, the allocation's legend a third column. |
 | 2026-11-04 | The Sécurité and agent sections follow #1279 (#1436, item 17) | The owner settled the conflict #1436 left open: #1279 wins over the title-row switch and the cards under the rows. A section's switch is its first row, never in its title row; a procedure opens a Dialog or a Sheet; « Accès » becomes « Sécurité ». The agent's connection moves into a Sheet, and its model becomes a value saved on change without the key. |
+| 2026-11-07 | Direction « Relevé » adopted on the dashboard, then propagated (Design canvas, page *Refonte*) | The owner liked Atelier but found it « generated »: every figure moves to Geist Mono with tabular numerals (reversing #1281's table half and #838's figure half), tables and lists sit on the ground with 1 px rules, text tabs replace segmented controls, one filled button per screen. Validated first on the dashboard (« Relevé C »), then on every page. |
+| 2026-11-07 | The dashboard is fixed; the arrangeable grid, its edit mode and hidden cards are removed | Reverses the rows of 2026-10-11, 2026-10-20 (#1280) and 2026-10-30 (#1325). The owner chose a fixed composition: hero, chart, *Rythme d'investissement* and *Valeur des titres* (top four lines + « autres »). *Mouvements* leaves the dashboard; the day's move reads in Titres under the price. |
+| 2026-11-07 | Titres is the table alone; a security's sheet becomes a page | The toggle by title / by account, the closed lines, the fees and the note under the table were rejected as a « ticket de caisse ». The sheet (`ShareSheet`) becomes the page `/shares/<symbol>`. |
+| 2026-11-08 | « L'état, pas l'explication » | Applied to every page after the Système review: a fixed page title (no dynamic verdict), no subtitle but a dated fact, no help sentence, no section subtitle that repeats its content, one action per row. The exceptions are listed under *Content*. |
+| 2026-11-08 | A compte has no type | A compte is an identifiant, an optional libellé and a modèle d'imposition. « Déclarer un compte » becomes « Ajouter un compte ». The first run gains a step that imports the tax models of a country before the first account. |
+| 2026-11-08 | Système: no pause, no backup, no action per title; alerts are a mark and a notification | Successive owner decisions: Lancer/Pause text (misaligned), play/pause icons (« how can one both play and pause? ») and a « Planifiée » switch (« not clearer ») were rejected for one « Lancer » per job; « nobody pauses the scraping »; « Relever » on a frozen title does nothing the next pass would not do. The frozen title keeps a ⚠ in the followed-titles list and the bell carries the notice. The app has no backup, so no backup row. Journal becomes a page. |
+| 2026-11-08 | Coherence pass over the 27 refonte sources | An independent audit found four page-button styles, four tab grammars, three envelope paddings, seven row heights, two section grammars. Unified: `32px 32px 56px`; page buttons 32 px / sheet 36 px; page tabs 15/22 with a 2 px rule; filters as text + chevron; rows 40 / 48; Réglages on the same planes as the other pages; links in `foreground`; floating surfaces radius 14 without shadow; one TokenCreated source. Full report: `claude/coherence-refonte.md` in the project. |
+| 2026-11-08 | Four personas reviewed the refonte; eight changes applied | Théo (first PEA), Hélène (multi-wrapper, spreadsheet), Mehdi (homelab SRE), Claire (monthly reader). Common findings: several totals and gains that did not reconcile, a « −837,20 € » hero read as a loss, jargon without a net, contradictory tax rates in the mockups, no reassurance before a write, technical alerts in the bell. Applied: *Référence* becomes *Comparaison* with a sentence hero; the dashboard gains the variation over the period, the cash and « Net si tout vendu »; one official gain (the dashboard's) and labelled bases elsewhere; « prix moyen d'achat », periods in words, « Ajouter un compte »; the effect line in the event sheet; the import names its account, its matching criterion and offers « Associer »; the bell speaks French and keeps the technical state in Système; a *Notifications* section in Réglages; mock data aligned (prices of 6 Nov. 2026, PS 18,6 %, CTO 31,4 %). Report: `claude/personas-retours-refonte.md`. |
+| 2026-11-09 | Staging feedback, first pass | The owner's staging walk: Réglages and the Thème preview take the full width (the 1 040 px cap goes); the palette loses the « G puis X » shortcuts and « Revoir la mise en route » and gains an icon per entry; « Se déconnecter » becomes « Verrouiller »; the PIN is set with the same six cells as the lock screen; no password-manager suggestion outside the unlock; the broker import profiles go (written without real statements), only the app's own layout is read, each row keeping its own account. |
+| 2026-11-10 | Unslop pass over the refonte (polish) | The audit found the Relevé direction sound and the craft uneven. Figures: a `Figure words` face lays Geist over the mono's separators and lowercase letters (the decimal comma took a digit cell, months read like a terminal), `word-spacing` goes; the IRR and the monthly average become figures in their sentence. Colour: the gain's share of the bar under a value is `gain`, not `chart-1` blue; the Comparaison's gap curve and band are `muted-foreground` and `muted` at full opacity, as #1282 said. Layout: a chart in flight is a `muted` plane, sections side by side keep their own height, the agent's empty state is centred. Copy: « Rechercher » in the header, no « à minuit UTC », the Comparaison's accounts by their libellé. |

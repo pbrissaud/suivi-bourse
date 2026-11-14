@@ -270,6 +270,13 @@ class PortfolioReader:
             ' WHERE day <= CAST(? AS DATE) ORDER BY day DESC LIMIT 1', [day])
         return _stamp(dict(zip(PERF_COLUMNS, rows[0]))) if rows else None
 
+    def first_totals(self) -> Optional[Dict[str, Any]]:
+        """The oldest ``portfolio_totals`` point, or ``None`` when there is none."""
+        rows = self._store.query(
+            f'SELECT {", ".join(PERF_COLUMNS)} FROM portfolio_totals '
+            ' ORDER BY day LIMIT 1')
+        return _stamp(dict(zip(PERF_COLUMNS, rows[0]))) if rows else None
+
     def twr_origin(self) -> Optional[date]:
         """The day the time-weighted index counts from — ``MIN(day)``."""
         rows = self._store.query(

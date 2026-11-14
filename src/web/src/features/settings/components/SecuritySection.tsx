@@ -1,23 +1,23 @@
 /**
- * *Sécurité* — the optional PIN (#1203), off by default, on the row pattern
- * (#1279).
+ * *Sécurité* — the optional PIN (#1203) and the access tokens, on the row
+ * pattern.
  *
- * Its first row, « Demander un code », is the switch: it reflects what is
- * stored and flips only once its Dialog's action has succeeded — turning it on
- * asks *new code, then confirm*, turning it off asks the current code in an
- * `alertdialog`. With the code off the section is that one row. With it on,
- * four rows follow — the code, the auto-lock, the access token, this device.
- * The auto-lock is a value saved on change (#1313); each other procedure opens
- * a Dialog, never a card under its row. The token is shown once, in a Dialog
- * only *J’ai copié le jeton* closes. Focus returns to the control that opened a
- * Dialog when it closes.
+ * *Code d'accès* states whether a code is set and offers what can be done with
+ * it: off, « Activer le code »; on, « Changer le code » and « Désactiver ».
+ * Each procedure opens a Dialog, never a card under its row, and focus returns
+ * to the control that opened it. With the code on, two rows follow:
+ * *Verrouillage automatique* — a value saved on change (#1313) — and the
+ * *Jetons d'accès* list, whose secrets are shown once in a side panel. Revoking
+ * and regenerating are `ConfirmDestructive`.
  */
-import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useId, useRef, useState, type FormEvent, type ReactNode, type Ref } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
+import { ConfirmDestructive } from '@/components/ConfirmDestructive'
+import { Refusal } from '@/components/Refusal'
+import { Segmented } from '@/components/Segmented'
 import { Button } from '@/components/ui/button'
-import { CodeBlock, CodeBlockContent, CodeBlockLine } from '@/components/ui/code-block'
 import {
   Dialog,
   DialogContent,
@@ -25,37 +25,34 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
+import { REGEXP_ONLY_DIGITS } from 'input-otp'
+
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { useAuth } from '@/features/auth/components/AuthBoot'
+import { authApi, refusedWith } from '@/features/auth/lib/api'
 import {
-  authApi,
-  claudeDesktopConfig,
-  refusedWith,
-  type IssuedToken,
-} from '@/features/auth/lib/api'
+  AddRow,
+  ListRow,
+  ListSetting,
+  TextAction,
+} from '@/features/settings/components/ListSetting'
 import { SettingRow } from '@/features/settings/components/SettingRow'
 import { SettingsSection, type SectionRead } from '@/features/settings/components/SettingsSection'
+import { scopeWords, TokenSheet } from '@/features/settings/components/TokenSheet'
 import { useRowSave } from '@/features/settings/lib/useRowSave'
+import { api, type AccessToken, type IssuedAccessToken } from '@/lib/api'
 import { useFormatters } from '@/lib/format'
-import { sessionEnded } from '@/lib/session'
 import { useI18n, type MessageKey } from '@/lib/i18n'
-import { problemMessageKey } from '@/lib/problem'
+import { problemMessageKey, problemSentence } from '@/lib/problem'
+import { sessionEnded } from '@/lib/session'
 
-type Procedure = 'enable' | 'disable' | 'change' | 'regenerate'
+type Procedure = 'enable' | 'disable' | 'change'
 
 const PIN = /^[0-9]{6}$/
-const SWITCH_ID = 'security-ask'
 
 /** `auth_rules.SESSION_PRESETS`, in seconds; the server refuses any other. */
-const LIFETIME_LABEL: Record<number, MessageKey> = {
+const LIFETIMES = [900, 3600, 86400, 604800, 2592000] as const
+const LIFETIME_LABEL: Record<(typeof LIFETIMES)[number], MessageKey> = {
   900: 'settings.security.lock.900',
   3600: 'settings.security.lock.3600',
   86400: 'settings.security.lock.86400',
@@ -72,13 +69,11 @@ const DEFAULT_LIFETIME = 2592000
 export function SecuritySection({ read }: { read: SectionRead }) {
   const { t } = useI18n()
   const f = useFormatters()
-  const { status, update, signedOut } = useAuth()
+  const { status, update } = useAuth()
   const [open, setOpen] = useState<Procedure | null>(null)
-  const [token, setToken] = useState<IssuedToken | null>(null)
-  const noteId = useId()
   const enabled = status.enabled
   // The control that opened a Dialog: it gets the focus back when it closes.
-  // Radix gives it back to a `DialogTrigger` only, and these open from a switch.
+  // Radix gives it back to a `DialogTrigger` only, and these open from buttons.
   const opener = useRef<HTMLElement | null>(null)
   const procedure = (next: Procedure) => {
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -90,80 +85,36 @@ export function SecuritySection({ read }: { read: SectionRead }) {
   }
   const close = () => setOpen(null)
 
-  const issued = (answer: IssuedToken) => {
-    setOpen(null)
-    setToken(answer)
-    update({
-      ...status,
-      enabled: true,
-      authenticated: true,
-      token_created_at: answer.token_created_at,
-    })
-  }
-
-  const logout = useMutation({ mutationFn: authApi.logout, onSuccess: signedOut })
-
   return (
     <SettingsSection id="security" title={t('settings.security.title')} read={read}>
       <SettingRow
-        id={SWITCH_ID}
-        label={t('settings.security.ask')}
-        description={enabled ? undefined : t('settings.access.off')}
+        label={t('settings.access.code')}
+        description={
+          enabled
+            ? status.enabled_since
+              ? t('settings.security.code.since', { date: f.date(status.enabled_since) })
+              : t('settings.security.code.on')
+            : t('settings.security.code.off')
+        }
       >
-        <Switch
-          id={SWITCH_ID}
-          aria-describedby={enabled ? noteId : `${SWITCH_ID}-description ${noteId}`}
-          className="pointer-coarse:after:-inset-3.5"
-          checked={enabled}
-          onCheckedChange={(on) => procedure(on ? 'enable' : 'disable')}
-        />
-        <p id={noteId} className="sr-only">
-          {t('settings.access.switch.note')}
-        </p>
+        <div className="flex gap-2">
+          {enabled ? (
+            <>
+              <Button onClick={() => procedure('change')}>
+                {t('settings.security.changeCode')}
+              </Button>
+              <Button onClick={() => procedure('disable')}>{t('settings.security.disable')}</Button>
+            </>
+          ) : (
+            <Button onClick={() => procedure('enable')}>{t('settings.access.enable')}</Button>
+          )}
+        </div>
       </SettingRow>
 
       {enabled ? (
         <>
-          <SettingRow label={t('settings.access.code')}>
-            <Button variant="outline" className="max-md:h-11" onClick={() => procedure('change')}>
-              {t('settings.security.changeCode')}
-            </Button>
-          </SettingRow>
           <LifetimeRow />
-          <SettingRow
-            label={t('settings.access.token')}
-            description={[
-              t('settings.access.token.use'),
-              status.token_created_at
-                ? t('settings.security.token.made', { date: f.date(status.token_created_at) })
-                : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          >
-            <Button
-              variant="outline"
-              className="max-md:h-11"
-              onClick={() => procedure('regenerate')}
-            >
-              {t('settings.access.regenerate')}
-            </Button>
-          </SettingRow>
-          <SettingRow label={t('settings.access.device')}>
-            <Button
-              variant="outline"
-              className="max-md:h-11"
-              disabled={logout.isPending}
-              onClick={() => logout.mutate()}
-            >
-              {t('settings.access.logout')}
-            </Button>
-            {logout.isError ? (
-              <p role="alert" className="max-w-72 text-right text-xs text-destructive">
-                {t(problemMessageKey(logout.error))}
-              </p>
-            ) : null}
-          </SettingRow>
+          <TokensList />
         </>
       ) : null}
 
@@ -171,24 +122,20 @@ export function SecuritySection({ read }: { read: SectionRead }) {
         refocus={refocus}
         open={open === 'enable'}
         onClose={close}
-        onDone={(answer) => {
+        onDone={() => {
+          close()
           toast.success(t('settings.access.receipt.enabled'))
-          issued(answer)
+          update({ enabled: true, authenticated: true })
         }}
       />
-      <CurrentCodeDialog
+      <DisableDialog
         refocus={refocus}
         open={open === 'disable'}
-        title="settings.access.disable"
-        note="settings.access.disable.note"
-        action="settings.access.disable"
-        destructive
         onClose={close}
-        run={authApi.disable}
         onDone={() => {
           close()
           toast.success(t('settings.access.receipt.disabled'))
-          update({ enabled: false, authenticated: false, token_created_at: null })
+          update({ enabled: false, authenticated: false })
         }}
       />
       <ChangeDialog
@@ -200,20 +147,6 @@ export function SecuritySection({ read }: { read: SectionRead }) {
           toast.success(t('settings.access.receipt.changed'))
         }}
       />
-      <CurrentCodeDialog
-        refocus={refocus}
-        open={open === 'regenerate'}
-        title="settings.security.regenerate.title"
-        note="settings.access.regenerate.note"
-        action="settings.access.regenerate"
-        onClose={close}
-        run={authApi.regenerate}
-        onDone={(answer) => {
-          toast.success(t('settings.access.receipt.regenerated'))
-          issued(answer as IssuedToken)
-        }}
-      />
-      <TokenDialog token={token} refocus={refocus} onDone={() => setToken(null)} />
     </SettingsSection>
   )
 }
@@ -226,7 +159,6 @@ export function SecuritySection({ read }: { read: SectionRead }) {
 function LifetimeRow() {
   const { t } = useI18n()
   const { status, update } = useAuth()
-  const id = 'security-lifetime'
   const save = useRowSave({
     send: async (seconds: number) => {
       try {
@@ -246,24 +178,19 @@ function LifetimeRow() {
   const value = save.chosen?.value ?? (stored in LIFETIME_LABEL ? stored : DEFAULT_LIFETIME)
 
   return (
-    <SettingRow
-      id={id}
-      label={t('settings.security.lock')}
-      description={t('settings.security.lock.help')}
-      state={save.state}
-    >
-      <Select value={String(value)} onValueChange={(next) => save.save(Number(next))}>
-        <SelectTrigger id={id} aria-describedby={`${id}-description`} className="w-44 max-md:h-11">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {Object.entries(LIFETIME_LABEL).map(([seconds, label]) => (
-            <SelectItem key={seconds} value={seconds}>
-              {t(label)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+    <SettingRow label={t('settings.security.lock')} state={save.state}>
+      <Segmented
+        mode="radio"
+        bordered
+        size="compact"
+        label={t('settings.security.lock')}
+        value={String(value)}
+        onChange={(next) => save.save(Number(next))}
+        options={LIFETIMES.map((seconds) => ({
+          value: String(seconds),
+          label: t(LIFETIME_LABEL[seconds]),
+        }))}
+      />
     </SettingRow>
   )
 }
@@ -276,13 +203,115 @@ function lifetimeRefusal(error: unknown): MessageKey {
   return problemMessageKey(error)
 }
 
+/** *Jetons d'accès · API et MCP*: the list, its two text actions, its add row. */
+function TokensList() {
+  const { t } = useI18n()
+  const f = useFormatters()
+  const client = useQueryClient()
+  const tokens = useQuery({ queryKey: ['tokens'], queryFn: api.tokens })
+  const [sheet, setSheet] = useState(false)
+  /** What the panel shows once a secret exists: from a creation or a regeneration. */
+  const [issued, setIssued] = useState<IssuedAccessToken | null>(null)
+  const [revoking, setRevoking] = useState<AccessToken | null>(null)
+  const [regenerating, setRegenerating] = useState<AccessToken | null>(null)
+
+  const remove = useMutation({
+    mutationFn: (token: AccessToken) => api.deleteToken(token.id),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['tokens'] })
+      setRevoking(null)
+    },
+  })
+  const write = useMutation({
+    mutationFn: (token: AccessToken) => api.regenerateToken(token.id),
+    onSuccess: (answer) => {
+      void client.invalidateQueries({ queryKey: ['tokens'] })
+      setRegenerating(null)
+      setIssued(answer)
+      setSheet(true)
+    },
+  })
+  const closeSheet = () => {
+    setSheet(false)
+    setIssued(null)
+  }
+
+  return (
+    <ListSetting label={t('settings.token.list')} hint={t('settings.token.list.hint')}>
+      {tokens.data?.tokens.map((token) => (
+        <ListRow
+          key={token.id}
+          name={token.label}
+          sub={
+            <>
+              {scopeWords(token.scopes, t('settings.token.and'))} ·{' '}
+              <span className="fig">{`sb_${token.prefix}…`}</span> ·{' '}
+              {token.last_used_at
+                ? t('settings.token.used', { date: f.date(token.last_used_at) })
+                : t('settings.token.neverUsed')}
+            </>
+          }
+          actions={
+            <>
+              <TextAction
+                aria-label={`${t('settings.token.regenerate')} ${token.label}`}
+                onClick={() => {
+                  write.reset()
+                  setRegenerating(token)
+                }}
+              >
+                {t('settings.token.regenerate')}
+              </TextAction>
+              <TextAction
+                aria-label={`${t('settings.token.revoke')} ${token.label}`}
+                onClick={() => {
+                  remove.reset()
+                  setRevoking(token)
+                }}
+              >
+                {t('settings.token.revoke')}
+              </TextAction>
+            </>
+          }
+        />
+      ))}
+      <AddRow onClick={() => setSheet(true)}>{t('settings.token.add')}</AddRow>
+
+      {sheet ? <TokenSheet issued={issued} onIssued={setIssued} onClose={closeSheet} /> : null}
+
+      <ConfirmDestructive
+        open={revoking !== null}
+        onOpenChange={(next) => (next ? undefined : setRevoking(null))}
+        title={t('settings.token.revoke.title', { name: revoking?.label ?? '' })}
+        line={t('settings.token.revoke.line')}
+        confirmLabel={t('settings.token.revoke')}
+        pending={remove.isPending}
+        error={remove.isError ? <Refusal>{problemSentence(t, remove.error)}</Refusal> : null}
+        onConfirm={() => {
+          if (revoking) remove.mutate(revoking)
+        }}
+      />
+      <ConfirmDestructive
+        open={regenerating !== null}
+        onOpenChange={(next) => (next ? undefined : setRegenerating(null))}
+        title={t('settings.token.regenerate.title', { name: regenerating?.label ?? '' })}
+        line={t('settings.token.regenerate.line')}
+        confirmLabel={t('settings.token.regenerate')}
+        pending={write.isPending}
+        error={write.isError ? <Refusal>{problemSentence(t, write.error)}</Refusal> : null}
+        onConfirm={() => {
+          if (regenerating) write.mutate(regenerating)
+        }}
+      />
+    </ListSetting>
+  )
+}
+
 /** A procedure's Dialog: a form, Escape and the close button give up. */
 function CodeDialog({
   open,
   refocus,
   title,
-  note,
-  destructive = false,
   onClose,
   onSubmit,
   children,
@@ -290,8 +319,6 @@ function CodeDialog({
   open: boolean
   refocus: (event: Event) => void
   title: MessageKey
-  note?: MessageKey
-  destructive?: boolean
   onClose: () => void
   onSubmit: (event: FormEvent) => void
   children: ReactNode
@@ -302,13 +329,11 @@ function CodeDialog({
       <DialogContent
         onCloseAutoFocus={refocus}
         className="sm:max-w-sm"
-        // A destructive confirmation says so to assistive technology.
-        role={destructive ? 'alertdialog' : 'dialog'}
-        {...(note ? {} : { 'aria-describedby': undefined })}
+        aria-describedby={undefined}
       >
         <DialogHeader>
           <DialogTitle>{t(title)}</DialogTitle>
-          {note ? <DialogDescription>{t(note)}</DialogDescription> : null}
+          <DialogDescription className="sr-only">{t(title)}</DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-3">
           {children}
@@ -323,11 +348,13 @@ function CodeField({
   value,
   onChange,
   current = false,
+  inputRef,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   current?: boolean
+  inputRef?: Ref<HTMLInputElement>
 }) {
   const id = useId()
   return (
@@ -335,16 +362,27 @@ function CodeField({
       <label htmlFor={id} className="block text-sm">
         {label}
       </label>
-      <Input
+      <InputOTP
         id={id}
-        type="password"
-        inputMode="numeric"
-        autoComplete={current ? 'current-password' : 'new-password'}
+        ref={inputRef}
         maxLength={6}
+        pattern={REGEXP_ONLY_DIGITS}
+        inputMode="numeric"
+        autoComplete={current ? 'current-password' : 'off'}
         value={value}
-        onChange={(event) => onChange(event.target.value.replace(/[^0-9]/g, ''))}
-        className="font-mono max-md:h-11"
-      />
+        onChange={onChange}
+      >
+        <InputOTPGroup className="gap-2">
+          {Array.from({ length: 6 }, (_, index) => (
+            <InputOTPSlot
+              key={index}
+              index={index}
+              masked
+              className="h-10 w-9 rounded-md border first:rounded-md first:border-l last:rounded-md"
+            />
+          ))}
+        </InputOTPGroup>
+      </InputOTP>
     </div>
   )
 }
@@ -370,26 +408,19 @@ function Refused({ error }: { error: unknown }) {
 function Actions({
   label,
   pending,
-  destructive = false,
   onClose,
 }: {
   label: MessageKey
   pending: boolean
-  destructive?: boolean
   onClose: () => void
 }) {
   const { t } = useI18n()
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      <Button type="button" variant="ghost" className="max-md:h-11" onClick={onClose}>
+      <Button type="button" size="sheet" onClick={onClose}>
         {t('settings.access.cancel')}
       </Button>
-      <Button
-        type="submit"
-        variant={destructive ? 'destructive' : 'default'}
-        className="max-md:h-11"
-        disabled={pending}
-      >
+      <Button type="submit" size="sheet" variant="primary" disabled={pending}>
         {t(label)}
       </Button>
     </div>
@@ -403,6 +434,20 @@ function invalidNewCode(pin: string, again: string): MessageKey | null {
   return null
 }
 
+/**
+ * After « Les deux codes diffèrent »: the confirmation starts over, in its
+ * first cell. Left half-typed it invited a patch on top of a wrong entry.
+ */
+function restartConfirmation(
+  wrong: MessageKey | null,
+  setAgain: (value: string) => void,
+  field: { current: HTMLInputElement | null },
+) {
+  if (wrong !== 'settings.access.mismatch') return
+  setAgain('')
+  field.current?.focus()
+}
+
 function EnableDialog({
   open,
   refocus,
@@ -412,12 +457,13 @@ function EnableDialog({
   open: boolean
   refocus: (event: Event) => void
   onClose: () => void
-  onDone: (answer: IssuedToken) => void
+  onDone: () => void
 }) {
   const { t } = useI18n()
   const [pin, setPin] = useState('')
   const [again, setAgain] = useState('')
   const [invalid, setInvalid] = useState<MessageKey | null>(null)
+  const confirmation = useRef<HTMLInputElement>(null)
   // The dialog stays mounted when closed: what was typed goes with each closing.
   const clear = () => {
     setPin('')
@@ -426,9 +472,9 @@ function EnableDialog({
   }
   const enable = useMutation({
     mutationFn: authApi.enable,
-    onSuccess: (answer) => {
+    onSuccess: () => {
       clear()
-      onDone(answer)
+      onDone()
     },
   })
   const give = () => {
@@ -447,11 +493,17 @@ function EnableDialog({
         event.preventDefault()
         const wrong = invalidNewCode(pin, again)
         setInvalid(wrong)
+        restartConfirmation(wrong, setAgain, confirmation)
         if (wrong === null) enable.mutate(pin)
       }}
     >
       <CodeField label={t('settings.access.new')} value={pin} onChange={setPin} />
-      <CodeField label={t('settings.access.confirm')} value={again} onChange={setAgain} />
+      <CodeField
+        label={t('settings.access.confirm')}
+        value={again}
+        onChange={setAgain}
+        inputRef={confirmation}
+      />
       <Refused error={invalid ?? enable.error} />
       <Actions label="settings.access.enable" pending={enable.isPending} onClose={give} />
     </CodeDialog>
@@ -474,6 +526,7 @@ function ChangeDialog({
   const [pin, setPin] = useState('')
   const [again, setAgain] = useState('')
   const [invalid, setInvalid] = useState<MessageKey | null>(null)
+  const confirmation = useRef<HTMLInputElement>(null)
   const clear = () => {
     setCurrent('')
     setPin('')
@@ -503,6 +556,7 @@ function ChangeDialog({
         event.preventDefault()
         const wrong = PIN.test(current) ? invalidNewCode(pin, again) : 'settings.access.sixDigits'
         setInvalid(wrong)
+        restartConfirmation(wrong, setAgain, confirmation)
         if (wrong === null) change.mutate()
       }}
     >
@@ -513,33 +567,29 @@ function ChangeDialog({
         current
       />
       <CodeField label={t('settings.access.new')} value={pin} onChange={setPin} />
-      <CodeField label={t('settings.access.confirm')} value={again} onChange={setAgain} />
+      <CodeField
+        label={t('settings.access.confirm')}
+        value={again}
+        onChange={setAgain}
+        inputRef={confirmation}
+      />
       <Refused error={invalid ?? change.error} />
       <Actions label="settings.access.change" pending={change.isPending} onClose={give} />
     </CodeDialog>
   )
 }
 
-function CurrentCodeDialog({
+/** Switching the code off asks the current one, inside the destructive dialog. */
+function DisableDialog({
   open,
   refocus,
-  title,
-  note,
-  action,
-  destructive = false,
   onClose,
-  run,
   onDone,
 }: {
   open: boolean
   refocus: (event: Event) => void
-  title: MessageKey
-  note: MessageKey
-  action: MessageKey
-  destructive?: boolean
   onClose: () => void
-  run: (current: string) => Promise<unknown>
-  onDone: (answer: unknown) => void
+  onDone: () => void
 }) {
   const { t } = useI18n()
   const [current, setCurrent] = useState('')
@@ -548,32 +598,33 @@ function CurrentCodeDialog({
     setCurrent('')
     setInvalid(null)
   }
-  const mutation = useMutation({
-    mutationFn: () => run(current),
-    onSuccess: (answer) => {
+  const disable = useMutation({
+    mutationFn: () => authApi.disable(current),
+    onSuccess: () => {
       clear()
-      onDone(answer)
+      onDone()
     },
   })
   const give = () => {
     clear()
-    mutation.reset()
+    disable.reset()
     onClose()
   }
 
   return (
-    <CodeDialog
-      refocus={refocus}
+    <ConfirmDestructive
       open={open}
-      title={title}
-      note={note}
-      destructive={destructive}
-      onClose={give}
-      onSubmit={(event) => {
-        event.preventDefault()
+      onOpenChange={(next) => (next ? undefined : give())}
+      title={t('settings.access.disable.title')}
+      line={t('settings.access.disable.line')}
+      confirmLabel={t('settings.access.disable.cta')}
+      pending={disable.isPending}
+      onCloseAutoFocus={refocus}
+      error={<Refused error={invalid ?? disable.error} />}
+      onConfirm={() => {
         const wrong = PIN.test(current) ? null : 'settings.access.sixDigits'
         setInvalid(wrong)
-        if (wrong === null) mutation.mutate()
+        if (wrong === null) disable.mutate()
       }}
     >
       <CodeField
@@ -582,97 +633,6 @@ function CurrentCodeDialog({
         onChange={setCurrent}
         current
       />
-      <Refused error={invalid ?? mutation.error} />
-      <Actions
-        label={action}
-        pending={mutation.isPending}
-        destructive={destructive}
-        onClose={give}
-      />
-    </CodeDialog>
-  )
-}
-
-/** Shown once: only *J’ai copié le jeton* closes it — not Escape, not a click outside. */
-function TokenDialog({
-  token,
-  refocus,
-  onDone,
-}: {
-  token: IssuedToken | null
-  refocus: (event: Event) => void
-  onDone: () => void
-}) {
-  const { t } = useI18n()
-  const [copied, setCopied] = useState(false)
-  const config = token ? claudeDesktopConfig(window.location.origin, token.token) : ''
-
-  const copy = async (value: string) => {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopied(true)
-    } catch {
-      setCopied(false)
-    }
-  }
-
-  return (
-    <Dialog open={token !== null}>
-      <DialogContent
-        showCloseButton={false}
-        onCloseAutoFocus={refocus}
-        onEscapeKeyDown={(event) => event.preventDefault()}
-        onPointerDownOutside={(event) => event.preventDefault()}
-        onInteractOutside={(event) => event.preventDefault()}
-      >
-        <DialogHeader>
-          <DialogTitle>{t('settings.access.token.title')}</DialogTitle>
-          <DialogDescription>{t('settings.access.token.once')}</DialogDescription>
-        </DialogHeader>
-        {token ? (
-          <>
-            <div className="flex flex-wrap items-center gap-2">
-              <code className="font-mono text-sm break-all">{token.token}</code>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void copy(token.token)}
-              >
-                {t(copied ? 'settings.access.token.copied' : 'settings.access.token.copy')}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">{t('settings.access.token.desktop')}</p>
-            <CodeBlock size="sm">
-              <CodeBlockContent wrap>
-                {config.split('\n').map((line, index) => (
-                  <CodeBlockLine key={index}>{line}</CodeBlockLine>
-                ))}
-              </CodeBlockContent>
-            </CodeBlock>
-            <p className="text-xs text-muted-foreground">{t('settings.access.token.script')}</p>
-            <CodeBlock size="sm">
-              <CodeBlockContent wrap>
-                <CodeBlockLine>
-                  {`curl -H "Authorization: Bearer ${token.token}" ${window.location.origin}/api/positions`}
-                </CodeBlockLine>
-              </CodeBlockContent>
-            </CodeBlock>
-          </>
-        ) : null}
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button
-            type="button"
-            className="max-md:h-11"
-            onClick={() => {
-              setCopied(false)
-              onDone()
-            }}
-          >
-            {t('settings.access.token.done')}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+    </ConfirmDestructive>
   )
 }

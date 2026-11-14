@@ -17,6 +17,7 @@ from application import build_info
 from application import carrying
 from application import installation_facts
 from application import job_store
+from application import journal
 from application import ledger
 from application import positions
 from application import runtime_state
@@ -48,7 +49,7 @@ MANAGED_LOGGERS = (
     'advisories',
     'market',
     'agent', 'auth',
-    'update_check',
+    'update_check', 'api.system', 'notifications',
 )
 
 
@@ -405,6 +406,7 @@ def build_runtime(env: Optional[Mapping[str, str]] = None) -> Runtime:
     # unknown, both are at the default, so the two can never disagree.
     raw_level = boot_env.text(env, boot_env.LOG_LEVEL)
     _apply_log_level(boot_env.log_level(env))
+    journal.install()
     build = build_info.describe(env, build_info.checkout_revision())
     app_logger.info(
         f'SuiviBourse {build_info.said(build)} is running !',
@@ -416,6 +418,7 @@ def build_runtime(env: Optional[Mapping[str, str]] = None) -> Runtime:
             f"logging at {boot_env.DEFAULT_LOG_LEVEL}")
 
     boot = boot_env.read(env)
+    journal.install(boot.store_dir / 'logs')
 
     report_unread_environment(env)
 

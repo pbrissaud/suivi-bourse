@@ -85,6 +85,7 @@ import {
 import { ChartReading } from '@/components/ChartReading'
 import { ChartTooltip } from '@/components/ChartTooltip'
 import { Segmented } from '@/components/Segmented'
+import { TextTabs } from '@/components/TextTabs'
 import { EmptyState } from '@/components/EmptyState'
 import { Unreadable } from '@/components/Unreadable'
 import type { PerfPoint } from '@/features/accounts/lib/api'
@@ -167,7 +168,7 @@ export function PortfolioChart({
   // one place. #799's repair survives the band's removal — the head keeps its
   // figures either way.
   if ((ledger ? performance : valuation) === null) {
-    return failure === null ? null : <Unreadable failure={failure} />
+    return failure === null ? <ChartInFlight /> : <Unreadable failure={failure} />
   }
 
   const reading: Reading = ledger ? chosen : 'amounts'
@@ -240,24 +241,19 @@ export function PortfolioChart({
     // Bare, with no card of its own: it is drawn inside the hero, which sits
     // on the ground, and a card there would decorate nothing the user decides.
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {/* **Buttons, and neither tabs nor radios** (#831). The maquette draws
-              this selector segmented exactly as the range beside it, and
-              nothing here is a place to go: pressing one swaps what the slot
-              below draws, which is what `aria-pressed` says and what a tab
-              would misname. At one reading there is nothing to choose, so there
-              is no control at all, only the heading — and the range sits beside
-              it and sets this chart's window only. One bar, one track look
-              (#1150): on a narrow screen the range wraps under the reading. */}
+      {/* **The reading is text tabs, the period a segmented control in words**
+          (« Relevé »). Both sit on one 1 px line: the active tab's underline is
+          the line's own interruption. At one reading there is nothing to
+          choose, so the heading wears the lone tab's look. The period is the
+          page's, and it also drives the variation line in the head. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b">
         {ledger ? (
-          <Segmented
-            bordered
-            mode="pressed"
-            size="compact"
+          <TextTabs
+            className="self-end border-b-0"
             label={t('dashboard.chart.reading')}
             value={reading}
             onChange={setChosen}
-            options={READINGS.map((candidate) => ({
+            tabs={READINGS.map((candidate) => ({
               value: candidate,
               label: t(
                 candidate === 'amounts' ? 'dashboard.chart.amounts' : 'dashboard.chart.performance',
@@ -265,68 +261,24 @@ export function PortfolioChart({
             }))}
           />
         ) : (
-          <h2 className="label">{t('dashboard.chart.amounts')}</h2>
+          <h2 className="-mb-px self-end border-b-2 border-foreground pb-3 text-prose font-medium">
+            {t('dashboard.chart.amounts')}
+          </h2>
         )}
-        {/* The legend is written here rather than left to the library: it is
-          what pairs a curve to its **name**, and since #831 that is all it
-          does. The maquette draws the two swatches and nothing else, which is
-          the same arrangement arrived at from the other end. It sits on the
-          control bar since #1280, between the reading and the range, and holds
-          nothing focusable.
-
-          Nothing is lost by the removal that the page does not go on saying:
-          the fallback's own reason — *this portfolio records no cash
-          movement* — is the head's `dashboard.withoutLedger`, said once,
-          where the figures it removes are; and which pair of curves is drawn
-          is said by the two names below, `Valorisation` / `Prix de revient`
-          against `Valeur totale` / `Versé net`.
-
-          Nothing under the performance reading, and no base **date**
-          either. The date was already refused here — the curve is rebased
-          on the first day of the visible window, so it does not move as
-          the reconstruction reaches further back, and only the head's
-          scalar carries a date, which it always states (the IRR's bubble,
-          #1263), since it moves while the reconstruction runs. The two marks
-          that state it without a sentence stay — the zero reference line
-          the curve crosses, and the range control that names the window it
-          is rebased on. */}
-        {drawn.length > 0 && reading === 'amounts' ? (
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm max-md:order-last max-md:basis-full md:flex-1">
-            <span className="flex items-center gap-2">
-              <span
-                aria-hidden
-                className="inline-block h-0.75 w-3.5 rounded-xs"
-                style={{ backgroundColor: 'var(--color-price)' }}
-              />
-              <span className="text-muted-foreground">
-                {t(ledger ? 'dashboard.chart.value' : 'dashboard.chart.valuation')}
-              </span>
-            </span>
-            <span className="flex items-center gap-2">
-              <span
-                aria-hidden
-                className="inline-block h-0.5 w-4"
-                style={{ backgroundColor: 'var(--muted-foreground)' }}
-              />
-              <span className="text-muted-foreground">
-                {t(ledger ? 'dashboard.chart.contributed' : 'dashboard.chart.cost')}
-              </span>
-            </span>
-          </div>
-        ) : null}
-        <Segmented
-          className="ml-auto"
-          bordered
-          mode="radio"
-          size="compact"
-          label={t('dashboard.chart.range')}
-          value={range}
-          onChange={onRangeChange}
-          options={DASHBOARD_RANGES.map((candidate) => ({
-            value: candidate,
-            label: t('dashboard.chart.rangeName', { range: candidate }),
-          }))}
-        />
+        <div className="pb-2">
+          <Segmented
+            bordered
+            mode="radio"
+            size="compact"
+            label={t('dashboard.chart.range')}
+            value={range}
+            onChange={onRangeChange}
+            options={DASHBOARD_RANGES.map((candidate) => ({
+              value: candidate,
+              label: t('dashboard.chart.rangeName', { range: candidate }),
+            }))}
+          />
+        </div>
       </div>
       {/* **The live region wraps the swap, and not the plot** (#1003). A range
             press on a young ledger replaces the drawing with the empty state, so
@@ -343,7 +295,7 @@ export function PortfolioChart({
           <EmptyState title={t('dashboard.chart.empty')} />
         ) : (
           <figure>
-            <div className="h-75 tabular">
+            <div className="h-75 fig">
               <ResponsiveContainer width="100%" height="100%">
                 {/* **Named, and not hidden** (#1003). Recharts turns its own
                       `accessibilityLayer` on by default, so this `<svg>` is
@@ -510,6 +462,58 @@ export function PortfolioChart({
           </figure>
         )}
       </div>
+      {/* The legend names the curves with the figures the drawing ends on, and
+          sits under the plot outside the live region: it does not move under
+          the range, and hearing it again on every press is noise. */}
+      {drawn.length === 0 ? null : reading === 'amounts' ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          <span className="flex items-center gap-2">
+            <span
+              aria-hidden
+              className="inline-block h-0.5 w-3.5"
+              style={{ backgroundColor: 'var(--color-price)' }}
+            />
+            {t(ledger ? 'dashboard.chart.value' : 'dashboard.chart.valuation')}
+            <span className="fig text-foreground">
+              {f.currency(lastOf(rows, 'value'), currency)}
+            </span>
+          </span>
+          <span className="flex items-center gap-2">
+            <span
+              aria-hidden
+              className="inline-block w-3.5 border-t-2 border-dashed border-muted-foreground"
+            />
+            {t(ledger ? 'dashboard.chart.contributed' : 'dashboard.chart.cost')}
+            <span className="fig text-foreground">
+              {f.currency(lastOf(rows, 'contributed'), currency)}
+            </span>
+          </span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span
+            aria-hidden
+            className="inline-block h-0.5 w-3.5"
+            style={{ backgroundColor: solidStroke }}
+          />
+          {t('dashboard.chart.performanceLegend')}
+        </div>
+      )}
     </div>
   )
+}
+
+/** The last drawn value of a series — the figure the legend names its curve with. */
+function lastOf(rows: readonly AmountsRow[], key: 'value' | 'contributed'): number | null {
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const value = rows[i][key]
+    if (value !== null) return value
+  }
+  return null
+}
+
+/** The chart's place while its series is in flight: an empty plane, nothing in it (#795). */
+export function ChartInFlight() {
+  // In flight a block holds its place as an empty plane (DESIGN.md › States).
+  return <div aria-hidden className="h-75 rounded-section bg-muted" />
 }

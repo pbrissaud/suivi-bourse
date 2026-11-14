@@ -13,7 +13,7 @@ describe('the live reads poll, the seeds of a form do not (#1180)', () => {
     expect(client.getQueryDefaults([key]).refetchOnWindowFocus).toBe(true)
   })
 
-  it.each(['config', 'events', 'dashboard-layout'])('never polls %s', (key) => {
+  it.each(['config', 'events'])('never polls %s', (key) => {
     expect(client.getQueryDefaults([key]).refetchInterval).toBeUndefined()
     expect(client.getQueryDefaults([key]).refetchOnWindowFocus).toBeUndefined()
   })

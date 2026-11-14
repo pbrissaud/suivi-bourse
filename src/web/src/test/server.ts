@@ -30,15 +30,14 @@ import {
   aHealth,
   aJobsHistory,
   someJobs,
+  someJournalRows,
   aTypedEvent,
   aLedgerPayload,
-  aMoversPayload,
   aPortfolioHistory,
   aPositionsHistory,
   aPositionsPayload,
   aPriceAt,
   aPriceSeries,
-  aReceipt,
   aRhythm,
   aRuntime,
   aStore,
@@ -51,16 +50,16 @@ import {
 } from '@/test/factories'
 
 /**
- * A draft as the row it becomes. `taxation_model: null` is *detach it* and
+ * A draft as the row it becomes. `taxation_model_id: null` is *detach it* and
  * `opened_on: null` is *take the date away*, and what comes back from either is
  * the member **absent** — the wire never carries a null there (#752, #918), so
  * the harness must not either.
  */
 function echoed(draft: AccountDraft): Partial<Account> {
-  const { reassign: _reassign, taxation_model: model, opened_on: day, ...rest } = draft
+  const { reassign: _reassign, taxation_model_id: model, opened_on: day, ...rest } = draft
   return {
     ...rest,
-    ...(model === null || model === undefined ? {} : { taxation_model: model }),
+    ...(model === null || model === undefined ? {} : { taxation_model_id: model }),
     ...(day === null || day === undefined ? {} : { opened_on: day }),
   }
 }
@@ -68,9 +67,7 @@ function echoed(draft: AccountDraft): Partial<Account> {
 export function defaultHandlers() {
   return [
     // The PIN is off by default (#1203): every page test boots straight into the app.
-    http.get(ROUTES.authStatus, () =>
-      HttpResponse.json({ enabled: false, authenticated: false, token_created_at: null }),
-    ),
+    http.get(ROUTES.authStatus, () => HttpResponse.json({ enabled: false, authenticated: false })),
     http.get(ROUTES.accounts, () => HttpResponse.json(anAccountsPayload())),
     // The declaration's three gestures (#698, read by a client since #729). They
     // echo the row back the way the two event writes do — three members and no
@@ -139,21 +136,15 @@ export function defaultHandlers() {
       HttpResponse.json(anAccountHistory(String(params.account))),
     ),
     http.get(ROUTES.portfolioTotalsHistory, () => HttpResponse.json(aPortfolioHistory())),
-    // The dashboard's bottom (#727): the chart's fallback series and the
-    // movers. Both are answered whole — the range control is a filter over a
+    // The dashboard's bottom (#727): the chart's fallback series,
+    // answered whole — the range control is a filter over a
     // series kept entire, there being no ladder on a daily one.
     http.get(ROUTES.positionsHistory, () => HttpResponse.json(aPositionsHistory())),
-    http.get(ROUTES.movers, () => HttpResponse.json(aMoversPayload())),
     // The investment rhythm (#751). Derived on every read and stored
     // nowhere, so there is nothing to vary by parameter: the handler answers the
     // fixture's own pair — six covered months of twelve — and a test about
     // another rhythm overrides it.
     http.get(ROUTES.investmentRhythm, () => HttpResponse.json(aRhythm())),
-    http.get(ROUTES.dashboardLayout, () => HttpResponse.json(null)),
-    http.put(ROUTES.dashboardLayout, async ({ request }) =>
-      HttpResponse.json(await request.json()),
-    ),
-    http.delete(ROUTES.dashboardLayout, () => new HttpResponse(null, { status: 204 })),
     http.get(ROUTES.theme, () => HttpResponse.json(null)),
     // The series answers for the **window it was asked for**, because the
     // resolution it announces is a function of that window: a
@@ -204,27 +195,18 @@ export function defaultHandlers() {
     // mistake it for the table's.
     http.delete(ROUTES.events, () => HttpResponse.json({ events_removed: 7 })),
 
-    // The way in (#811): one file, one receipt. The receipt is the fixture's
-    // and is not computed from what was sent — what a file holds is the
-    // server's business, and a handler parsing a CSV would be a second
-    // implementation of the loader living in the test harness.
-    //
-    // **The file itself does not survive this environment**, and that is worth
-    // knowing before writing an assertion about it: jsdom builds the `File`,
-    // undici serialises the body, and the two disagree — the part arrives named
-    // `blob` and empty. What is observable here is the request the app made,
-    // which is what these tests are about; what the server reads out of a real
-    // multipart body is asserted on the Python side, over the real route.
-    //
-    // **The gesture is made twice** since #813, and this handler answers both
-    // with the same object: `?dry_run=1` is the forecast, and it is a `200`
-    // because nothing was created; the second call, with no parameter, is the
-    // write and answers `201`. The receipt is the fixture's at both moments,
-    // which is what *one object, two moments* means seen from a client.
-    http.post(ROUTES.eventsImport, ({ request }) => {
-      const previewing = new URL(request.url).searchParams.has('dry_run')
-      return HttpResponse.json(aReceipt(), { status: previewing ? 200 : 201 })
-    }),
+    // The dry run behind the event sheet's effect line: the same figures for
+    // every body, so a test that cares overrides it with its own.
+    http.post(ROUTES.eventsPreview, () =>
+      HttpResponse.json({
+        account: 'alpha',
+        cash_before: 1582.55,
+        cash_after: 1040,
+        amount: 542.55,
+        fee: 1.35,
+        direction: 'debit',
+      }),
+    ),
 
     // The way back out (#710, #796). It is fetched by the client since the
     // receipt has to last as long as the operation, so it is a faked edge like
@@ -244,6 +226,11 @@ export function defaultHandlers() {
     http.get(ROUTES.config, () => HttpResponse.json(aConfig())),
     // The agent is off by default (#1115), and nothing is configured.
     http.get(ROUTES.agentConfig, () => HttpResponse.json(anAgentConfig())),
+    // The settings page's three lists, all empty (« Relevé »): a test about a
+    // provider, a channel or a token asks for one by name.
+    http.get(ROUTES.agentProviders, () => HttpResponse.json([])),
+    http.get(ROUTES.notificationChannels, () => HttpResponse.json([])),
+    http.get(ROUTES.tokens, () => HttpResponse.json({ tokens: [] })),
     // Nothing declared about the owner (#1116).
     http.get(ROUTES.profile, () => HttpResponse.json({ facts: {}, projects: [] })),
     // **No reference chosen** (#760), which is what a fresh installation reads
@@ -260,6 +247,11 @@ export function defaultHandlers() {
     http.get(ROUTES.store, () => HttpResponse.json(aStore())),
     http.get(ROUTES.jobsHistory, () => HttpResponse.json(aJobsHistory())),
     http.get(ROUTES.jobs, () => HttpResponse.json(someJobs())),
+    http.post(ROUTES.jobRun, ({ params }) =>
+      HttpResponse.json({ id: String(params.job), started: true }, { status: 202 }),
+    ),
+    // The journal, newest first; `cursor` is the last row the caller has seen.
+    http.get(ROUTES.logs, () => HttpResponse.json({ rows: someJournalRows(), cursor: 2 })),
     // The write answers with the new list and **quantifies its effect**: a
     // portfolio-wide cadence that reaches part of the portfolio has to say so.
     http.put(ROUTES.settings, async ({ request }) => {

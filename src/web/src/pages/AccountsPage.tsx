@@ -1,68 +1,62 @@
 /**
- * The accounts page — **a bar of accounts over one account's detail**.
+ * The accounts page — **a line of accounts over one account's detail**
+ * (« Relevé », `Comptes-Refonte.dc.html`).
  *
- * The eight-column table is gone, and so is the rail that followed it: it was
- * mostly empty while the detail scrolled (#1277).
- *
- * Four page-level objects, and each is a decision:
- *
- *  - **The bar is the way in, and it carries the weights.** It is sticky, so
- *    the way into another account does not scroll off the top of a detail five
- *    blocks long, and it is the same bar at every width.
- *  - **Which account is open is a URL** (`?account=`), the same reduction the
- *    shares page carries and for the same three reasons: it survives a reload,
- *    it can be handed to somebody else, and the way out is the browser's own
- *    back button. An id naming nothing falls back to the first declared account
- *    rather than to an empty page, and the URL is rewritten to it (#1409).
- *  - **One mention of the date**, at the level of the page — the header's
- *    « Cours au … », as on the dashboard and the shares page (#1430). The window
- *    is not written in words anywhere: the detail's range control carries it,
- *    and a sentence repeating it would be a second announcer.
- *  - **A failed read is said where its content would have been** (#829). There
- *    is no band and no strip at the top of the column: the declaration is what
- *    the page is *made of*, so a refusal on it empties the page and the page
- *    says why; the four other reads compose the **detail**, so a refusal on one
- *    of those leaves the bar standing and says why the detail is not there.
- *    Rendering nothing would make *the store is unreadable* and *you own
- *    nothing yet* the same screen.
- *
- * **And the declaration lives here** (#793): declared from the bar, renamed
- * and removed from the panel the account's own name opens. The panel is the
- * page's, not the bar's and not the detail's, because both open it — and a
- * component mounted twice would be two panels, one of which the reader cannot
- * see closing.
+ *  - **The accounts are text tabs** carrying each one's value, with the page's
+ *    two actions on the same line: « Modifier le compte » and « Ajouter un
+ *    compte ». Which account is open is a URL (`?account=`), so it survives a
+ *    reload and the browser's back button is the way out; an id naming nothing
+ *    falls back to the first declared account and the URL is rewritten to it.
+ *  - **One mention of the date**, at the level of the page: the header's
+ *    « Cours au … », as on the dashboard and the shares page.
+ *  - **A failed read is said where its content would have been.** The
+ *    declaration is what the page is made of, so a refusal on it empties the
+ *    page; the other reads compose the detail, so a refusal on one of those
+ *    leaves the tabs standing and says why the detail is not there.
+ *  - **The declaration lives here**: added from the tabs' line, edited and
+ *    removed from one panel the page owns, so that it is mounted once.
  */
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 
 import { AccountDetail } from '@/features/accounts/components/AccountDetail'
 import { AccountForm } from '@/features/accounts/components/AccountForm'
-import { AccountsBar } from '@/features/accounts/components/AccountsBar'
 import { StaleFigures } from '@/components/StaleFigures'
+import { TextTabs } from '@/components/TextTabs'
 import { Unreadable } from '@/components/Unreadable'
 import { EmptyState } from '@/components/EmptyState'
 import { NoBaseCurrency } from '@/components/NoBaseCurrency'
 import { Button } from '@/components/ui/button'
 import {
+  accountPositions,
+  accountWeights,
+  accountWorth,
   buildAccountRows,
   chooseAccount,
+  declaredLabel,
+  distinctSymbols,
   reassignmentOf,
   removalOf,
   DEFAULT_ACCOUNT_ID,
+  DEFAULT_ACCOUNT_LABEL,
   isSeededOnly,
 } from '@/features/accounts/lib/accounts'
 import { accountOf } from '@/features/data/lib/ledger'
 import { type Account, accountsApi, type PerfPoint } from '@/features/accounts/lib/api'
+import { accountReading } from '@/features/dashboard/lib/dashboard'
 import { dashboardApi } from '@/features/dashboard/lib/api'
 import { dataApi, type LedgerEvent } from '@/features/data/lib/api'
 import { settingsApi } from '@/features/settings/lib/api'
 import { type Position, sharesApi } from '@/features/shares/lib/api'
 import { api } from '@/lib/api'
 import { currencyUnanswered } from '@/lib/firstRun'
-import { useFormatters } from '@/lib/format'
+import { ABSENT, useFormatters } from '@/lib/format'
 import { useI18n } from '@/lib/i18n'
 import { usePageHeading } from '@/lib/pageHeading'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { SELECT } from '@/features/accounts/components/TaxationModelEditor'
+import { cn } from '@/lib/utils'
 import { oneFailure, readConditions, stalePerfPass } from '@/lib/status'
 
 export default function AccountsPage() {
@@ -70,15 +64,13 @@ export default function AccountsPage() {
   const f = useFormatters()
   const { account, open } = useSearch({ from: '/accounts' })
   const navigate = useNavigate()
+  const phone = useIsMobile()
   // `undefined` is *the panel is shut*; `null` is *open on a declaration*; an
-  // account is *open on that account*. Three states, the ledger's three.
+  // account is *open on that account*.
   const [editing, setEditing] = useState<Account | null | undefined>(undefined)
 
-  // **The declaration, armed from the ⌘K palette** (#797). An entry named
-  // *declare an account* has to open the declaration, or it is a page entry
-  // wearing an action's name — and unlike the reduction one page over, the
-  // arming is **spent on arrival**: a gesture is not an address, so a reload
-  // must not make it again.
+  // The declaration armed from the ⌘K palette is spent on arrival: a gesture is
+  // not an address, so a reload must not make it again.
   useEffect(() => {
     if (open !== 'account') return
     setEditing(null)
@@ -90,50 +82,29 @@ export default function AccountsPage() {
   const runtime = useQuery({ queryKey: ['runtime'], queryFn: api.runtime })
   const positions = useQuery({ queryKey: ['positions'], queryFn: sharesApi.positions })
   const events = useQuery({ queryKey: ['events'], queryFn: dataApi.events })
-  // The same read the bell and the first-run modal compose their own
-  // predicates from — one query key, so it is one request and no new API state.
   const config = useQuery({ queryKey: ['config'], queryFn: settingsApi.config })
-  // **The reading, and not the inventory** (#829). The panel asks
-  // what is left to act on and drops an advisory the owner has put to sleep;
-  // the chip beside the figure asks what is *true of this account*, and thirty
-  // days of *not now* changes nothing about the cash sitting in it. Read under
-  // the panel's own key, acknowledging in the panel took the chip out with the
-  // card — one gesture, two surfaces, and the distinction the record draws with
-  // nothing to show for it.
-  const advisories = useQuery({
-    queryKey: ['advisories', 'standing'],
-    queryFn: api.standingAdvisories,
-  })
+  const catalogue = useQuery({ queryKey: ['taxation-models'], queryFn: accountsApi.taxationModels })
 
   const declared = accounts.data?.accounts ?? []
   const rows = buildAccountRows(declared)
   const opened = chooseAccount(rows, account)
 
-  // **An id naming nothing is rewritten to the account shown** (#1409). The
-  // fallback stays, but a URL still naming the stale id put the first
-  // account's figures under an address that says otherwise.
+  // An id naming nothing is rewritten to the account shown.
   const openedId = opened?.id
   useEffect(() => {
     if (account == null || openedId === undefined || openedId === account) return
     void navigate({ to: '/accounts', search: { account: openedId }, replace: true })
   }, [account, openedId, navigate])
 
-  // **One read per opened account, and only for the one that is open.** The
-  // series is some two and a half thousand days long, and the bar owes it
-  // nothing: what the bar draws is a share of a total on a stated day, not a
-  // window. Read whole, because the longest range the detail offers is the
-  // account's own opening and only the series says when that was.
+  // One read per opened account, and only for the one that is open.
   const history = useQuery({
     queryKey: ['account-history', opened?.id],
     queryFn: () => accountsApi.accountHistory(opened!.id),
-    enabled: opened !== null,
+    // Not while the declaration is being re-read: an account just removed is
+    // still `opened` until it lands, and its history is a 404.
+    enabled: opened !== null && !accounts.isFetching,
   })
 
-  // **What empties the page and what empties the detail are two lists.** The
-  // declaration is the page: without it there is no bar, no selection and no
-  // detail, so a refusal there is the page's own sentence. The four others are
-  // what the detail is composed of — a ledger that would not answer must not
-  // take the bar with it, which is the whole of why this is not one condition.
   const pageFailure = oneFailure(readConditions({ queries: [accounts] }))
   const detailFailures = {
     positions: oneFailure(readConditions({ queries: [positions, totals] })),
@@ -142,25 +113,17 @@ export default function AccountsPage() {
   }
 
   const currency = totals.data?.base_currency ?? null
-  // `?? null` and never `?? []`: an empty payload is a **fact** about the
-  // reader's data and a request in flight is not one. The three
-  // flattenings are here because this is where the reads are.
+  // `?? null` and never `?? []`: an empty payload is a fact about the reader's
+  // data and a request in flight is not one.
   const heldPositions: readonly Position[] | null = positions.data?.positions ?? null
   const ledger: readonly LedgerEvent[] | null = events.data ?? null
   const series: readonly PerfPoint[] | null = history.data?.points ?? null
 
-  // The reassignment, composed once for the page: its **standing** half goes to
-  // the seeded account's detail and its **first declaration** half rides in the
-  // panel, and the two are one function so they cannot disagree about whether
-  // there is anything to move.
-  //
-  // `??
   const offer = reassignmentOf(accounts.data, ledger ?? [])
 
-  // **Nothing declared and nothing recorded** (#1435): the seeded row alone is
-  // an implementation detail, so the page says it is empty instead of opening
-  // a « Non affecté » nobody made. `null` while the ledger is in flight; a
-  // refused ledger read falls through to the detail, which says so.
+  // Nothing declared and nothing recorded: the seeded row alone is an
+  // implementation detail, so the page says it is empty. `null` while the
+  // ledger is in flight.
   const untouched = !declared.every(isSeededOnly)
     ? false
     : ledger !== null
@@ -169,11 +132,7 @@ export default function AccountsPage() {
         ? false
         : null
 
-  // **The page's name and the instant its quotes are of** (#1430), the
-  // dashboard's and the shares page's own subtitle: every figure here is priced
-  // off them. #787 dropped a date here because on a phone it took the name
-  // down with it; the header now wraps the subtitle under the name instead.
-  // Nothing is dated while nothing has been quoted.
+  // The instant the quotes are of, as on the dashboard.
   const pricedAt = (heldPositions ?? []).reduce<string | null>(
     (newest, position) =>
       position.price?.at != null && (newest === null || position.price.at > newest)
@@ -186,123 +145,171 @@ export default function AccountsPage() {
     pricedAt === null ? null : t('shares.pricedAt', { date: f.dateTime(pricedAt) }),
   )
 
-  // **The band's sentence, one floor down** (#829). With no reporting currency
-  // nothing is converted and the perf job writes nothing at all, so this page
-  // would be a column of em dashes with no reason given anywhere. It says why
-  // instead, and the ledger — where the events are *declared* — stays readable
-  // throughout.
+  // With no reporting currency nothing is converted: the page says why.
   if (currencyUnanswered(config.data?.settings) === true) {
     return <NoBaseCurrency />
   }
 
-  // **The declaration is what this page is made of**, so its refusal is the
-  // page's own emptiness and is said as one (#829).
   if (pageFailure !== null) {
     return <Unreadable failure={pageFailure} />
   }
 
+  const now = new Date()
+  const weights = accountWeights(rows)
+  const allValued = rows.every((row) => accountReading(row, runtime.data, now) === 'valued')
+  const named = (id: string) => (ledger ?? []).filter((event) => accountOf(event) === id)
+  const onDeclared = declared.find((one) => one.id === opened?.id) ?? null
+
+  const addAccount = (
+    <Button type="button" variant="outline" size="sm" onClick={() => setEditing(null)}>
+      {t('accounts.new')}
+    </Button>
+  )
+
   return (
     <div className="space-y-6">
-      {/* The bar's chips and the detail's head are the same pass's rows, so
-          the claim is the page's and not a card's — one sentence over both,
-          rather than one per account, which is one fact said N times. */}
       <StaleFigures at={stalePerfPass(runtime.data)} />
 
-      {/* A read that has not landed is not a fact: nothing is claimed while the
-          declaration is in flight, and above all not that there is none. */}
       {!accounts.data ? null : opened === null ? (
-        // It used to send the reader to the data page, which is where the form
-        // was until #793.
         <EmptyState
           title={t('accounts.empty.title')}
           description={t('accounts.empty.body')}
-          action={
-            <Button type="button" variant="outline" onClick={() => setEditing(null)}>
-              {t('accounts.new')}
-            </Button>
-          }
+          action={addAccount}
         />
       ) : untouched === null ? null : untouched ? (
         <EmptyState
           title={t('accounts.empty.title')}
           description={t('accounts.empty.none')}
-          action={
-            <Button type="button" variant="outline" onClick={() => setEditing(null)}>
-              {t('accounts.new')}
-            </Button>
-          }
+          action={addAccount}
         />
       ) : (
         <>
-          {/* **The bar is the way into the account, at every width** (#1277).
-              Mounted beside the detail rather than inside a column: a sticky
-              element sticks within its containing block, and the page's own
-              column is the one that lasts as long as the detail. */}
-          <AccountsBar
-            rows={rows}
-            selected={opened.id}
-            currency={currency}
-            runtime={runtime.data}
-            // Whether there is anything to reassign — the module's own answer
-            // (#725), which is *events still naming a row nobody declared*
-            // and not *a row called `default` exists*: renamed, retyped or
-            // taken over by a file, that row is an ordinary account and the
-            // offer would be about nothing.
-            offer={offer}
-            onDeclare={() => setEditing(null)}
-          />
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 border-b">
+            {phone ? (
+              // **A select on a phone**: every account is reachable and none
+              // hides behind the buttons beside it.
+              <select
+                aria-label={t('accounts.rail.label')}
+                className={cn(SELECT, 'mb-2 text-md')}
+                value={opened.id}
+                onChange={(change) =>
+                  void navigate({ to: '/accounts', search: { account: change.target.value } })
+                }
+              >
+                {rows.map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
+                    {accountReading(row, runtime.data, now) === 'valued'
+                      ? ` · ${f.currency(accountWorth(row), currency)}`
+                      : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <TextTabs
+                label={t('accounts.rail.label')}
+                // pb-px/-mb-px: room for the active tab's 1 px overlap, or `overflow-x-auto` grows a vertical scrollbar.
+                className="-mb-px min-w-0 flex-1 overflow-x-auto border-b-0 pb-px"
+                value={opened.id}
+                onChange={(id) => void navigate({ to: '/accounts', search: { account: id } })}
+                tabs={rows.map((row) => ({
+                  value: row.id,
+                  label: (
+                    <span className="inline-flex items-baseline gap-2.5">
+                      {declaredLabel(row) ?? t(DEFAULT_ACCOUNT_LABEL)}
+                      <span className="fig text-sm font-normal text-muted-foreground">
+                        {accountReading(row, runtime.data, now) === 'valued'
+                          ? f.currency(accountWorth(row), currency)
+                          : ABSENT}
+                      </span>
+                    </span>
+                  ),
+                }))}
+              />
+            )}
+            <div className="flex items-center gap-2 pb-2">
+              {/* The one population the declared accounts do not cover, and
+                  the way to repair it: it leads to the seeded account's own
+                  detail, where the offer stands. */}
+              {offer.kind === 'standing' ? (
+                <Link
+                  to="/accounts"
+                  search={{ account: DEFAULT_ACCOUNT_ID }}
+                  className="text-sm underline underline-offset-4"
+                >
+                  {t('accounts.default.reassign')}
+                </Link>
+              ) : offer.kind === 'none' ? null : (
+                <button
+                  type="button"
+                  onClick={() => setEditing(null)}
+                  className="text-sm underline underline-offset-4"
+                >
+                  {t('accounts.default.reassign')}
+                </button>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setEditing(onDeclared)}
+                disabled={onDeclared === null}
+              >
+                {t('accounts.detail.edit')}
+              </Button>
+              {addAccount}
+            </div>
+          </div>
           <AccountDetail
-            // Which of the wheel's hues this account wears — the bar's own,
-            // so the weights here are drawn in the colour the bar already gave
-            // it (#838).
-            hue={rows.findIndex((one) => one.id === opened.id)}
             row={opened}
+            share={allValued ? (weights.get(opened.id) ?? null) : null}
+            modelName={
+              catalogue.data?.models.find((model) => model.id === opened.taxation_model_id)?.name ??
+              null
+            }
             positions={heldPositions}
             events={ledger}
             points={series}
             currency={currency}
             runtime={runtime.data}
-            // `?? null` and never `?? []`: a chip is a claim about the reader's
-            // own account, and a read in flight is not one.
-            advisories={advisories.data ?? null}
-            // The standing offer belongs to the account carrying the events, so
-            // it is composed here — where both reads are — and handed to the
-            // detail that is about that account. Everywhere else it is `none`
-            // and the block does not exist.
             reassignment={opened.id === DEFAULT_ACCOUNT_ID ? offer : { kind: 'none' }}
-            // **One entry per read, handed to the block it composes** (#829). There is no band above the column any more, and one
-            // condition for the three would have taken a detail that read two
-            // of them off the screen to report the third — the exact
-            // disappearance #799 repaired on the dashboard.
             failures={detailFailures}
-            onEdit={() => setEditing(declared.find((one) => one.id === opened.id) ?? null)}
+            onEdit={() => setEditing(onDeclared)}
+            key={opened.id}
           />
         </>
       )}
 
-      {/* One panel for the page, opened from the bar and from the detail. It
-          is mounted outside the branch above so that shutting it cannot depend
-          on what is on screen behind it. */}
+      {/* One panel for the page, mounted outside the branch above so that
+          shutting it cannot depend on what is on screen behind it. */}
       <AccountForm
         open={editing !== undefined}
         account={editing ?? null}
-        // `null` while the ledger has not landed, never *nothing to move*: the
-        // panel waits for the answer before it lets a declaration go, which is
-        // what keeps the flag and the declaration one gesture (#725).
+        // `null` while the ledger has not landed: the panel waits for the
+        // answer before it lets a declaration go.
         offer={ledger === null ? null : offer}
-        // `null` while the ledger has not landed: the count a refusal
-        // is made of comes off it, and a removal offered before it lands offers
-        // a gesture the server is about to refuse.
         removal={
-          editing == null || ledger === null ? null : removalOf(editing, named(ledger, editing.id))
+          editing == null || ledger === null ? null : removalOf(editing, named(editing.id).length)
         }
+        carried={
+          editing == null || ledger === null
+            ? null
+            : {
+                events: named(editing.id).length,
+                since:
+                  named(editing.id)
+                    .map((event) => event.date)
+                    .sort()[0] ?? null,
+                lines:
+                  heldPositions === null
+                    ? null
+                    : distinctSymbols(accountPositions(heldPositions, editing.id)),
+                value: rows.find((row) => row.id === editing.id)?.total_value ?? null,
+              }
+        }
+        currency={currency}
         onClose={() => setEditing(undefined)}
       />
     </div>
   )
-}
-
-/** How many events name this account — the count a refusal is made of. */
-function named(events: readonly LedgerEvent[], account: string): number {
-  return events.filter((event) => accountOf(event) === account).length
 }

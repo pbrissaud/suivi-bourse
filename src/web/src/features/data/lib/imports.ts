@@ -48,7 +48,7 @@ export interface AccountLine {
   target: AccountTarget
 }
 
-/** The answer, in the shape the gesture carries it (`ImportOptions`). */
+/** The answer, in the shape the gesture carries it. */
 export interface Correspondence {
   mapping: Record<string, string>
   declaring: string[]

@@ -6,12 +6,17 @@ import { Shell } from '@/components/Shell'
 import { validateLedgerSearch, type LedgerSearch } from '@/features/data/lib/ledger'
 import AccountsPage from '@/pages/AccountsPage'
 import AgentPage from '@/pages/AgentPage'
+import AgentStatsPage from '@/pages/AgentStatsPage'
 import BenchmarkPage from '@/pages/BenchmarkPage'
 import DashboardPage from '@/pages/DashboardPage'
 import DataPage from '@/pages/DataPage'
+import ImportPage from '@/pages/ImportPage'
+import JournalPage from '@/pages/JournalPage'
 import SettingsPage from '@/pages/SettingsPage'
 import SystemPage from '@/pages/SystemPage'
+import ThemePage from '@/pages/ThemePage'
 import SharesPage from '@/pages/SharesPage'
+import ShareDetailPage from '@/pages/ShareDetailPage'
 
 /**
  * The route tree, written by hand — **code-based**, not file-based.
@@ -86,6 +91,16 @@ const sharesRoute = createRoute({
 })
 
 /**
+ * One title's page, which the shares table's sheet became (« Relevé »). The
+ * symbol is the path segment; the router decodes it.
+ */
+const shareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/shares/$symbol',
+  component: ShareDetailPage,
+})
+
+/**
  * The second route that reads a search parameter.
  *
  * `?account=` is **which account the detail is about** — the master-detail's own
@@ -139,6 +154,18 @@ const dataRoute = createRoute({
 })
 
 /**
+ * The import, a page under the ledger (« Relevé »): `?account=` pre-selects
+ * the account the file goes into.
+ */
+const importRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/ledger/import',
+  component: ImportPage,
+  validateSearch: (search: Record<string, unknown>): { account?: string } =>
+    typeof search.account === 'string' && search.account !== '' ? { account: search.account } : {},
+})
+
+/**
  * The fifth route, and the only one of the five that reads nothing off its own
  * address.
  *
@@ -152,6 +179,13 @@ const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
   component: SettingsPage,
+})
+
+/** The theme, reached from Settings › Affichage: a page of its own with « ← Réglages ». */
+const themeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/theme',
+  component: ThemePage,
 })
 
 /** What the installation is doing and what it is: the bell's health link lands here. */
@@ -199,16 +233,35 @@ const agentThreadRoute = createRoute({
   component: AgentPage,
 })
 
+/** What the process logged: a page of its own, reached from Système › Installation, and under its address. */
+const journalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/system/logs',
+  component: JournalPage,
+})
+
+/** The agent's statistics: a page of its own, reached from the rail's foot. */
+const agentStatsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/agent/stats',
+  component: AgentStatsPage,
+})
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   sharesRoute,
+  shareRoute,
   accountsRoute,
   benchmarkRoute,
   dataRoute,
+  importRoute,
   settingsRoute,
+  themeRoute,
   systemRoute,
   agentRoute,
   agentThreadRoute,
+  journalRoute,
+  agentStatsRoute,
 ])
 
 /**

@@ -78,6 +78,11 @@ class Checker:
                 self._release = release
         return newer(self._release, running)
 
+    def known(self, running: Optional[str]) -> Optional[dict]:
+        """The newer release **already learnt**, without asking GitHub."""
+        with self._lock:
+            return newer(self._release, running)
+
     def _ask(self) -> object:
         try:
             release = json.loads(self._fetch(URL))

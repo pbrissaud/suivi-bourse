@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Référence — refonte</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/suivibourse/tokens.css">
+<link rel="stylesheet" href="ds/suivibourse/components/bundle.css">
+<script src="ds/suivibourse/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:var(--background)}
+a{color:var(--foreground)}a:hover{color:var(--foreground)}
+.fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;word-spacing:-0.32em}
+.pick{display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:none;font:inherit;color:var(--foreground);cursor:pointer;text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:1px;text-decoration-color:var(--muted-foreground)}
+.pick:hover{text-decoration-color:var(--foreground)}
+.opt{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;color:var(--foreground);text-decoration:none;font-size:14px;line-height:20px}
+.opt:hover,.opt[aria-selected="true"]{background:var(--accent)}
+.tile{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;border-radius:4px;background:var(--muted);font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:0;color:var(--muted-foreground)}
+.hdr{font-size:12px;line-height:16px;color:var(--muted-foreground)}
+</style>
+</helmet>
+<div data-theme="light" style="position: relative; display: flex; flex-wrap: wrap; align-items: stretch; min-height: 900px; background: var(--background); color: var(--foreground); font-family: var(--font-sans)">
+<dc-import name="Nav" active="benchmark" hint-size="200px,900px"></dc-import>
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<dc-import name="Header" title="Comparaison" subtitle="Comparé du 4 mars 2021 au 6 nov. 2026" hint-size="100%,56px"></dc-import>
+
+<div style="position: relative; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 32px 32px 56px; font-size: 14px; line-height: 20px">
+
+<!-- Héros : la phrase porte le choix de la référence -->
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 24px 48px">
+<div style="display: flex; flex-direction: column; gap: 10px; min-width: 0">
+<p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--muted-foreground)">Vos titres face au <button type="button" class="pick" aria-haspopup="listbox" aria-expanded="{{open}}">{{fund}}<x-import component-from-global-scope="SuiviBourse.Icons.ChevronDown" class-name="size-3.5" aria-hidden="true"></x-import></button></p>
+<p style="margin: 0; max-width: 30ch; font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: -0.01em"><span class="fig">{{gapAbs}}</span> {{gapWord}} qu’en plaçant le même argent dans le {{index}}.</p>
+<p style="margin: 2px 0 0; color: var(--muted-foreground)">{{verdict}}</p>
+</div>
+<dl aria-label="Repères" style="margin: 0; display: grid; grid-template-columns: auto auto; column-gap: 24px; row-gap: 6px; align-items: baseline; padding-bottom: 6px">
+<dt style="font-size: 13px; line-height: 18px; color: var(--muted-foreground); text-align: right">Même argent investi</dt><dd class="fig" style="margin: 0; font-size: 14px; line-height: 18px; text-align: right">41 063,00 €</dd>
+<dt style="font-size: 13px; line-height: 18px; color: var(--muted-foreground); text-align: right">Gain de vos titres</dt><dd class="fig" style="margin: 0; font-size: 14px; line-height: 18px; text-align: right">+14,4 %</dd>
+<dt style="font-size: 13px; line-height: 18px; color: var(--muted-foreground); text-align: right">Gain du {{index}}</dt><dd class="fig" style="margin: 0; font-size: 14px; line-height: 18px; text-align: right">{{theirsPct}}</dd>
+</dl>
+</div>
+
+<!-- Liste des fonds, ancrée au mot souligné -->
+<sc-if value="{{open}}" hint-placeholder-val="{{false}}">
+<div role="listbox" aria-label="Choisir la référence" style="position: absolute; top: 60px; left: 150px; z-index: 5; width: 360px; box-sizing: border-box; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--popover); color: var(--popover-foreground)">
+<div style="position: relative; margin: 0 0 6px">
+<span style="position: absolute; left: 10px; top: 9px; display: flex; color: var(--muted-foreground)"><x-import component-from-global-scope="SuiviBourse.Icons.Search" class-name="size-4" aria-hidden="true"></x-import></span>
+<input type="search" placeholder="Rechercher un fonds…" style="width: 100%; height: 34px; box-sizing: border-box; padding: 0 10px 0 32px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--foreground); font: inherit; font-size: 14px; outline: none">
+</div>
+<sc-for list="{{funds}}" as="f" hint-placeholder-count="5">
+<a href="Reference-Refonte.dc.html" role="option" aria-selected="{{f.on}}" class="opt"><span class="fig" style="width: 40px; font-size: 12px; color: var(--muted-foreground)">{{f.ticker}}</span><span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{f.name}}</span><span style="font-size: 12px; color: var(--muted-foreground); text-align: right; white-space: nowrap">{{f.state}}</span></a>
+</sc-for>
+<div style="margin: 6px -6px 0; padding: 6px 6px 0; border-top: 1px solid var(--border)">
+<a href="Reference-Refonte.dc.html" class="opt" style="color: var(--muted-foreground)"><span style="display: inline-flex; width: 40px"><x-import component-from-global-scope="SuiviBourse.Icons.Plus" class-name="size-4" aria-hidden="true"></x-import></span>Ajouter un fonds</a>
+</div>
+</div>
+</sc-if>
+
+<!-- Deux barres, même échelle : le même argent, deux résultats -->
+<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 24px">
+<div style="display: grid; grid-template-columns: 160px minmax(0, 1fr) 120px; align-items: center; gap: 16px">
+<span style="color: var(--muted-foreground)">Vos titres</span>
+<span role="img" aria-label="Valeur de vos titres" style="display: block; height: 10px; border-radius: 3px; background: var(--alloc-1); width: {{yoursW}}"></span>
+<span class="fig" style="text-align: right">46 975,40 €</span>
+</div>
+<div style="display: grid; grid-template-columns: 160px minmax(0, 1fr) 120px; align-items: center; gap: 16px">
+<span style="color: var(--muted-foreground)">Dans le {{index}}</span>
+<span role="img" aria-label="Valeur du même argent dans la référence" style="display: block; height: 10px; border-radius: 3px; background: var(--alloc-5); width: {{theirsW}}"></span>
+<span class="fig" style="text-align: right">{{theirsVal}}</span>
+</div>
+</div>
+
+<!-- Graphique : onglets texte, période à droite -->
+<div style="display: flex; flex-direction: column; gap: 16px; margin-top: 36px">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; border-bottom: 1px solid var(--border)">
+<div role="tablist" aria-label="Lecture" style="display: flex; gap: 24px; align-self: flex-end">
+<button type="button" role="tab" aria-selected="true" style="padding: 0 0 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid var(--foreground); background: none; font: inherit; font-size: 15px; line-height: 22px; font-weight: 500; color: var(--foreground); cursor: pointer">Écart</button>
+<button type="button" role="tab" aria-selected="false" style="padding: 0 0 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; font: inherit; font-size: 15px; line-height: 22px; font-weight: 500; color: var(--muted-foreground); cursor: pointer">Montants</button>
+</div>
+<div style="padding-bottom: 8px">
+<x-import component-from-global-scope="SuiviBourse.Segmented" label="Période" mode="radio" size="compact" bordered="{{yes}}" options="{{ranges}}" value="MAX"></x-import>
+</div>
+</div>
+<figure aria-label="Écart entre vos titres et le même argent dans la référence, en euros" style="margin: 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); grid-template-rows: 240px 24px">
+<div class="fig" style="position: relative; font-size: 12px; line-height: 16px; color: var(--muted-foreground); white-space: nowrap">
+<sc-for list="{{yTicks}}" as="y" hint-placeholder-count="5"><span style="position: absolute; right: 10px; top: {{y.top}}">{{y.label}}</span></sc-for>
+</div>
+<svg viewBox="0 0 1000 240" preserveAspectRatio="none" style="width: 100%; height: 240px; display: block" aria-hidden="true">
+<sc-for list="{{yTicks}}" as="y" hint-placeholder-count="4"><line x1="0" x2="1000" y1="{{y.y}}" y2="{{y.y}}" stroke="var(--border)" stroke-dasharray="3 4" vector-effect="non-scaling-stroke"></line></sc-for>
+<path d="{{gapArea}}" fill="color-mix(in oklch, var(--chart-1) 16%, transparent)" stroke="none"></path>
+<line x1="0" x2="1000" y1="{{zeroY}}" y2="{{zeroY}}" stroke="var(--muted-foreground)" vector-effect="non-scaling-stroke"></line>
+<path d="{{gapPath}}" fill="none" stroke="var(--chart-1)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+</svg>
+<div></div>
+<div class="fig" style="position: relative; font-size: 12px; line-height: 16px; color: var(--muted-foreground)">
+<sc-for list="{{xTicks}}" as="x" hint-placeholder-count="5"><span style="position: absolute; top: 6px; left: {{x.left}}; transform: translateX(-50%)">{{x.label}}</span></sc-for>
+</div>
+</figure>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-left: 64px; font-size: 13px; color: var(--muted-foreground)">
+<span style="display: inline-flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 14px; height: 2px; background: var(--chart-1)"></span>Écart, en euros, au fil du temps <span class="fig" style="color: var(--foreground)">{{gap}}</span> aujourd’hui</span>
+</div>
+</div>
+
+<!-- Compte par compte -->
+<section aria-label="Compte par compte" style="display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; border-radius: 18px; background: var(--muted); padding: 20px 24px 24px; margin-top: 40px">
+<div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px">
+<h2 style="margin: 0; font-size: 20px; line-height: 28px; font-weight: 600">Compte par compte</h2>
+</div>
+<div role="table" style="font-size: 13px; line-height: 18px">
+<div role="row" style="display: grid; grid-template-columns: {{cols}}; padding: 0 0 8px; border-bottom: 1px solid var(--border)">
+<span role="columnheader" class="hdr">Compte</span>
+<span role="columnheader" class="hdr" style="padding: 0 12px">Période</span>
+<span role="columnheader" class="hdr" style="padding: 0 12px; text-align: right">Vos titres</span>
+<span role="columnheader" class="hdr" style="padding: 0 12px; text-align: right">Dans le {{index}}</span>
+<span role="columnheader" class="hdr" style="padding-left: 12px; text-align: right">Écart</span>
+</div>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="2">
+<div role="row" style="display: grid; grid-template-columns: {{cols}}; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border)">
+<span role="cell" style="font-weight: 500">{{r.name}}</span>
+<span role="cell" style="padding: 0 12px; color: var(--muted-foreground)">{{r.period}}</span>
+<span role="cell" style="display: flex; flex-direction: column; align-items: flex-end; padding: 6px 12px"><span class="fig">{{r.yours}}</span><span class="fig" style="font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{r.yoursPct}}</span></span>
+<span role="cell" style="display: flex; flex-direction: column; align-items: flex-end; padding: 6px 12px"><span class="fig">{{r.theirs}}</span><span class="fig" style="font-size: 12px; line-height: 16px; color: var(--muted-foreground)">{{r.theirsPct}}</span></span>
+<span role="cell" class="fig" style="padding-left: 12px; text-align: right; font-weight: 500">{{r.gap}}</span>
+</div>
+</sc-for>
+<div role="row" style="display: grid; grid-template-columns: {{cols}}; align-items: center; min-height: 48px; border-bottom: 1px solid var(--border); font-weight: 500">
+<span role="rowheader">Ensemble</span>
+<span role="cell"></span>
+<span role="cell" class="fig" style="padding: 0 12px; text-align: right">46 975,40 €</span>
+<span role="cell" class="fig" style="padding: 0 12px; text-align: right">{{theirsVal}}</span>
+<span role="cell" class="fig" style="padding-left: 12px; text-align: right">{{gap}}</span>
+</div>
+</div>
+</section>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"mode":{"editor":"enum","options":["nominal","picker"],"default":"nominal"},"$preview":{"width":1440,"height":960}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mode = this.props.mode ?? 'nominal';
+    const N = 68;
+    const endYours = 46975.4, endTheirs = 47812.6;
+    const run = (drift) => { const out = []; let v = 8000; for (let t = 0; t < N; t++) { const r = 0.0068 + drift + 0.024 * Math.sin(t * 0.9) + 0.014 * Math.cos(t * 0.37); v = v * (1 + r) + (t < 30 ? 420 : 520); out.push(v); } return out; };
+    const fit = (s, end) => s.map((v, t) => v * (1 + (end / s[N - 1] - 1) * (t / (N - 1))));
+    const yoursS = fit(run(0), endYours), theirsS = fit(run(0.0004), endTheirs);
+    const Y = (v) => 240 - (v / 50000) * 240, X = (t) => (t / (N - 1)) * 1000;
+    const line = (s) => s.map((v, t) => `${t ? 'L' : 'M'}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
+    const gapS = yoursS.map((v, t) => v - theirsS[t]).map((g, t) => g * 0.6 + 260 * Math.sin(t * 0.35 + 0.8) - 140 * Math.cos(t * 0.11) + 90 * Math.sin(t * 1.7) + 60 * Math.cos(t * 2.9) - 4 * t);
+    gapS[N - 1] = -837.2;
+    const GY = (g) => 120 - (g / 1200) * 120;
+    const gapPath = gapS.map((g, t) => `${t ? 'L' : 'M'}${X(t).toFixed(1)} ${GY(g).toFixed(1)}`).join(' ');
+    const gapArea = gapPath + ` L1000 ${GY(0).toFixed(1)} L0 ${GY(0).toFixed(1)} Z`;
+    const yTicks = [1200, 600, 0, -600, -1200].map((v) => ({ y: GY(v).toFixed(1), top: `${(GY(v) - 8).toFixed(0)}px`, label: v === 0 ? '0 €' : `${v > 0 ? '+' : '−'}${Math.abs(v) >= 1000 ? '1 200' : Math.abs(v)} €` }));
+    const xTicks = [2022, 2023, 2024, 2025, 2026].map((y) => ({ label: String(y), left: `${(((y - 2021) * 12 - 2) / (N - 1) * 100).toFixed(1)}%` }));
+    const funds = [
+      ['MSCI World', 'CW8', 'depuis 2009', true],
+      ['S&P 500', 'CSPX', 'depuis 2010 · quelques minutes', false],
+      ['Euro Stoxx 50', 'MSE', 'depuis 2008 · quelques minutes', false],
+      ['CAC 40', 'C40', 'depuis 2008', false],
+      ['MSCI Emerging Markets', 'AEEM', 'depuis 2010 · quelques minutes', false],
+    ].map(([name, ticker, state, on]) => ({ name, ticker, state, on: on ? 'true' : 'false' }));
+    const cols = 'minmax(120px, 1fr) minmax(220px, 1.6fr) minmax(130px, 1fr) minmax(150px, 1fr) minmax(120px, 0.9fr)';
+    return {
+      open: mode === 'picker',
+      yes: true,
+      fund: 'MSCI World', index: 'MSCI World',
+      gap: '−837,20 €', gapAbs: '837,20 €', gapWord: 'de moins',
+      verdict: 'soit 2,0 % des 41 063,00 € versés aux mêmes dates.',
+      theirsPct: '+16,4 %', theirsVal: '47 812,60 €',
+      yoursW: `${(endYours / endTheirs * 100).toFixed(1)}%`, theirsW: '100%',
+      ranges: [{ value: '1M', label: '1 mois' }, { value: 'YTD', label: 'Cette année' }, { value: '1Y', label: '1 an' }, { value: 'MAX', label: 'Tout' }],
+      yTicks, xTicks,
+      gapPath, gapArea, zeroY: GY(0).toFixed(1),
+      funds, cols,
+      rows: [
+        { name: 'PEA', period: 'Du 4 mars 2021 au 6 nov. 2026', yours: '41 618,79 €', yoursPct: '+14,7 %', theirs: '42 131,19 €', theirsPct: '+16,1 %', gap: '−512,40 €' },
+        { name: 'Compte-titres', period: 'Du 12 sept. 2023 au 6 nov. 2026', yours: '5 356,61 €', yoursPct: '+11,2 %', theirs: '5 681,41 €', theirsPct: '+18,0 %', gap: '−324,80 €' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

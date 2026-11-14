@@ -89,19 +89,29 @@ export function AuthBoot({ children }: { children: ReactNode }) {
     // A read still in flight may 401 after the logout: the screen asks once.
     sessionResumed()
     client.removeQueries({ predicate: (query) => query.queryKey[0] !== AUTH_STATUS_KEY[0] })
-    client.setQueryData(AUTH_STATUS_KEY, {
-      enabled: true,
-      authenticated: false,
-      token_created_at: null,
-    })
+    client.setQueryData(AUTH_STATUS_KEY, { enabled: true, authenticated: false })
     setShown(false)
   }
 
   return (
     <AuthContext.Provider value={{ status: status.data, update, signedOut }}>
-      {children}
+      <Behind>{children}</Behind>
       <SessionDialog />
     </AuthContext.Provider>
+  )
+}
+
+/**
+ * The page under a session that ended: still mounted, so what the reader typed
+ * is kept, but out of sight, out of the tab order and out of the accessibility
+ * tree — a lock that left the figures readable behind it would not be one.
+ */
+function Behind({ children }: { children: ReactNode }) {
+  const ended = useSessionEnded()
+  return (
+    <div className={ended ? 'hidden' : 'contents'} inert={ended}>
+      {children}
+    </div>
   )
 }
 
@@ -118,14 +128,12 @@ function PinScreen({ onUnlocked }: { onUnlocked: () => void }) {
   }, [t])
 
   return (
-    <main className="flex min-h-dvh justify-center bg-background p-3.5 pt-[15dvh] md:items-center md:p-5">
-      <div className="w-full max-w-[360px] space-y-5 md:rounded-section md:bg-muted md:px-6 md:py-5">
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground">{t('app.name')}</p>
-          <h1 id={heading} className="text-2xl font-semibold">
-            {t('auth.screen.title')}
-          </h1>
-        </div>
+    <main className="flex min-h-dvh items-center justify-center bg-background px-6 py-12">
+      <div className="flex w-full max-w-90 flex-col items-center gap-7 text-center">
+        <span className="font-semibold">{t('app.name')}</span>
+        <h1 id={heading} className="sr-only">
+          {t('auth.screen.title')}
+        </h1>
         <PinForm labelledBy={heading} onUnlocked={onUnlocked} />
       </div>
     </main>

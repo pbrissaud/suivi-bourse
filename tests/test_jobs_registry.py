@@ -52,8 +52,10 @@ def test_a_job_added_to_the_registry_alone_is_listed_and_has_a_history(
     listed = client.get('/api/jobs').get_json()
     history = client.get('/api/jobs/history').get_json()
 
-    assert listed[-1] == {'id': 'fake', 'label_key': 'settings.jobs.fake',
-                          'kind': 'job', 'in_health': False}
+    assert listed[-1]['id'] == 'fake'
+    assert listed[-1]['label_key'] == 'settings.jobs.fake'
+    assert listed[-1]['state'] == 'never'
+    assert listed[-1]['last_run_at'] is None
     assert set(history['jobs']) == {'backfill', 'performance', 'ingestion',
                                     'fake'}
     assert history['jobs']['fake']['last'] is None

@@ -104,6 +104,19 @@ def _drop_account_type(connection) -> None:
         connection.execute('ALTER TABLE account DROP COLUMN IF EXISTS type')
 
 
+def _make_account_label_optional(connection) -> None:
+    """Let ``account.label`` be absent: an account is an identifiant, and its
+    label is a courtesy (the « Relevé » redesign, chantier B1).
+
+    Stores wrote ``label = id`` when the owner gave none, so the rows that say
+    exactly that are cleared: a label equal to its id says nothing the id does
+    not. ``DROP NOT NULL`` is a no-op on a file created today.
+    """
+    with rebuilding(connection, 'account'):
+        connection.execute('ALTER TABLE account ALTER COLUMN label DROP NOT NULL')
+    connection.execute('UPDATE account SET label = NULL WHERE label = id')
+
+
 def _add_newest_window_tried(connection) -> None:
     """Give an already-created store the forward pass's anchor (issue #854).
 

@@ -9,6 +9,8 @@ from application import accounts as accounts_module
 from application import entries
 from application.event_body import InvalidBody, event_from_body
 from application import import_currency
+from application import import_formats
+from application import import_preview
 from application import ledger
 from application import main
 from application import settings_registry
@@ -88,7 +90,7 @@ def create_event():
         with runtime.config_manager.writing() as opened:
             created = entries.create(opened, draft)
     except entries.InvalidEntry as exc:
-        return unprocessable_request(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field, **exc.extra)
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_WRITE)
 
@@ -431,6 +433,219 @@ def _receipt_to_dict(receipt: uploads.Receipt, *,
     }
 
 
+_ROW_FIELDS = ('date', 'event_type', 'symbol', 'name', 'quantity', 'unit_price',
+               'fee', 'amount', 'notes')
+
+
+def _preview_row_to_dict(row: import_preview.Row) -> dict:
+    """One judged line of an import preview, on the wire."""
+    fields = (_event_to_dict(row.event) if row.event is not None
+              else dict.fromkeys(_ROW_FIELDS))
+    return {
+        'row': row.n,
+        'status': row.status,
+        **{name: fields[name] for name in _ROW_FIELDS},
+        'isin': row.isin,
+        'reason': row.reason,
+        'reason_code': row.reason_code,
+        'reason_values': row.reason_values,
+        'account': None if row.event is None else row.event.account,
+        'matched_event_id': (None if row.matched_event_id is None
+                             else str(row.matched_event_id)),
+        'matched_on': row.matched_on,
+    }
+
+
+@bp.post('/events/import/preview')
+def preview_import():
+    """A file read against one account's ledger, and nothing written (§ 3.4).
+
+    Multipart: ``file``, ``account_id``. The answer
+    carries a ``token`` the commit takes back.
+    """
+    if uploads.oversize(request.content_length):
+        return too_large(uploads.too_large_detail(), uploads.MAX_UPLOAD_BYTES)
+    sent = request.files.get('file')
+    if sent is None:
+        return bad_request(
+            "a file is required, as the 'file' part of a multipart/form-data "
+            "body")
+    account_id = (request.form.get('account_id') or '').strip()
+    opened = _store()
+    if account_id not in accounts_module.account_ids(opened):
+        return unprocessable_request(
+            "account_id is the id of a declared account", key='account_id')
+
+    try:
+        reading = import_formats.read(
+            sent.filename or '', sent.stream)
+    except uploads.UploadTooLarge as exc:
+        return too_large(str(exc), uploads.MAX_UPLOAD_BYTES)
+    except uploads.UploadRefused as exc:
+        return unprocessable_file(str(exc), file=exc.file, code=exc.code)
+
+    rows = import_preview.judge(
+        opened, account_id, reading.lines,
+        unknown=import_preview.unresolved(opened, reading.lines))
+    base = opened.setting('base_currency') or None
+    foreign, unverified = (), ()
+    if base and reading.declared_currency is None:
+        # A file that states no unit for its amounts: which of its securities
+        # are quoted elsewhere than in the base, so the owner says what the
+        # amounts are in (#1261). Only what would be written is asked about.
+        found = import_currency.survey(
+            opened, [row.event for row in rows
+                     if row.status == import_preview.NEW and row.event], base)
+        foreign, unverified = found.lines, found.unverified
+    return jsonify({
+        'token': import_preview.keep(account_id, reading),
+        'filename': reading.filename,
+        'account_id': account_id,
+        'has_accounts': reading.has_accounts,
+        'unnamed_rows': sum(1 for line in reading.lines
+                            if line.event is not None and not line.account),
+        'base_currency': base,
+        'foreign_lines': [{'symbol': line.symbol, 'currency': line.currency,
+                           'rows': line.rows} for line in foreign],
+        'unverified': list(unverified),
+        'counts': {status: sum(1 for row in rows if row.status == status)
+                   for status in (import_preview.NEW, import_preview.DUPLICATE,
+                                  import_preview.UNKNOWN_SECURITY,
+                                  import_preview.UNREADABLE)},
+        'rows': [_preview_row_to_dict(row) for row in rows],
+    })
+
+
+@bp.post('/events/import/commit')
+def commit_import():
+    """The previewed rows written: the ``new`` ones, and the ones just associated.
+
+    ``{"token": …, "associate": [{"row": 5, "security": "CW8.PA"}]}``. The rows
+    are judged again under the writers' lock, so a row that became a duplicate
+    since the preview is skipped.
+    """
+    body = _json_object()
+    token = body.get('token') if body is not None else None
+    if not isinstance(token, str):
+        return unprocessable_request("a preview token is required", key='token')
+    held = import_preview.recall(token)
+    if held is None:
+        return not_found("this preview has expired; send the file again")
+
+    asked = body.get('associate') or []
+    associate = {}
+    if not isinstance(asked, list):
+        return unprocessable_request("associate is a list", key='associate')
+    for item in asked:
+        row = item.get('row') if isinstance(item, dict) else None
+        security = item.get('security') if isinstance(item, dict) else None
+        if type(row) is not int or not isinstance(security, str):
+            return unprocessable_request(
+                "each resolution is {row: number, security: symbol}",
+                key='associate')
+        associate[row] = security
+
+    runtime = current_runtime()
+    try:
+        read = _store()
+        base = read.setting('base_currency') or None
+        # Slow lookups and rate fetches happen **before** the writers' lock.
+        unknown = import_preview.unresolved(read, held.reading.lines, associate)
+        answered = _answered_amounts(body.get('foreign'), held.reading, base)
+        quoted = {symbol: code for symbol, (code, unit) in answered.items()
+                  if unit == 'quote'}
+        context = getattr(getattr(runtime, 'jobs', None), 'ctx', None)
+        rates = getattr(context, 'rates', None)
+        events_of_file = [line.event for line in held.reading.lines if line.event]
+        if quoted:
+            import_currency.convert(events_of_file, quoted, rates, base)
+        with runtime.config_manager.writing() as opened:
+            rows = import_preview.judge(
+                opened, held.account_id, held.reading.lines, associate, unknown)
+            fresh = [row for row in rows if row.status == import_preview.NEW]
+            events = [row.event for row in fresh]
+            if quoted:
+                events = import_currency.convert(events, quoted, rates, base)
+            says = {symbol: (code if unit == 'quote' else base)
+                    for symbol, (code, unit) in answered.items()}
+            entries.create_many(opened, events, stated=says)
+            import_preview.remember_isins(opened, fresh)
+    except import_preview.InvalidResolution as exc:
+        return unprocessable_request(str(exc), key='associate')
+    except import_currency.BadPair as exc:
+        return unprocessable_request(str(exc), key='foreign')
+    except (entries.InvalidEntry, AggregationError,
+            import_currency.Unconvertible) as exc:
+        return import_refusal(exc)
+
+    import_preview.release(token)
+    if fresh:
+        main.replay_after_write(runtime)
+    skipped = {status: sum(1 for row in rows if row.status == status)
+               for status in (import_preview.DUPLICATE,
+                              import_preview.UNKNOWN_SECURITY,
+                              import_preview.UNREADABLE)}
+    return jsonify({'imported': len(fresh), **skipped}), 201 if fresh else 200
+
+
+def _answered_amounts(asked, reading, base) -> dict:
+    """``{symbol: (currency, 'base' | 'quote')}`` of the commit's ``foreign`` answers.
+
+    ``foreign`` is ``[{"symbol": "AAPL", "currency": "USD", "amounts_in": "quote"}]``:
+    what the owner says the file's amounts of that security are written in.
+    """
+    if not base or not isinstance(asked, list):
+        return {}
+    answers = {}
+    for item in asked:
+        well_formed = isinstance(item, dict) and all((
+            isinstance(item.get('symbol'), str),
+            isinstance(item.get('currency'), str),
+            item.get('amounts_in') in ('base', 'quote')))
+        if not well_formed:
+            raise import_currency.BadPair(
+                "each answer is {symbol, currency, amounts_in: 'base' | 'quote'}")
+        answers[item['symbol'].upper()] = (item['currency'], item['amounts_in'])
+    # Checked against the file: a symbol it does not name, a currency code that
+    # is none, or the base itself, are refused.
+    import_currency.pairs(
+        [line.event for line in reading.lines if line.event],
+        [f'{symbol}:{code}' for symbol, (code, _) in answers.items()], base)
+    return answers
+
+
+@bp.post('/events/preview')
+def preview_event():
+    """What writing this event would do to its account's cash; nothing persisted (§ 3.5).
+
+    The body is the one ``POST /api/events`` takes; add ``id`` to preview an
+    edit of that event instead of a new one.
+    """
+    body = _json_object()
+    if body is None:
+        return bad_request("a JSON object is required")
+    try:
+        draft = event_from_body(body)
+    except InvalidBody as exc:
+        return unprocessable_request(str(exc), key=exc.field)
+    replacing = None
+    if body.get('id') is not None:
+        replacing = _ticked_key(body['id'])
+        if replacing is None:
+            return unprocessable_request("id must be an event id", key='id')
+
+    try:
+        effect = entries.effect(_store(), draft, replacing)
+    except entries.UnknownEntry as exc:
+        return entry_gone(str(exc)) if exc.issued else not_found(str(exc))
+    except entries.InvalidEntry as exc:
+        return unprocessable_request(str(exc), key=exc.field, **exc.extra)
+    except AggregationError as exc:
+        return _unreplayable(exc, GESTURE_WRITE)
+    return jsonify({key: store_module.finite(value)
+                    for key, value in vars(effect).items()})
+
+
 @bp.patch('/events/<event_id>')
 def update_event(event_id: str):
     """Rewrite one event — **whatever laid it down** (#816)."""
@@ -453,7 +668,7 @@ def update_event(event_id: str):
     except entries.UnknownEntry as exc:
         return entry_gone(str(exc)) if exc.issued else not_found(str(exc))
     except entries.InvalidEntry as exc:
-        return unprocessable_request(str(exc), key=exc.field)
+        return unprocessable_request(str(exc), key=exc.field, **exc.extra)
     except AggregationError as exc:
         return _unreplayable(exc, GESTURE_WRITE)
 

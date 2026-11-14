@@ -17,8 +17,8 @@ from api.problem import (
     too_large,
 )
 from api import (
-    accounts, agent, events, export, jobs, portfolio, profile, proposals,
-    settings, system,
+    accounts, agent, events, export, jobs, notifications, portfolio, profile,
+    proposals, settings, system,
 )
 
 logger = getLogger("api.api")
@@ -30,7 +30,7 @@ SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
 # Nested, never siblings: a child of `api_bp` inherits its origin guard and
 # its problem+json handler, and a sibling would silently have neither.
 for _domain in (portfolio, accounts, events, export, system, jobs, settings,
-                agent, profile, proposals):
+                agent, profile, proposals, notifications):
     api_bp.register_blueprint(_domain.bp)
 
 
@@ -48,6 +48,19 @@ def _refuse_a_foreign_origin():
         f"this write came from {origin}, which is not the page this app "
         f"serves; /api is the front's interface and the front is served from "
         f"the same address")
+
+
+@api_bp.after_request
+def _never_cached(response):
+    """Nothing under ``/api`` is kept by a cache between here and the reader.
+
+    A proxy in front (Cloudflare caches ``.csv`` and ``.xlsx`` by extension)
+    otherwise served an export hours old, someone else's ledger after a reset,
+    and with the PIN on, a file without a session. A route that states its own
+    policy keeps it.
+    """
+    response.headers.setdefault('Cache-Control', 'no-store')
+    return response
 
 
 @api_bp.errorhandler(Exception)

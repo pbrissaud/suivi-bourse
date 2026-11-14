@@ -89,7 +89,8 @@ class _Capture(logging.Handler):
     def _handled_elsewhere(self, name: str) -> bool:
         logger: Optional[logging.Logger] = logging.getLogger(name)
         while logger is not None:
-            if any(handler is not self for handler in logger.handlers):
+            if any(handler is not self and not getattr(handler, 'passive', False)
+                   for handler in logger.handlers):
                 return True
             if not logger.propagate:
                 return False
@@ -276,6 +277,13 @@ class JobHistory:
             for key, one in sorted(passes, key=lambda pair: pair[1].at):
                 self._tracks.setdefault(key, _Track()).recent.append(one)
             self.started = oldest
+
+    def last_pass(self, job: str) -> Optional[Pass]:
+        """The newest pass of ``job``, over every symbol for the scrape."""
+        with self._lock:
+            newest = [track.recent[-1] for key, track in self._tracks.items()
+                      if key[0] == job and track.recent]
+        return max(newest, key=lambda one: one.at, default=None)
 
     def read(self, now: datetime, jobs: Iterable[str]) -> Dict[str, Any]:
         """The 24 hours ending at ``now``'s hour, aged on read and never written.

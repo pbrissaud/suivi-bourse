@@ -1,45 +1,45 @@
 /**
- * The create form, **which is the onboarding** (#723).
+ * The event sheet, **which is the onboarding** (#723, « Relevé », mockup
+ * `EventSheet-Refonte.dc.html`).
  *
  * Manual mode died with v5: a position with no history cannot carry a realised
  * gain or a historical weighted average cost, so typing a position *is*
- * creating dated events. That promotes this form from a convenience to the
+ * creating dated events. That promotes this sheet from a convenience to the
  * first thing a new owner does, and four decisions follow from it:
  *
- *  - **The type comes first, and nothing else is on screen until it is
- *    chosen.** Six labels that state their **effect** — `Achat`, `Vente`,
- *    `Attribution`, `Dividende`, `Versement`, `Retrait` — and never the six
- *    codes, which are a decoding exercise at the exact moment the reader has
- *    nothing to decode them against.
+ *  - **The type is a row of text tabs**, six words that state their **effect** —
+ *    `Achat`, `Vente`, `Attribution`, `Dividende`, `Versement`, `Retrait` — and
+ *    never the six codes. A creation opens on *Achat*.
  *  - **Then only the fields of that type.** `BUY`/`SELL` take a quantity, a
  *    unit price and a fee; `GRANT` a quantity and an **optional** price;
  *    `DIVIDEND` an amount and a fee; `DEPOSIT`/`WITHDRAWAL` an amount and a fee
- *    and **no security at all** — a transfer names none, and an empty ticker
- *    field on a transfer is a question the event does not raise.
+ *    and **no security at all** — a transfer names none.
  *  - **A lateral panel, not a modal and not an editable row.** The form
- *    *changes shape* after the first choice, and a row edited in place cannot:
- *    it has the columns of the table it sits in, which is the shape of every
- *    type at once.
+ *    *changes shape* with the type, and a row edited in place cannot.
+ *  - **The body ends on the effect line**: what the write would do to the
+ *    account's cash, asked of the server (`POST /api/events/preview`, debounced
+ *    on every change) and never computed here.
  *
  * **And `<input type="date">` stops silently discarding what it cannot parse.**
  * The browser hands back an empty string for a date it does not understand,
  * which reads as *the reader left it blank* one line later; here every value is
- * parsed by `features/data/lib/ledger.ts` and a refusal is **named** beside its field. The
- * same is true of the numbers, which is why they are text inputs with a decimal
- * input mode: `<input type="number">` discards a decimal comma exactly as
- * silently, in a form whose French reader types one.
+ * parsed by `features/data/lib/ledger.ts` and a refusal is **named** beside its
+ * field. The same is true of the numbers, which is why they are text inputs with
+ * a decimal input mode: `<input type="number">` discards a decimal comma exactly
+ * as silently, in a form whose French reader types one.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { X } from 'lucide-react'
 
 import { Refusal } from '@/components/Refusal'
-import { Explain } from '@/components/Explain'
+import { TextTabs } from '@/components/TextTabs'
 import { TYPE_LABEL } from '@/features/data/components/LedgerTable'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetClose, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import type { AccountsResponse } from '@/features/accounts/lib/api'
 import {
   dataApi,
@@ -49,6 +49,7 @@ import {
   type LedgerEventType,
 } from '@/features/data/lib/api'
 import { sharesApi } from '@/features/shares/lib/api'
+import { useAccountNames } from '@/hooks/use-account-names'
 import {
   accountChoice,
   declaredLabel,
@@ -59,7 +60,6 @@ import { currencyInput, useFormatters } from '@/lib/format'
 import { useI18n, type MessageKey } from '@/lib/i18n'
 import {
   accountOf,
-  cashFlow,
   FIELDS,
   fold,
   isEditable,
@@ -71,16 +71,6 @@ import {
 } from '@/features/data/lib/ledger'
 import { entryGone, problemSentence, refusedKey } from '@/lib/problem'
 import { cn } from '@/lib/utils'
-
-/**
- * The sentence for a cash flow. **Below half a cent it is neither a debit nor a
- * credit** — a sale whose fees eat the proceeds — and a float's noise
- * (`−4e-16`) must not pick a direction for it.
- */
-function cashLabel(cash: number) {
-  if (Math.abs(cash) < 0.005) return 'data.form.cash.none' satisfies MessageKey
-  return cash < 0 ? 'data.form.cash.debited' : 'data.form.cash.credited'
-}
 
 /** Everything the reader typed, as typed — parsing happens once, on submit. */
 interface Draft {
@@ -129,6 +119,8 @@ const SEARCH_MIN = 2
 /** The server refuses a longer query; no ticker is longer. */
 const SEARCH_MAX = 64
 const SEARCH_STALE_MS = 5 * 60_000
+/** The effect line asks once the reader pauses. */
+const PREVIEW_PAUSE_MS = 300
 
 /**
  * The sentence each state of the account field says for itself. Three states
@@ -140,6 +132,13 @@ const ACCOUNT_STATE = {
   pending: 'data.form.account.pending',
   failed: 'data.form.account.failed',
 } as const satisfies Record<string, MessageKey>
+
+/** Today in the reader's own calendar, as the date field writes it. */
+function today(): string {
+  const now = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
 
 const EMPTY: Draft = {
   date: '',
@@ -192,6 +191,8 @@ interface EventFormProps {
   /** The ledger's reporting currency, `null` until the totals have answered. */
   currency: string | null
   onClose: () => void
+  /** Hands the focus back to the row the panel was opened on, when it closes. */
+  onRestoreFocus?: () => void
   /** Asks for the row being edited to be removed — the confirmation is the caller's (#1264). */
   onDelete: () => void
 }
@@ -204,15 +205,15 @@ export function EventForm({
   titles,
   currency,
   onClose,
+  onRestoreFocus,
   onDelete,
 }: EventFormProps) {
-  const { t } = useI18n()
+  const { t, language } = useI18n()
   const format = useFormatters()
   const queryClient = useQueryClient()
 
-  // `null` is *no type chosen yet*, and it is the state the form opens in: the
-  // question comes before the fields, so it cannot be answered by default.
-  const [type, setType] = useState<LedgerEventType | null>(null)
+  // A creation opens on *Achat*, the event most ledgers are made of.
+  const [type, setType] = useState<LedgerEventType>('BUY')
   const [draft, setDraft] = useState<Draft>(EMPTY)
   const [errors, setErrors] = useState<Partial<Record<FieldName, MessageKey>>>({})
   /** What the grant-price suggestion last put in the field — see below. */
@@ -236,6 +237,8 @@ export function EventForm({
   const [confirmed, setConfirmed] = useState<string | null>(null)
   /** What the field held when the reader last paused. */
   const [asked, setAsked] = useState('')
+  /** The effect line's request as it stood when the reader last paused. */
+  const [settled, setSettled] = useState<string | null>(null)
 
   // Opening on a row fills the form; opening on nothing empties it. Keyed on the
   // row's own id so reopening on another row does not inherit the last one.
@@ -246,8 +249,9 @@ export function EventForm({
     // cancel button resets it; the removal closes the panel from outside, so the
     // reset is also made here, where *every* way in passes.
     write.reset()
-    setType(event?.event_type ?? null)
-    setDraft(event === null ? EMPTY : draftOf(event))
+    setType(event?.event_type ?? 'BUY')
+    setDraft(event === null ? { ...EMPTY, date: today() } : draftOf(event))
+    setSettled(null)
     offered.current = ''
     setPicked(null)
     setConfirmed(null)
@@ -299,25 +303,7 @@ export function EventForm({
     onClose()
   }
 
-  const fields = type === null ? null : FIELDS[type]
-
-  /**
-   * **The cash this event will move** (#1461), by the ledger's own `cashFlow`, so
-   * the sheet and the *Montant* column agree to the cent. Parsed on every render
-   * from the typed strings; a figure the type needs and cannot read gives no line.
-   */
-  const cash = (() => {
-    if (type === null || fields === null) return null
-    const read = (field: FieldName, present: boolean) =>
-      present ? parseDecimal(draft[field]) : null
-    return cashFlow({
-      event_type: type,
-      quantity: read('quantity', fields.quantity),
-      unit_price: read('unitPrice', fields.unitPrice !== 'none'),
-      fee: read('fee', fields.fee) ?? 0,
-      amount: read('amount', fields.amount),
-    })
-  })()
+  const fields = FIELDS[type]
 
   /**
    * **The grant's price is suggested, and never imposed** (#1007).
@@ -334,7 +320,7 @@ export function EventForm({
    * `optional` is the grant and only the grant: a purchase's price is the
    * amount that left the account, which no close can stand in for.
    */
-  const pricedDay = fields?.unitPrice === 'optional' ? parseDay(draft.date.trim()) : null
+  const pricedDay = fields.unitPrice === 'optional' ? parseDay(draft.date.trim()) : null
   const pricedSymbol = draft.symbol.trim()
   const { data: suggestion } = useQuery({
     queryKey: ['price-at', pricedSymbol, pricedDay],
@@ -414,7 +400,7 @@ export function EventForm({
    */
   const searching =
     open &&
-    fields?.security === true &&
+    fields.security &&
     titles !== null &&
     typed.length >= SEARCH_MIN &&
     typed.length <= SEARCH_MAX &&
@@ -494,7 +480,7 @@ export function EventForm({
    * is still in flight is saved as before.
    */
   const free =
-    fields?.security === true &&
+    fields.security &&
     typed !== '' &&
     titles !== null &&
     !ledgerNames(typed) &&
@@ -510,13 +496,137 @@ export function EventForm({
   // there to be read, so the save is withheld and the field says why.
   const blocked = choice.kind === 'pending' || choice.kind === 'failed'
 
+  // The currency's symbol, at the right edge of the money fields.
+  const unit = (() => {
+    if (currency === null) return ''
+    try {
+      return (
+        new Intl.NumberFormat(language, { style: 'currency', currency })
+          .formatToParts(0)
+          .find((part) => part.type === 'currency')?.value ?? ''
+      )
+    } catch {
+      return ''
+    }
+  })()
+
+  /**
+   * **The write, as far as it can be read** — the effect line's question. It is
+   * the draft the save would send, or `null` while a figure the type needs is
+   * missing or unreadable: the line then says nothing rather than guess. The
+   * refusals are `submit()`'s to name; this only decides whether to ask.
+   */
+  const asking: (EventDraft & { id?: string }) | null = (() => {
+    const day = parseDay(draft.date.trim())
+    const submitted = submittedAccount(choice, draft.account)
+    if (day === null || 'error' in submitted) return null
+    const symbol = draft.symbol.trim()
+    if (fields.security && symbol === '') return null
+    const read = (value: string) => parseDecimal(value.trim())
+    const quantity = fields.quantity ? read(draft.quantity) : null
+    if (fields.quantity && (quantity === null || quantity <= 0)) return null
+    const unitPrice = fields.unitPrice === 'none' ? null : read(draft.unitPrice)
+    if (fields.unitPrice === 'required' && (unitPrice === null || unitPrice <= 0)) return null
+    const amount = fields.amount ? read(draft.amount) : null
+    if (fields.amount && (amount === null || amount <= 0)) return null
+    const fee = fields.fee ? read(draft.fee) : null
+    if (fee !== null && fee < 0) return null
+    return {
+      date: day,
+      event_type: type,
+      account: submitted.account,
+      symbol: fields.security ? symbol : null,
+      name: null,
+      notes: null,
+      quantity,
+      unit_price: unitPrice,
+      fee,
+      amount,
+      ...(event?.id ? { id: event.id } : {}),
+    }
+  })()
+  const previewKey = asking === null ? null : JSON.stringify(asking)
+  useEffect(() => {
+    if (!open || previewKey === null) {
+      setSettled(null)
+      return
+    }
+    const pause = setTimeout(() => setSettled(previewKey), PREVIEW_PAUSE_MS)
+    return () => clearTimeout(pause)
+  }, [open, previewKey])
+  const previewed = useQuery({
+    queryKey: ['event-preview', settled],
+    queryFn: () => {
+      const { id, ...draft } = JSON.parse(settled as string) as EventDraft & { id?: string }
+      return dataApi.previewEvent(draft, id)
+    },
+    enabled: open && settled !== null,
+    retry: false,
+    // The line holds its last words while the next ones are on their way.
+    placeholderData: (previous) => (settled === null ? undefined : previous),
+  })
+  /** An account as the reader knows it: its libellé, the identifier only where it is edited. */
+  const nameOf = useAccountNames()
+  const effect =
+    asking === null || previewed.data === undefined
+      ? undefined
+      : {
+          // The server answers a magnitude and a direction; the line reads a sign.
+          amount:
+            previewed.data.direction === 'debit' ? -previewed.data.amount : previewed.data.amount,
+          fees: previewed.data.fee,
+          cashAfter: previewed.data.cash_after,
+          account: nameOf(asking.account ?? ''),
+          realised: previewed.data.realised_gain ?? null,
+        }
+  // **A refusal the server would give is said before « Enregistrer »**: a sale
+  // of shares the account does not hold, a withdrawal larger than its cash. The
+  // line holds the last answer while a new one is on its way, so it is the
+  // error of *this* question that counts.
+  const refused =
+    asking !== null && previewed.isError && !previewed.isFetching ? previewed.error : null
+
+  // **What can be said about the figures before the server is asked.** A value
+  // that is not a number, or not above zero, is named under its field as it is
+  // typed; a date that is odd is *warned about*, never refused, because an
+  // owner may pre-record a movement and an account may be opened after the fact.
+  const unreadable = (field: FieldName, allowZero = false): MessageKey | undefined => {
+    const raw = draft[field].trim()
+    if (raw === '') return undefined
+    const parsed = parseDecimal(raw)
+    if (parsed === null) return 'data.form.number.invalid'
+    if (field === 'fee') return parsed < 0 ? 'data.form.fee.negative' : undefined
+    return parsed < 0 || (parsed === 0 && !allowZero) ? 'data.form.number.positive' : undefined
+  }
+  const live: Partial<Record<FieldName, MessageKey>> = {
+    ...(fields.quantity ? { quantity: unreadable('quantity') } : {}),
+    ...(fields.unitPrice === 'none' ? {} : { unitPrice: unreadable('unitPrice') }),
+    ...(fields.amount ? { amount: unreadable('amount') } : {}),
+    ...(fields.fee ? { fee: unreadable('fee') } : {}),
+  }
+  const typedDay = parseDay(draft.date.trim())
+  const accountOpened = accounts?.accounts.find(
+    (account) =>
+      account.id === (draft.account || (choice.kind === 'single' ? choice.account.id : '')),
+  )?.opened_on
+  const dateWarning: { key: MessageKey; values?: Record<string, string> } | null =
+    typedDay === null
+      ? null
+      : typedDay > today()
+        ? { key: 'data.form.date.future' }
+        : accountOpened && typedDay < accountOpened
+          ? {
+              key: 'data.form.date.beforeOpening',
+              values: { date: format.date(accountOpened) },
+            }
+          : null
+
   function set(field: FieldName, value: string) {
     setDraft((previous) => ({ ...previous, [field]: value }))
     setErrors((previous) => ({ ...previous, [field]: undefined }))
   }
 
   function submit() {
-    if (type === null || fields === null) return
     const found: Partial<Record<FieldName, MessageKey>> = {}
 
     // **One message for the two states, because they are one state here.** A
@@ -615,67 +725,69 @@ export function EventForm({
     >
       <SheetContent
         ref={setPanel}
-        // No subtitle: the first label already asks what happened (#1412).
+        // The panel has no trigger to give the focus back to: the page says
+        // which row it was opened on.
+        onCloseAutoFocus={(closed) => {
+          if (!onRestoreFocus) return
+          closed.preventDefault()
+          onRestoreFocus()
+        }}
+        // The subtitle is a plain dated line, not a description of the control.
         aria-describedby={undefined}
-        className="w-full gap-6 overflow-y-auto sm:max-w-md"
+        showCloseButton={false}
+        className="w-full gap-0 shadow-none sm:max-w-115"
       >
-        <SheetHeader>
-          <SheetTitle>
-            {t(event === null ? 'data.form.create.title' : 'data.form.edit.title')}
-          </SheetTitle>
-        </SheetHeader>
-
         <form
-          className="space-y-5 px-4 pb-6"
+          className="flex min-h-0 flex-1 flex-col"
           onSubmit={(submitted) => {
             submitted.preventDefault()
             submit()
           }}
         >
-          {/* The first question, and the only one on screen until it is answered. */}
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">{t('data.form.type')}</legend>
-            <div
-              role="radiogroup"
-              aria-label={t('data.form.type')}
-              className="grid grid-cols-2 gap-2"
-            >
-              {EVENT_TYPES.map((candidate) => (
-                <button
-                  key={candidate}
-                  type="button"
-                  role="radio"
-                  aria-checked={candidate === type}
-                  onClick={() => setType(candidate)}
-                  className={cn(
-                    'rounded-md border px-3 py-2 text-sm',
-                    candidate === type ? 'border-ring bg-secondary font-medium' : 'text-foreground',
-                  )}
-                >
-                  {t(TYPE_LABEL[candidate])}
-                </button>
-              ))}
+          <header className="flex items-start justify-between gap-3 px-6 pt-5">
+            <div>
+              <SheetTitle className="text-2xl leading-7">
+                {t(event === null ? 'data.form.create.title' : 'data.form.edit.title')}
+              </SheetTitle>
+              {event === null ? null : (
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {t('data.form.edit.subtitle', {
+                    type: t(TYPE_LABEL[event.event_type]),
+                    date: format.date(event.date),
+                    account: nameOf(accountOf(event)),
+                  })}
+                </p>
+              )}
             </div>
-          </fieldset>
+            <SheetClose
+              aria-label={t('sheet.close')}
+              className="-mt-1.5 -mr-1.5 rounded-md p-1.5 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <X aria-hidden className="size-4" />
+            </SheetClose>
+          </header>
 
-          {fields === null ? null : (
-            <>
-              <Field
-                name="date"
-                label="data.form.date"
-                error={errors.date}
-                explain={
-                  <Explain
-                    figure={t('data.form.date')}
-                    body="data.form.date.explain"
-                    anchor="xirr"
-                  />
-                }
-              >
+          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 pt-5 pb-6">
+            {/* The type: text tabs, as the chart's readings are. */}
+            <TextTabs
+              size="sheet"
+              label={t('data.form.type')}
+              tabs={EVENT_TYPES.map((candidate) => ({
+                value: candidate,
+                label: t(TYPE_LABEL[candidate]),
+              }))}
+              value={type}
+              onChange={setType}
+              className="flex-wrap"
+            />
+
+            <div className="grid grid-cols-2 gap-x-3 gap-y-3.5">
+              <Field name="date" label="data.form.date" error={errors.date} warning={dateWarning}>
                 {(id, described) => (
                   <Input
                     id={id}
                     type="date"
+                    className="fig md:text-md"
                     value={draft.date}
                     aria-invalid={errors.date !== undefined}
                     aria-describedby={described}
@@ -705,7 +817,7 @@ export function EventForm({
                   {(id, described) => (
                     <select
                       id={id}
-                      className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                      className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-md shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
                       value={draft.account}
                       aria-invalid={errors.account !== undefined}
                       aria-describedby={described}
@@ -727,15 +839,13 @@ export function EventForm({
                 </Field>
               ) : (
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">{t('data.form.account')}</p>
+                  <p className="label">{t('data.form.account')}</p>
                   {choice.kind === 'unassigned' ? (
                     /* The **same rule as the `choose` branch above**, and it has
-                       to be: this form sits on the tab the declaration table is
-                       on, so naming the row from the catalogue here while the
-                       table named it from the store printed two names for one
-                       account, one gesture after the rename this page exists to
-                       make reachable. */
-                    <p className="text-sm">
+                       to be: the declaration table names the row from the store,
+                       so naming it from the catalogue here would print two names
+                       for one account. */
+                    <p className="text-md">
                       {(choice.account ? declaredLabel(choice.account) : null) ??
                         t(DEFAULT_ACCOUNT_LABEL)}
                     </p>
@@ -756,6 +866,7 @@ export function EventForm({
                   name="symbol"
                   label="data.form.symbol"
                   error={errors.symbol}
+                  full
                   below={
                     gated ? (
                       <div className="space-y-2">
@@ -841,13 +952,18 @@ export function EventForm({
               ) : null}
 
               {fields.quantity ? (
-                <Field name="quantity" label="data.form.quantity" error={errors.quantity}>
+                <Field
+                  name="quantity"
+                  label="data.form.quantity"
+                  error={errors.quantity ?? live.quantity}
+                >
                   {(id, described) => (
                     <Input
                       id={id}
                       inputMode="decimal"
+                      className="fig md:text-md"
                       value={draft.quantity}
-                      aria-invalid={errors.quantity !== undefined}
+                      aria-invalid={(errors.quantity ?? live.quantity) !== undefined}
                       aria-describedby={described}
                       onChange={(changed) => set('quantity', changed.target.value)}
                     />
@@ -859,37 +975,25 @@ export function EventForm({
                 <Field
                   name="unitPrice"
                   label="data.form.unitPrice"
-                  error={errors.unitPrice}
+                  error={errors.unitPrice ?? live.unitPrice}
                   optional={fields.unitPrice === 'optional'}
-                  explain={
-                    // A grant's is the one field whose **emptiness is a
-                    // statement**, so the sentence arrives where the reader is
-                    // about to leave it empty.
-                    fields.unitPrice === 'optional' ? (
-                      <Explain
-                        figure={t('data.form.unitPrice')}
-                        body="data.form.grantPrice.explain"
-                        anchor="net-contributed"
-                      />
-                    ) : undefined
-                  }
                 >
                   {(id, described) => (
                     <>
-                      <Input
+                      <Money
                         id={id}
-                        inputMode="decimal"
+                        unit={unit}
                         value={draft.unitPrice}
-                        aria-invalid={errors.unitPrice !== undefined}
+                        invalid={(errors.unitPrice ?? live.unitPrice) !== undefined}
                         // The source is bound to the field rather than left
                         // floating beside it: a figure that arrived on its own
                         // has to say so to the reader who cannot see it appear.
-                        aria-describedby={
+                        describedBy={
                           [described, suggesting ? `${id}-source` : null]
                             .filter(Boolean)
                             .join(' ') || undefined
                         }
-                        onChange={(changed) => set('unitPrice', changed.target.value)}
+                        onChange={(next) => set('unitPrice', next)}
                       />
                       {suggesting ? (
                         <p id={`${id}-source`} className="text-xs text-muted-foreground">
@@ -904,30 +1008,30 @@ export function EventForm({
               )}
 
               {fields.amount ? (
-                <Field name="amount" label="data.form.amount" error={errors.amount}>
+                <Field name="amount" label="data.form.amount" error={errors.amount ?? live.amount}>
                   {(id, described) => (
-                    <Input
+                    <Money
                       id={id}
-                      inputMode="decimal"
+                      unit={unit}
                       value={draft.amount}
-                      aria-invalid={errors.amount !== undefined}
-                      aria-describedby={described}
-                      onChange={(changed) => set('amount', changed.target.value)}
+                      invalid={(errors.amount ?? live.amount) !== undefined}
+                      describedBy={described}
+                      onChange={(next) => set('amount', next)}
                     />
                   )}
                 </Field>
               ) : null}
 
               {fields.fee ? (
-                <Field name="fee" label="data.form.fee" error={errors.fee} optional>
+                <Field name="fee" label="data.form.fee" error={errors.fee ?? live.fee}>
                   {(id, described) => (
-                    <Input
+                    <Money
                       id={id}
-                      inputMode="decimal"
+                      unit={unit}
                       value={draft.fee}
-                      aria-invalid={errors.fee !== undefined}
-                      aria-describedby={described}
-                      onChange={(changed) => set('fee', changed.target.value)}
+                      invalid={(errors.fee ?? live.fee) !== undefined}
+                      describedBy={described}
+                      onChange={(next) => set('fee', next)}
                     />
                   )}
                 </Field>
@@ -935,62 +1039,158 @@ export function EventForm({
 
               {/* The label, and it is not decoration: on a cash movement it is
                   the whole identity the ledger will show. */}
-              <Field name="notes" label="data.form.notes" error={errors.notes} optional>
+              <Field name="notes" label="data.form.notes" error={errors.notes} optional full>
                 {(id, described) => (
                   <Input
                     id={id}
+                    className="md:text-md"
                     value={draft.notes}
                     aria-describedby={described}
                     onChange={(changed) => set('notes', changed.target.value)}
                   />
                 )}
               </Field>
+            </div>
 
-              {cash !== null ? (
-                <p className="text-sm tabular-nums">
-                  {t(cashLabel(cash), { amount: format.currency(Math.abs(cash), currency) })}
-                </p>
-              ) : null}
+            {write.error && refusedField(write.error) === null ? (
+              <Refusal ref={refusal}>{problemSentence(t, write.error)}</Refusal>
+            ) : null}
 
-              {write.error && refusedField(write.error) === null ? (
-                <Refusal ref={refusal}>{problemSentence(t, write.error)}</Refusal>
-              ) : null}
-
-              <div className="flex flex-wrap gap-2">
-                {/* Withheld rather than offered and refused — the same rule the
-                    accounts block applies to a removal it knows will fail.
-                    Neither of the two states is repairable from inside this
-                    panel, and a save that did nothing and said nothing is the
-                    failure this ticket inherited (#764). */}
-                <Button type="submit" disabled={write.isPending || blocked}>
-                  {t('data.form.submit')}
-                </Button>
-                <Button type="button" variant="outline" onClick={close}>
-                  {t('data.form.cancel')}
-                </Button>
-                {/* The row's removal lives here and not in the table (#1264):
-                    a button on all 285 rows said the same thing 285 times. */}
-                {event !== null && isEditable(event) ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="ml-auto text-destructive"
-                    onClick={onDelete}
-                  >
-                    {t('data.row.delete')}
-                  </Button>
+            {/* **The effect line**, the one sentence the sheet says about what
+                will happen (DESIGN.md › Content): what the write does to the
+                account's cash, as the server computed it. Nothing is said while
+                the server has not answered, and it is not announced: it moves
+                with every figure typed (#1461). */}
+            {refused !== null ? (
+              <p className="text-sm text-destructive">{problemSentence(t, refused)}</p>
+            ) : effect === undefined ? null : (
+              <p className="text-sm text-muted-foreground">
+                {type === 'GRANT' && asking?.quantity != null ? (
+                  <>
+                    <span className="fig text-foreground">
+                      {t('event.effect.grant', {
+                        quantity: asking.quantity,
+                        symbol: asking.symbol ?? '',
+                        account: effect.account,
+                      })}
+                    </span>
+                    {' · '}
+                  </>
                 ) : null}
-              </div>
-            </>
-          )}
+                {Math.abs(effect.amount) < 0.005 ? null : (
+                  <>
+                    <span className="fig text-foreground">
+                      {format.currency(Math.abs(effect.amount), currency)}
+                    </span>{' '}
+                    {t(effect.amount > 0 ? 'event.effect.in' : 'event.effect.out', {
+                      account: effect.account,
+                    })}
+                    {effect.fees > 0 ? (
+                      <>
+                        {', '}
+                        {t('event.effect.fees.before')}{' '}
+                        <span className="fig text-foreground">
+                          {format.currency(effect.fees, currency)}
+                        </span>{' '}
+                        {t('event.effect.fees.after')}
+                      </>
+                    ) : null}
+                    {' · '}
+                  </>
+                )}
+                {effect.realised === null || Math.abs(effect.realised) < 0.005 ? null : (
+                  <>
+                    {t(effect.realised < 0 ? 'event.effect.loss' : 'event.effect.gain')}{' '}
+                    <span className="fig text-foreground">
+                      {format.currency(Math.abs(effect.realised), currency)}
+                    </span>
+                    {' · '}
+                  </>
+                )}
+                {t('event.effect.cash')}{' '}
+                <span className="fig text-foreground">
+                  {format.currency(effect.cashAfter, currency)}
+                </span>
+              </p>
+            )}
+          </div>
+
+          <footer className="flex items-center justify-end gap-2 border-t px-6 py-4">
+            {/* The row's removal lives here and not in the table (#1264): a
+                button on all 285 rows said the same thing 285 times. */}
+            {event !== null && isEditable(event) ? (
+              <button
+                type="button"
+                className="mr-auto text-md text-destructive underline decoration-border underline-offset-3 outline-none focus-visible:rounded-sm focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                onClick={onDelete}
+              >
+                {t('data.row.delete')}
+              </button>
+            ) : null}
+            <Button type="button" size="sheet" onClick={close}>
+              {t('data.form.cancel')}
+            </Button>
+            {/* Withheld rather than offered and refused — the same rule the
+                accounts block applies to a removal it knows will fail. Neither
+                of the two states is repairable from inside this panel, and a
+                save that did nothing and said nothing is the failure this
+                ticket inherited (#764). */}
+            <Button
+              variant="primary"
+              size="sheet"
+              type="submit"
+              disabled={write.isPending || blocked}
+            >
+              {t('data.form.submit')}
+            </Button>
+          </footer>
         </form>
       </SheetContent>
     </Sheet>
   )
 }
 
+/** A money field: the figure in `.fig`, the currency's symbol at its right edge. */
+function Money({
+  id,
+  unit,
+  value,
+  invalid,
+  describedBy,
+  onChange,
+}: {
+  id: string
+  unit: string
+  value: string
+  invalid: boolean
+  describedBy: string | undefined
+  onChange: (value: string) => void
+}) {
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        inputMode="decimal"
+        className="fig pr-8 md:text-md"
+        value={value}
+        aria-invalid={invalid}
+        aria-describedby={describedBy}
+        onChange={(changed) => onChange(changed.target.value)}
+      />
+      {unit === '' ? null : (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground"
+        >
+          {unit}
+        </span>
+      )}
+    </div>
+  )
+}
+
 /**
- * One field, its label, its optional explanation and — when it has one — the
+ * One field, its label, its optional marker and — when it has one — the
  * sentence that says what was not understood. The refusal is bound to the input
  * with `aria-describedby` rather than left floating, so it is read where it
  * applies rather than announced once at the top of a form.
@@ -1000,15 +1200,19 @@ function Field({
   label,
   error,
   optional,
-  explain,
+  full,
   below,
+  warning,
   children,
 }: {
   name: FieldName
   label: MessageKey
   error?: MessageKey
+  /** Said under the field, and never a reason to refuse it. */
+  warning?: { key: MessageKey; values?: Record<string, string> } | null
   optional?: boolean
-  explain?: ReactNode
+  /** Takes the whole row of the two-column grid. */
+  full?: boolean
   /** What goes under the sentence — the controls that repair it. */
   below?: ReactNode
   children: (id: string, describedBy: string | undefined) => ReactNode
@@ -1018,22 +1222,19 @@ function Field({
   const errorId = `${id}-error`
 
   return (
-    <div className="space-y-1">
-      {/* On touch the ⓘ's hit area reaches 14 px past its icon: the gap keeps
-          it off the label. */}
-      <div className="flex items-center gap-1.5 pointer-coarse:gap-3.5">
-        <label htmlFor={id} className="text-sm font-medium">
-          {t(label)}
-        </label>
-        {optional ? (
-          <span className="text-xs text-muted-foreground">{t('data.form.optional')}</span>
-        ) : null}
-        {explain}
+    <div className={cn('flex flex-col gap-1.5', full && 'col-span-2')}>
+      <div className="label flex items-baseline whitespace-pre">
+        <label htmlFor={id}>{t(label)}</label>
+        {optional ? <span className="font-normal">{` · ${t('data.form.optional')}`}</span> : null}
       </div>
-      {children(id, error ? errorId : undefined)}
+      {children(id, error ? errorId : warning ? `${id}-warning` : undefined)}
       {error ? (
         <p id={errorId} className="text-sm text-destructive">
           {t(error)}
+        </p>
+      ) : warning ? (
+        <p id={`${id}-warning`} className="text-sm text-attention">
+          {t(warning.key, warning.values)}
         </p>
       ) : null}
       {below}

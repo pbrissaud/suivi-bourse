@@ -117,9 +117,13 @@ describe('the four absences', () => {
     // still says nothing about what the line is worth.
     const asked = input({ price: null, converted: null, terminal: false, consecutiveFailures: 4 })
     expect(absenceCase(asked)).toBe('rebuilding')
-    for (const cell of Object.values(positionRenderings(asked))) {
-      expect(cell).toEqual({ kind: 'named', message: 'absence.noQuote', values: { count: 4 } })
-    }
+    // The count is said **once** (PP-2): the price cell carries it, the two
+    // money cells keep the rebuild's own word.
+    expect(positionRenderings(asked)).toEqual({
+      price: { kind: 'named', message: 'absence.noQuote', values: { count: 4 } },
+      valuation: { kind: 'named', message: 'absence.rebuilding' },
+      unrealised: { kind: 'named', message: 'absence.rebuilding' },
+    })
 
     // And the catalogues say a rebuild rather than a failure: nothing here is
     // the reader's to repair.

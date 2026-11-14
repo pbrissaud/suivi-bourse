@@ -66,12 +66,12 @@ describe('ICU is the format, and it is needed', () => {
     //
     // Zero is the value that separates the two languages: French counts it as
     // `one`, English does not.
-    expect(formatMessage('fr', 'notification.count', { count: 0 })).toBe('0 entrée ouverte')
-    expect(formatMessage('en', 'notification.count', { count: 0 })).toBe('0 open entries')
-    expect(formatMessage('fr', 'notification.count', { count: 1 })).toBe('1 entrée ouverte')
-    expect(formatMessage('en', 'notification.count', { count: 1 })).toBe('1 open entry')
-    expect(formatMessage('fr', 'notification.count', { count: 2 })).toBe('2 entrées ouvertes')
-    expect(formatMessage('en', 'notification.count', { count: 2 })).toBe('2 open entries')
+    expect(formatMessage('fr', 'notification.count', { count: 0 })).toBe('0 notification non lue')
+    expect(formatMessage('en', 'notification.count', { count: 0 })).toBe('0 unread notifications')
+    expect(formatMessage('fr', 'notification.count', { count: 1 })).toBe('1 notification non lue')
+    expect(formatMessage('en', 'notification.count', { count: 1 })).toBe('1 unread notification')
+    expect(formatMessage('fr', 'notification.count', { count: 2 })).toBe('2 notifications non lues')
+    expect(formatMessage('en', 'notification.count', { count: 2 })).toBe('2 unread notifications')
 
     // The second counted noun: the absence rendering that reports its count
     // rather than a verdict.
@@ -175,40 +175,6 @@ describe('ICU is the format, and it is needed', () => {
     expect(render('fr', 1)).toBe('1 relevé infructueux')
     expect(render('fr', 3)).toBe('3 relevés infructueux')
     expect(render('en', 3)).toBe('3 fruitless readings')
-  })
-})
-
-describe('the movers’ sentence', () => {
-  it('drops its second clause when every hidden line moved (#1096)', () => {
-    // *dont aucune n’a bougé de rien* read as *none of them moved* — the
-    // opposite of the truth. With nothing unchanged there is nothing to qualify.
-    expect(formatMessage('fr', 'dashboard.movers.others', { count: 7, unchanged: 0 })).toBe(
-      '7 autres lignes n’apparaissent pas ici.',
-    )
-    expect(formatMessage('en', 'dashboard.movers.others', { count: 7, unchanged: 0 })).toBe(
-      '7 other holdings are not shown here.',
-    )
-    expect(formatMessage('fr', 'dashboard.movers.others', { count: 2, unchanged: 1 })).toBe(
-      '2 autres lignes n’apparaissent pas ici, dont 1 n’a pas bougé.',
-    )
-    expect(formatMessage('en', 'dashboard.movers.others', { count: 3, unchanged: 1 })).toBe(
-      '3 other holdings are not shown here, 1 of which did not move.',
-    )
-  })
-
-  it('says it once when every hidden line is unchanged (#1146)', () => {
-    expect(formatMessage('fr', 'dashboard.movers.othersAllUnchanged', { count: 11 })).toBe(
-      'Les 11 autres lignes n’ont pas bougé.',
-    )
-    expect(formatMessage('fr', 'dashboard.movers.othersAllUnchanged', { count: 1 })).toBe(
-      'L’autre ligne n’a pas bougé.',
-    )
-    expect(formatMessage('en', 'dashboard.movers.othersAllUnchanged', { count: 11 })).toBe(
-      'The 11 other holdings did not move.',
-    )
-    expect(formatMessage('en', 'dashboard.movers.othersAllUnchanged', { count: 1 })).toBe(
-      'The other holding did not move.',
-    )
   })
 })
 

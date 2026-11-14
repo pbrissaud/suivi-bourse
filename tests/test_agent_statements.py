@@ -61,8 +61,7 @@ class Extractor:
 
 def send(thread_id='s1', **members):
     payload = {'thread_id': thread_id, 'account': 'cto',
-               'provider': 'anthropic', 'name': 'releve.csv', 'text': TEXT,
-               **members}
+               'name': 'releve.csv', 'text': TEXT, **members}
 
     async def work(client):
         return await client.post('/api/agent/statements', json=payload)
@@ -168,24 +167,20 @@ def test_an_agent_switched_off_answers_404(tmp_path):
     assert run(runtime, send()).status_code == 404
 
 
-@pytest.mark.parametrize('members', [{'provider': 'openai'}, {'provider': None}])
-def test_a_provider_other_than_the_configured_one_is_409_and_no_model_is_called(
-        runtime, monkeypatch, members):
+def test_a_provider_that_is_gone_is_409_and_no_model_is_called(
+        runtime, monkeypatch):
     extractor = reading(monkeypatch, Extractor())
 
-    answer = run(runtime, send(**members))
+    answer = run(runtime, send(provider_id='gone'))
 
     assert answer.status_code == 409 and extractor.seen == []
     assert count(runtime, 'proposal') == 0
 
 
-def test_a_request_without_a_provider_is_409(runtime, monkeypatch):
+def test_a_request_without_a_provider_runs_on_the_default(runtime, monkeypatch):
     extractor = reading(monkeypatch, Extractor())
 
-    async def work(client):
-        return await client.post('/api/agent/statements', json={
-            'thread_id': 's1', 'account': 'cto', 'name': 'x', 'text': TEXT})
-    assert run(runtime, work).status_code == 409 and extractor.seen == []
+    assert run(runtime, send()).status_code == 201 and extractor.seen
 
 
 @pytest.mark.parametrize('members, status', [
@@ -234,7 +229,7 @@ def test_a_thread_busy_with_a_turn_is_409(runtime, monkeypatch):
             client.post('/api/agent/chat', json=body('s1')))
         await asyncio.sleep(0.2)
         refused = await client.post('/api/agent/statements', json={
-            'thread_id': 's1', 'account': 'cto', 'provider': 'anthropic',
+            'thread_id': 's1', 'account': 'cto',
             'name': 'x', 'text': TEXT})
         release.set()
         await first

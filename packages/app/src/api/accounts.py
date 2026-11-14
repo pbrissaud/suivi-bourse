@@ -3,7 +3,7 @@ from dataclasses import asdict
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
 from application import account_facts
 from application import accounts as accounts_module
@@ -53,12 +53,9 @@ def list_accounts():
 @bp.get('/accounts/<account_id>/history')
 def get_account_history(account_id: str):
     """One account's perf series — the TWR chart and the detail sheet's curve."""
-    accounts = _snapshot().accounts
-    if accounts is not None:
-        known = accounts.get(account_id) is not None
-    else:
-        known = any(row.id == account_id
-                    for row in accounts_module.seeded_only(_store()))
+    # The store is the declaration: the published snapshot lags a write, and an
+    # account just declared (no event yet) must answer an empty series, not 404.
+    known = account_id in accounts_module.account_ids(_store())
     if not known:
         return not_found(f"No declared account {account_id!r}")
 
@@ -108,7 +105,7 @@ def create_account():
                 # #918) — the opening date included, which the form pre-fills
                 # from the first payment and never re-derives afterwards.
                 model = accounts_module.set_taxation_model(
-                    opened, account.id, body.get('taxation_model'))
+                    opened, account.id, body.get('taxation_model_id'))
                 opened_on = accounts_module.set_opened_on(
                     opened, account.id, day)
                 if _flag(body.get('reassign')):
@@ -116,7 +113,9 @@ def create_account():
     except accounts_module.DuplicateAccount as exc:
         return conflict(str(exc))
     except accounts_module.UnknownTaxationModel as exc:
-        return unprocessable_request(str(exc), key='taxation_model')
+        return unprocessable_request(str(exc), key='taxation_model_id')
+    except accounts_module.InvalidAccountId as exc:
+        return unprocessable_request(str(exc), key='id')
     except accounts_module.AccountSourceError as exc:
         return bad_request(str(exc))
     except AggregationError as exc:
@@ -169,15 +168,16 @@ def update_account(account_id: str):
             # applied, and a request answered `422` must leave nothing behind.
             with opened.transaction():
                 account = accounts_module.update_account(
-                    opened, account_id, label=body.get('label'))
+                    opened, account_id,
+                    label=body.get('label', accounts_module.KEEP))
                 # **Absent is *leave it alone*, `null` is *detach it***, and the
                 # two are two gestures: a `PATCH` sent to rename an account would
                 # otherwise silently drop the model it carries.
                 model = (
                     accounts_module.taxation_models_by_account(opened).get(account_id)
-                    if 'taxation_model' not in body
+                    if 'taxation_model_id' not in body
                     else accounts_module.set_taxation_model(
-                        opened, account_id, body.get('taxation_model')))
+                        opened, account_id, body.get('taxation_model_id')))
                 # The opening date is read the same way, and for the same
                 # reason (#918): a `PATCH` that renames an account must not
                 # take away a date nobody mentioned.
@@ -188,7 +188,7 @@ def update_account(account_id: str):
     except accounts_module.UnknownAccount as exc:
         return not_found(str(exc))
     except accounts_module.UnknownTaxationModel as exc:
-        return unprocessable_request(str(exc), key='taxation_model')
+        return unprocessable_request(str(exc), key='taxation_model_id')
 
     main.replay_after_write(runtime)
     return jsonify(_account_to_dict(account, model, opened_on))
@@ -221,7 +221,7 @@ def _account_to_dict(account, taxation_model: Optional[str] = None,
         'id': account.id,
         'label': account.label,
         **account_facts.declared_only({
-            'taxation_model': taxation_model,
+            'taxation_model_id': taxation_model,
             'opened_on': instants.iso(opened_on),
         }),
     }
@@ -272,15 +272,49 @@ def read_taxation_registry():
     """The wrappers the documentation site publishes: the one outbound call, on click.
 
     Outside ``writing()``, like the theme import: a slow Pages must not hold the
-    store. Nothing is stored; a pick is a ``POST /taxation-models`` (#1290).
+    store. ``{"country": "FR"}`` narrows the list to one country. Without
+    ``ids`` nothing is stored and the list is the answer (#1290); with ``ids``
+    (the first run imports several at once) each listed wrapper is written as a
+    model of the owner's own, all or none: one id the registry does not list, or
+    lists as refused, fails the lot with a 422. A wrapper whose name the owner
+    already has a model under is skipped and named in ``skipped``.
     """
+    body = request.get_json(silent=True) or {}
+    ids = body.get('ids') if isinstance(body, dict) else 0
+    country = body.get('country') if isinstance(body, dict) else 0
+    ids_ok = ids is None or (isinstance(ids, list) and all(isinstance(i, str) for i in ids))
+    if not ids_ok or not (country is None or isinstance(country, str)):
+        return bad_request("ids is a list of registry ids and country a string")
+
     try:
-        items = taxation_registry.fetch(current_app.config['TAXATION_REGISTRY_FETCH'],
-                                        current_runtime().documentation_url)
+        items = taxation_registry.fetch(
+            current_app.config['TAXATION_REGISTRY_FETCH'],
+            current_runtime().documentation_url,
+            today=datetime.now(timezone.utc).date(), country=country)
     except taxation_registry.FetchFailed as exc:
         return provider_refused(f'taxation-registry: {exc.reason}', 'taxation-registry',
                                 'unpublished' if exc.unpublished else 'unreachable')
-    return jsonify({'items': items})
+    if ids is None:
+        return jsonify({'items': items})
+
+    listed = {item['id']: item for item in items}
+    unusable = [i for i in ids if i not in listed or listed[i]['refused']]
+    if unusable:
+        return unprocessable_request(
+            f"not importable from the registry: {', '.join(unusable)}", key='ids')
+
+    created, skipped = [], []
+    with current_runtime().config_manager.writing() as opened:
+        with opened.transaction():
+            names = {model.name for model in accounts_module.read_models(opened)}
+            for registry_id in dict.fromkeys(ids):
+                item = listed[registry_id]
+                if item['name'] in names:
+                    skipped.append(registry_id)
+                    continue
+                created.append(asdict(accounts_module.create_model(
+                    opened, item['name'], item['kind'], item['parameters'])))
+    return jsonify({'models': created, 'skipped': skipped}), 201
 
 
 @bp.post('/taxation-models')

@@ -230,15 +230,23 @@ export function positionRenderings(input: PositionAbsenceInput): PositionRenderi
       // and **which** sentence they carry is the counter's one remaining job.
       // Asked and never answered is a fact worth reading during a rebuild too;
       // asked nothing yet is the rebuild itself, and it says so.
-      const named: Rendering =
-        input.consecutiveFailures > 0
-          ? {
-              kind: 'named',
-              message: 'absence.noQuote',
-              values: { count: input.consecutiveFailures },
-            }
-          : REBUILDING
-      return { price: named, valuation: named, unrealised: named }
+      //
+      // **Said once per row**: the count goes in the price cell, where *no
+      // price* is what is true, and the two money cells keep the rebuild's own
+      // word — three copies of « 1 relevé consécutif, aucun cours » in one row
+      // read as three problems.
+      if (input.consecutiveFailures > 0) {
+        return {
+          price: {
+            kind: 'named',
+            message: 'absence.noQuote',
+            values: { count: input.consecutiveFailures },
+          },
+          valuation: REBUILDING,
+          unrealised: REBUILDING,
+        }
+      }
+      return { price: REBUILDING, valuation: REBUILDING, unrealised: REBUILDING }
     }
     case 'quoted':
       return { price: FIGURE, valuation: FIGURE, unrealised: FIGURE }

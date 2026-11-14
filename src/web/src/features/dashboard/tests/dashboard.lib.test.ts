@@ -16,12 +16,8 @@ import {
   amountsFromValuation,
   amountsValues,
   dashboardState,
-  dayMove,
   heroReading,
   hasCashLedger,
-  MOVERS_ROWS,
-  moversList,
-  tickerBadge,
   unpricedLines,
   performanceRows,
   tickDigits,
@@ -32,10 +28,8 @@ import {
   yFloor,
 } from '@/features/dashboard/lib/dashboard'
 import { formatCompact } from '@/lib/format'
-import { buildShareRows } from '@/features/shares/lib/shares'
 import {
   aClosedPosition,
-  aMover,
   aPerfPoint,
   aPortfolioHistory,
   aPosition,
@@ -48,10 +42,6 @@ import {
 } from '@/test/factories'
 
 const now = new Date(NOW)
-
-function rowsOf(positions: Parameters<typeof buildShareRows>[0]) {
-  return buildShareRows(positions, new Map())
-}
 
 describe('the one range control', () => {
   it('offers four presets, and `3M` is not one of them', () => {
@@ -340,164 +330,6 @@ describe('the two readings', () => {
   })
 })
 
-describe('the movers', () => {
-  /** N held lines, named — the portfolio the sentence's denominator counts. */
-  function heldLines(symbols: string[]) {
-    return rowsOf(symbols.map((symbol) => aPosition({ symbol })))
-  }
-
-  it('cuts at five on half the width and at ten across the full width, by size', () => {
-    const symbols = Array.from({ length: 12 }, (_, index) => `S${index}`)
-    const movers = symbols.map((symbol, index) =>
-      aMover({ symbol, change_pct: ((index % 2 === 0 ? 1 : -1) * (index + 1)) / 100 }),
-    )
-
-    const half = moversList(movers, heldLines(symbols), MOVERS_ROWS.half)
-    const full = moversList(movers, heldLines(symbols), MOVERS_ROWS.full)
-
-    expect(half.rows).toHaveLength(5)
-    expect(full.rows).toHaveLength(10)
-    // The ten that moved most, either way, ranked by how much they moved.
-    expect(full.rows.map((one) => one.symbol)).toEqual([
-      'S11',
-      'S10',
-      'S9',
-      'S8',
-      'S7',
-      'S6',
-      'S5',
-      'S4',
-      'S3',
-      'S2',
-    ])
-    expect(full.others).toBe(2)
-  })
-
-  it('counts what it does not show, and a line that moved by nothing with it', () => {
-    // Measured: the portfolio's second line, at 16,6 % of it, moved 0,00 % — so
-    // it entered no column and vanished from the list.
-    const reading = moversList(
-      [
-        aMover({ symbol: 'A', change_pct: 0.05 }),
-        aMover({ symbol: 'B', change_pct: 0 }),
-        aMover({ symbol: 'C', change_pct: -0.02 }),
-      ],
-      heldLines(['A', 'B', 'C', 'D', 'E', 'F']),
-    )
-
-    // One list, biggest move first: the riser, then the faller. The line that
-    // moved by nothing is in neither, and is counted by the sentence instead.
-    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['A', 'C'])
-    expect(reading.unchanged).toBe(1)
-    // Six held, two shown: the unchanged one, and the three lines the server
-    // never served because they have nothing to compare a first day against.
-    expect(reading.others).toBe(4)
-  })
-
-  it('leaves a closed line out of the sentence it is not part of', () => {
-    // `/api/positions` serves a sold line on purpose, `buildShareRows`
-    // folds it with its last frozen quote, and the server compares that quote
-    // against a baseline equal to it — so a position closed years ago comes back
-    // as `change_pct: 0`. Counted, it swelled `unchanged` while `others` was
-    // taken over the held lines alone: the same sentence's two members then
-    // described two different sets, and its qualifier could exceed the set it
-    // qualifies.
-    const rows = rowsOf([
-      aPosition({ symbol: 'ZZA' }),
-      aPosition({ symbol: 'ZZB' }),
-      aClosedPosition({ symbol: 'ZZD', closed_at: '2025-11-04' }),
-      aClosedPosition({ symbol: 'ZZE', closed_at: '2025-11-05' }),
-    ])
-    const reading = moversList(
-      [
-        aMover({ symbol: 'ZZA', change_pct: 0.05 }),
-        aMover({ symbol: 'ZZB', change_pct: 0 }),
-        // The measured shape: worth nothing, moving by nothing, still served.
-        aMover({ symbol: 'ZZD', change_pct: 0, change: 0, market_value: 0, contribution: 0 }),
-        // And one whose frozen quote still differs from its baseline: a closed
-        // line has no business in a column of the portfolio's movers either.
-        aMover({ symbol: 'ZZE', change_pct: 0.31, market_value: 0, contribution: 0 }),
-      ],
-      rows,
-    )
-
-    expect(reading.unchanged).toBe(1)
-    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['ZZA'])
-    // Two held, one shown: the one that moved by nothing. The two closed lines
-    // are in neither figure, which is what makes the pair one set.
-    expect(reading.others).toBe(1)
-    expect(reading.unchanged).toBeLessThanOrEqual(reading.others)
-  })
-
-  it('takes the five biggest moves, whichever way they went, biggest first', () => {
-    // Four up and four down, so the list has to choose across the whole set and
-    // not five from one end of it: the day's best and its worst both belong
-    // (#1096). Sorted by sign and cut at five, this read the five best of eight
-    // and left the day's worst out.
-    const symbols = Array.from({ length: 8 }, (_, index) => `U${index}`)
-    const movers = symbols.map((symbol, index) =>
-      aMover({ symbol, change_pct: (index - 3.4) / 100 }),
-    )
-    const reading = moversList(movers, heldLines(symbols))
-
-    // +3,6 −3,4 +2,6 −2,4 +1,6 are the five biggest, ranked by size whatever
-    // their sign.
-    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['U7', 'U0', 'U6', 'U1', 'U5'])
-    expect(reading.others).toBe(3)
-  })
-
-  it('keeps a heavy loss over a light one', () => {
-    // The staging day the ticket was filed on, reduced: five small moves and one
-    // large fall. The fall is in the list, and it leads it.
-    const day = { SAN: 0.0143, MC: 0.0096, CAP: 0.005, C500: -0.0032, EUNL: -0.0044, BNP: -0.0382 }
-    const symbols = Object.keys(day)
-    const movers = symbols.map((symbol) =>
-      aMover({ symbol, change_pct: day[symbol as keyof typeof day] }),
-    )
-    const reading = moversList(movers, heldLines(symbols))
-
-    expect(reading.rows.map((mover) => mover.symbol)).toEqual(['BNP', 'SAN', 'MC', 'CAP', 'EUNL'])
-    expect(reading.others).toBe(1)
-  })
-})
-
-describe('the day’s move', () => {
-  const day = (t: string, totalValue: number | null, contributed: number | null) => ({
-    ...aPerfPoint(t, 100),
-    total_value: totalValue,
-    net_contributed: contributed,
-  })
-
-  it('counts the movement of the gain, which no deposit moves', () => {
-    // `gain_absolu = total_value − net_contributed`, so a 500,00 deposit made
-    // today lifts both terms and the day's move stays what the holdings did.
-    // It is `_ytd`'s own definition over a one-day window, which is the whole
-    // reason the figure is spelled on this series rather than on the movers.
-    expect(
-      dayMove([day('2026-03-01', 1800, 1380), day('2026-03-02', 2330, 1880)], now),
-    ).toBeCloseTo(30, 10)
-  })
-
-  it('says nothing about today until the series has reached today', () => {
-    // A series stopping short is a reconstruction in progress, and *today* is
-    // then a claim nothing on the wire supports.
-    expect(dayMove([day('2026-02-28', 1800, 1380), day('2026-03-01', 1830, 1380)], now)).toBeNull()
-  })
-
-  it('has no figure while the read is in flight, or with one day to its name', () => {
-    // `null` is the read; a single point is a payload with no difference in it.
-    expect(dayMove(null, now)).toBeNull()
-    expect(dayMove([day('2026-03-02', 1800, 1380)], now)).toBeNull()
-  })
-
-  it('goes out on an install with no cash ledger rather than reading a gain of nothing', () => {
-    // `total_value` and `net_contributed` are both `NULL` there (#708), where
-    // `gain_absolu` is written always — so the year-to-date pill survives this
-    // one and an absent pill is not a false one.
-    expect(dayMove([day('2026-03-01', null, null), day('2026-03-02', null, null)], now)).toBeNull()
-  })
-})
-
 describe('the four states of the page', () => {
   it('tells *no events* from *events and nothing held*', () => {
     // The first is one sentence and a link; the second is an ordinary page
@@ -519,20 +351,6 @@ describe('the four states of the page', () => {
     expect(
       dashboardState({ failed: true, positions: aPositionsPayload(), totals: aTotalsPayload() }),
     ).toBe('failed')
-  })
-})
-
-describe('tickerBadge', () => {
-  it.each([
-    ['MC.PA', 'MC'],
-    ['BTC-EUR', 'BTC'],
-    ['ASML.AS', 'ASML'],
-    ['NVDA', 'NVDA'],
-    ['BRK-B', 'BRK'],
-    ['GOOGL', 'GOOG'],
-    ['.HIDDEN', '.HID'],
-  ])('reads %s as %s', (symbol, badge) => {
-    expect(tickerBadge(symbol)).toBe(badge)
   })
 })
 

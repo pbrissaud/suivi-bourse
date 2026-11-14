@@ -454,6 +454,27 @@ def forget_oldest_stored() -> None:
         _generation += 1
 
 
+# Symbols the backward pass gave up on (``BACKWARD_GIVE_UP`` fruitless windows in
+# a row). Process memory, like the backfill job's own record it mirrors: a
+# restart forgets it and the pass counts to the limit again.
+_given_up: Set[str] = set()
+
+
+def give_up(symbol: str) -> None:
+    """Record that the backward pass has stopped waiting on ``symbol``."""
+    _given_up.add(symbol)
+
+
+def take_back(symbol: str) -> None:
+    """The pass got an answer for ``symbol`` again: it is waited on once more."""
+    _given_up.discard(symbol)
+
+
+def given_up() -> frozenset:
+    """The symbols given up on, for a pass that must notice the set moving."""
+    return frozenset(_given_up)
+
+
 def terminal_symbols(store, windows: Mapping[str, Tuple[date, Optional[date]]],
                      now: datetime) -> Set[str]:
     """Which symbols the backward pass has **finished** with — issue #706."""
@@ -474,6 +495,10 @@ def terminal_symbols(store, windows: Mapping[str, Tuple[date, Optional[date]]],
         anchor = carrying.backward_anchor(
             ceiling, oldest.get(symbol), oldest_tried.get(symbol))
         if carrying.is_terminal(anchor, target):
+            finished.add(symbol)
+        elif symbol in _given_up and symbol not in oldest:
+            # Never priced and given up on: nothing is coming, so the line is
+            # carried at its cost rather than holding the whole portfolio back.
             finished.add(symbol)
     return finished
 
@@ -588,6 +613,7 @@ __all__ = [
     'unconverted_span', 'unconverted_days', 'repair_conversions',
     'has_converted_price',
     'record_window_tried', 'oldest_window_tried', 'terminal_symbols',
+    'give_up', 'take_back', 'given_up',
     'record_forward_window_tried', 'newest_window_tried',
     'forget_oldest_stored',
     'first_quoted_days',
