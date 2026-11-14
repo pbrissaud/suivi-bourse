@@ -35,6 +35,7 @@ from perf_seed import (
     _pin,
     _quote_today,
     _repair,
+    _overlay,
     _seed,
     _series,
 )
@@ -161,7 +162,7 @@ def _split_reread(opened, metrics, declare_ledger):
 
 
 @pytest.mark.parametrize('change', [
-    _backward, _history, _repair, _ladder, _forget, _split_reread,
+    _backward, _history, _repair, _overlay, _ladder, _forget, _split_reread,
 ], ids=lambda change: change.__name__.lstrip('_'))
 def test_a_rewritten_history_is_read_whole_again(seeded, declare_ledger,
                                                  reads, change):

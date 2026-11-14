@@ -38,7 +38,8 @@ class _Market:
         self.asked.append(('quote', symbol))
         return 185.0, {'currency': 'USD'}
 
-    def price_history(self, symbol, start, end, delay=0.0, max_retries=3):
+    def price_history(self, symbol, start, end, delay=0.0, max_retries=3,
+                      interval=None):
         self.asked.append(('history', symbol, delay))
         return [{'price': 1.0}], {'2024-06-10': 10.0}
 

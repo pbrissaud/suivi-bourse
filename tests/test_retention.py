@@ -14,7 +14,7 @@ happens to stand (#781).
 """
 
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 import pandas as pd
 import pytest
@@ -668,9 +668,17 @@ def _the_api_ceiling_is_respected(asked, now):
     truncates the age to whole days, so a window starting 729 days and a few
     hours ago is still inside Yahoo's own 730-day limit and is legitimately
     bought by the hour.
+
+    Two daily requests are no series and are exempt (#1399): the one riding an
+    hourly request over the same window for its official closes, and the
+    repair's, which ends at today's UTC midnight and only corrects stored days.
     """
     ceiling = now - timedelta(days=729)
+    hourly = {(start, end) for start, end, interval in asked if interval == '1h'}
+    midnight = datetime.combine(now.date(), time.min, tzinfo=UTC)
     for start, end, interval in asked:
+        if interval == '1d' and ((start, end) in hourly or end == midnight):
+            continue
         if interval == '1d':
             assert end <= ceiling, (start, end, interval)
         else:

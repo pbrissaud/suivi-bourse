@@ -37,6 +37,7 @@ from perf_seed import (
     _account_write,
     _history,
     _repair,
+    _overlay,
     _ladder,
     _forget,
     _splits,
@@ -116,7 +117,7 @@ def test_the_replay_after_a_write_rebuilds_whole(seeded):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize('change', [
-    _ledger_write, _account_write, _history, _repair, _ladder, _forget,
+    _ledger_write, _account_write, _history, _repair, _overlay, _ladder, _forget,
     _splits, _anchor, _currency, _day_turn, _restart,
 ], ids=lambda change: change.__name__.lstrip('_'))
 def test_every_other_change_rebuilds_whole(seeded, declare_ledger, change):
