@@ -181,8 +181,10 @@ def test_scrape_symbol_coerces_unknown_state_to_regular_and_writes(
 def test_scrape_symbol_closed_skips_write_and_sleeps_to_next_open(
         store, fake_ticker, mocker, monkeypatch):
     m = _metrics([_share()], store, mocker)
-    next_open_ts = (NOW + timedelta(hours=2)).timestamp()
-    meta = {"currentTradingPeriod": {"regular": {"start": next_open_ts}}}
+    import pandas as pd
+    # yfinance's shape (#1400): a Timestamp in the venue's timezone, not an epoch.
+    next_open = pd.Timestamp(NOW + timedelta(hours=2)).tz_convert("America/New_York")
+    meta = {"currentTradingPeriod": {"regular": {"start": next_open}}}
     monkeypatch.setattr(
         market.yf, "Ticker",
         lambda s: fake_ticker(market_state="CLOSED", history_metadata=meta))
