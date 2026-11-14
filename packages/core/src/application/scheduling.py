@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from math import ceil, isclose
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, List, Mapping, NamedTuple, Optional, Tuple
 
 from application import instants
 from application import market_info
@@ -288,7 +288,7 @@ def _current_regular_open(history_meta: Optional[dict]) -> Optional[datetime]:
         return None
 
 
-def _exchange_tz(info: dict):
+def exchange_tz(info: Optional[Mapping]):
     """The venue's ``ZoneInfo``, or None — the one place that parses the name."""
     tz_name = market_info.exchange_timezone_name_of(info)
     if not tz_name or ZoneInfo is None:
@@ -302,7 +302,7 @@ def _exchange_tz(info: dict):
 def _opening_hour_bounds(current_open: datetime, info: dict,
                          now: datetime) -> Optional[Tuple[datetime, datetime]]:
     """``(previous, following)`` occurrences of the venue's opening hour (#769)."""
-    tz = _exchange_tz(info)
+    tz = exchange_tz(info)
     if tz is None:
         return None
     local_open = current_open.astimezone(tz)
@@ -320,7 +320,7 @@ def _opening_hour_bounds(current_open: datetime, info: dict,
 
 def _approx_next_open(info: dict, now: datetime) -> Optional[datetime]:
     """~08:00 local on the next day in the exchange timezone, or None."""
-    tz = _exchange_tz(info)
+    tz = exchange_tz(info)
     if tz is None:
         return None
 

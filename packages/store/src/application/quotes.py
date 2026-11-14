@@ -1,7 +1,7 @@
 """The market's own two tables: ``symbol_quote`` and ``price_point`` (issue #700)."""
 import math
 import threading
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from typing import (Dict, Iterable, List, Mapping, Optional, Sequence, Set,
                     Tuple)
 
@@ -318,6 +318,64 @@ def repair_conversions(store, symbol: str,
             _advance_latest(store, symbol, instants.utc(newest), *latest[0])
 
     logger.debug(f"Repaired {repaired} conversion(s) for {symbol}")
+    return repaired
+
+
+def overlay_closes(store, symbol: str, closes: Mapping[date, float],
+                   zone: tzinfo = timezone.utc) -> int:
+    """Put each session's official close on its last stored point (#1399). Returns rows.
+
+    ``closes`` is keyed by the venue's own date, and the point is the last one
+    of that date in ``zone``, the venue's timezone: the bar the hourly fetch
+    lays the same close on, so a repaired store reads like a fresh fetch, ASX
+    and NZX included, whose sessions straddle UTC midnight. Its conversion
+    keeps the rate it was written with; a point with none keeps none, for the
+    lateral pass to give it. A point already carrying the close is left alone,
+    so a second pass writes nothing.
+    """
+    if not closes:
+        return 0
+
+    with store.transaction():
+        # A day either side: a venue day spans two UTC days.
+        points = store.query(
+            'SELECT ts, price_native FROM price_point'
+            ' WHERE symbol = ? AND price_native IS NOT NULL'
+            '   AND CAST(ts AS DATE) BETWEEN ? AND ?',
+            [symbol, min(closes) - timedelta(days=1),
+             max(closes) + timedelta(days=1)])
+        last_points: Dict[date, Tuple[datetime, float]] = {}
+        for ts, native in points:
+            day = instants.utc(ts).astimezone(zone).date()
+            if day not in last_points or ts > last_points[day][0]:
+                last_points[day] = (ts, native)
+        targets = [[ts, closes[day]] for day, (ts, native) in last_points.items()
+                   if day in closes and native not in (0, closes[day])]
+        if not targets:
+            return 0
+
+        store.write_arrow(
+            'UPDATE price_point'
+            # At the stored rate where there is one, as `repair_conversions`
+            # does: a ratio leaves binary tails on a same-currency row (#1458).
+            '   SET price_converted = CASE WHEN fx_rate IS NOT NULL'
+            '                              THEN f.price * fx_rate'
+            '                              ELSE price_converted * f.price / price_native END,'
+            '       price_native = f.price'
+            f'  FROM {INCOMING} f'
+            ' WHERE symbol = ? AND price_point.ts = f.ts',
+            ('ts', 'price'), targets, [symbol])
+
+        newest = max(target[0] for target in targets)
+        latest = store.query(
+            'SELECT price_native, price_converted, fx_rate FROM price_point '
+            ' WHERE symbol = ? AND ts = ? ORDER BY rowid DESC LIMIT 1',
+            [symbol, newest])
+        if latest:
+            _advance_latest(store, symbol, instants.utc(newest), *latest[0])
+
+    repaired = len(targets)
+    logger.debug(f"Put {repaired} official close(s) on {symbol}")
     return repaired
 
 

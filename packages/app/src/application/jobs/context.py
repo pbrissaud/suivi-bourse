@@ -29,7 +29,8 @@ class MarketClient(Protocol):
         """``(last_quote, info)``, or ``(None, None)`` when there is none."""
 
     def price_history(self, symbol: str, start: datetime, end: datetime,
-                      delay: float = 0.0, max_retries: int = 3
+                      delay: float = 0.0, max_retries: int = 3,
+                      interval: Optional[str] = None
                       ) -> Tuple[Optional[List[Dict]], Optional[Dict]]:
         """``(prices, splits)`` over ``[start, end]``; ``prices`` ``None`` on failure."""
 
@@ -43,8 +44,10 @@ class YahooMarket:
     def latest_quote(self, symbol, max_retries=3):
         return market.latest_quote(symbol, max_retries)
 
-    def price_history(self, symbol, start, end, delay=0.0, max_retries=3):
-        return market.price_history(symbol, start, end, delay, max_retries)
+    def price_history(self, symbol, start, end, delay=0.0, max_retries=3,
+                      interval=None):
+        return market.price_history(symbol, start, end, delay, max_retries,
+                                    interval)
 
     def symbol_attributes(self, symbol):
         return market.symbol_attributes(symbol)

@@ -131,6 +131,12 @@ def _repair(opened, metrics, declare_ledger):
     quotes.repair_conversions(opened, 'MSFT', {date(2024, 6, 3): 1.1})
 
 
+def _overlay(opened, metrics, declare_ledger):
+    # The official close laid on a stored day in place (#1399): no row and no
+    # instant moves, only the price.
+    quotes.overlay_closes(opened, 'MSFT', {date(2024, 6, 3): 123.45})
+
+
 def _ladder(opened, metrics, declare_ledger):
     opened.execute(
         'INSERT INTO price_point (symbol, ts, price_native, price_converted,'

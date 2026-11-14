@@ -145,9 +145,38 @@ def bar_instant(moment: datetime, interval: str) -> datetime:
     return instants.utc(moment)
 
 
+def _session_closes(ticker, start: datetime,
+                    end: datetime) -> Dict[date, float]:
+    """Each **finished** session's official close over ``[start, end]`` (#1399).
+
+    Yahoo's hourly bars stop before the closing auction: the last one of a
+    Paris day is the 17:00 bar, the continuous price before the fixing (SAN.PA
+    on 20/10/2026: 73.44 against a close of 73.58). Only the daily bar carries
+    the auction's print. Keyed by the exchange's own date, the date both
+    indexes are in.
+
+    The day ``end`` falls on is left out, and so is today: the window may cut
+    that session short, and its close would land on a midday bar; today's bar
+    is still a live price, and the scrape writes that close itself (#1352). A
+    session cut at ``start`` keeps its close: Yahoo serves that day's bar, and
+    the hourly window holds its last bar.
+    """
+    daily = ticker.history(start=start, end=end, interval=scheduling.DAILY,
+                           auto_adjust=False)
+    if daily.empty:
+        return {}
+    zone = daily.index.tz
+    cutoff = min(datetime.now(zone).date(), instants.utc(end).astimezone(zone).date()
+                 if zone is not None else end.date())
+    return {idx.date(): as_quoted(close)
+            for idx, close in daily['Close'].items()
+            if not pd.isna(close) and idx.date() < cutoff}
+
+
 def price_history(symbol: str, start: datetime, end: datetime,
                   delay: float,
-                  max_retries: int = 3
+                  max_retries: int = 3,
+                  interval: Optional[str] = None
                   ) -> Tuple[Optional[List[Dict]], Optional[Dict[date, float]]]:
     """One symbol's closes over ``[start, end]`` and its splits, or ``(None, None)``.
 
@@ -171,12 +200,17 @@ def price_history(symbol: str, start: datetime, end: datetime,
     the fetch failed, or the window came back empty and the question was never
     asked. It is ``{}`` for a symbol that has simply never split, which is a
     different answer and the caller may store it as one.
+
+    An hourly window carries each finished session's official close on its
+    last bar of the day, at that bar's own instant (#1399): see
+    :func:`_session_closes`. ``interval`` forces the bar size; by default it is
+    the finest Yahoo still sells for ``start``.
     """
+    interval = interval or scheduling.history_interval(
+        start, datetime.now(timezone.utc))
     for attempt in range(max_retries):
         try:
             ticker = yf.Ticker(symbol)
-            interval = scheduling.history_interval(
-                start, datetime.now(timezone.utc))
             history = ticker.history(start=start, end=end, interval=interval,
                                      auto_adjust=False)
 
@@ -185,12 +219,21 @@ def price_history(symbol: str, start: datetime, end: datetime,
                 return [], None
 
             prices = []
+            last_bar: Dict[date, Dict] = {}
             for idx, row in history.iterrows():
                 close = row['Close']
                 if pd.isna(close):
                     continue
                 ts = bar_instant(idx.to_pydatetime(), interval)
                 prices.append({'timestamp': ts, 'price': as_quoted(close)})
+                last_bar[idx.date()] = prices[-1]
+
+            # Before `as_printed`: both series come off the same endpoint with
+            # the same split in them, so one correction serves the two.
+            if interval == scheduling.HOURLY and prices:
+                for day, close in _session_closes(ticker, start, end).items():
+                    if day in last_bar:
+                        last_bar[day]['price'] = close
 
             if not prices:
                 return prices, None
@@ -258,7 +301,10 @@ def symbol_attributes(symbol: str) -> Optional[dict]:
     except Exception as e:
         logger.warning(f"Could not fetch the attributes of {symbol}: {e}")
         return None
-    return market_info.quote_attributes(raw)
+    # The venue's timezone too: the close repair finds a session's last bar by
+    # the venue's own day (#1399).
+    return {**market_info.quote_attributes(raw),
+            'exchangeTimezoneName': raw.get('exchangeTimezoneName')}
 
 
 def search_securities(query: str) -> Optional[List[dict]]:

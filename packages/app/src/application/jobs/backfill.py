@@ -67,6 +67,11 @@ class BackfillJob(base.Job):
         #: :meth:`attributes_of`. One turn long, never a cache.
         self.asked: Dict[str, dict] = {}
 
+        #: Symbols whose stored days already carry the official close (#1399).
+        #: ponytail: one ``1d`` call per symbol per process start; a persisted
+        #: marker if restarts ever make that cost something.
+        self.closes_repaired: Set[str] = set()
+
     def fetch_historical_data(self, symbol: str, start: datetime,
                               end: datetime,
                               max_retries: int = 3) -> Optional[List[Dict]]:
@@ -174,7 +179,7 @@ class BackfillJob(base.Job):
             if backfilled_count > 0:
                 said.append(f"{backfilled_count} data points written")
             if repaired_count > 0:
-                said.append(f"{repaired_count} conversions repaired")
+                said.append(f"{repaired_count} stored prices repaired")
             app_logger.info(f"Backfill cycle complete: {', '.join(said)}")
         else:
             app_logger.debug("Backfill cycle complete: no new data to write")
@@ -205,7 +210,8 @@ class BackfillJob(base.Job):
         if advancing:
             written += self.forward(symbol, now)
 
-        repaired = self.lateral(symbol)
+        repaired = self.repair_closes(symbol, now)
+        repaired += self.lateral(symbol)
         return written, repaired
 
     def fetch_and_store(self, symbol, start_date, end_date):
@@ -468,6 +474,60 @@ class BackfillJob(base.Job):
 
         publish(window=(start_date, end_date), written=written)
         return written
+
+    def repair_closes(self, symbol: str, now: datetime) -> int:
+        """Put the official close on every stored day of the hourly band (#1399).
+
+        Until #1352 the scrape stored the last continuous price as the day's
+        close, and the hourly backfill still did until #1399: Yahoo's last
+        hourly bar ends before the closing auction. The daily bars carry the
+        auction's print, in one call. Beyond the hourly ceiling the store holds
+        daily bars already, so the window stops there. Today is left to the
+        scrape.
+        """
+        if symbol in self.closes_repaired:
+            return 0
+        store = self.ctx.config_manager.store
+        oldest = quotes.oldest_ts(store, symbol)
+        end = datetime.combine(now.date(), time_of_day.min, tzinfo=timezone.utc)
+        if oldest is None:
+            return 0
+        start = max(oldest, now - timedelta(days=scheduling.HOURLY_CEILING_DAYS))
+        if start >= end:
+            self.closes_repaired.add(symbol)
+            return 0
+
+        prices, _ = self.ctx.market.price_history(
+            symbol, start, end, delay=self.ctx.backfill_delay,
+            interval=scheduling.DAILY)
+        time.sleep(self.ctx.backfill_delay)
+        if prices is None:
+            app_logger.warning(
+                f"Could not fetch the official closes of {symbol}, will retry")
+            return 0
+        # A daily bar sits at UTC noon on the venue's date (`bar_instant`).
+        closes = {point['timestamp'].date(): point['price'] for point in prices
+                  if point['timestamp'] < end}
+        # The venue's day finds the session's last bar: ASX and NZX trade
+        # across UTC midnight. Asked once per turn, the lateral pass reads it.
+        info = self.attributes_of(symbol) if closes else {}
+        if info is None:
+            app_logger.warning(
+                f"Could not learn the timezone of {symbol}, will retry")
+            return 0
+        zone = scheduling.exchange_tz(info) or timezone.utc
+        try:
+            with self.ctx.config_manager.writing() as opened:
+                repaired = quotes.overlay_closes(opened, symbol, closes, zone)
+        except Exception as e:
+            app_logger.error(
+                f"Failed to write the official closes of {symbol}: {e}")
+            return 0
+        self.closes_repaired.add(symbol)
+        if repaired:
+            app_logger.info(
+                f"Put the official close on {repaired} stored day(s) of {symbol}")
+        return repaired
 
     def learn_quote_currency(self, symbol: str) -> Tuple[Optional[str], bool]:
         """Ask Yahoo what unit a symbol is quoted in. ``(currency, failed)``."""

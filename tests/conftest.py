@@ -398,7 +398,12 @@ def fake_history(mocker, workloads_, **kwargs):
     """
     fetch = mocker.MagicMock(**kwargs)
 
-    def price_history(symbol, start, end, delay=0.0, max_retries=3):
+    def price_history(symbol, start, end, delay=0.0, max_retries=3,
+                      interval=None):
+        # A forced interval is the official-close repair (#1399): it finds no
+        # session here, so the fetch the test configured sees only its own.
+        if interval is not None:
+            return [], None
         return fetch(symbol, start, end), None
 
     mocker.patch.object(workloads_.ctx.market, 'price_history',
@@ -408,6 +413,11 @@ def fake_history(mocker, workloads_, **kwargs):
 
 def history_from(fetch):
     """A market ``price_history`` answering ``fetch(symbol, start, end)``'s prices."""
-    def price_history(symbol, start, end, delay=0.0, max_retries=3):
+    def price_history(symbol, start, end, delay=0.0, max_retries=3,
+                      interval=None):
+        # A forced interval is the official-close repair (#1399): it finds no
+        # session here, so the fetch the test configured sees only its own.
+        if interval is not None:
+            return [], None
         return fetch(symbol, start, end), None
     return price_history
