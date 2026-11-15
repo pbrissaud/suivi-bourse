@@ -1,0 +1,80 @@
+---
+title: Tableau de bord
+description: Lire la valeur de votre portefeuille, son graphique, votre rythme d’investissement et où se trouve votre argent
+---
+
+Le **Tableau de bord** indique combien vaut votre portefeuille et comment il en
+est arrivé là. Cette page décrit chacune de ses parties et les réglages de son
+graphique.
+
+![Le tableau de bord : la valeur du portefeuille en haut, le graphique dessous, puis le rythme d’investissement et la valeur des titres](/img/app/fr/dashboard.png)
+
+L’en-tête affiche **Cours au** et l’heure du cours le plus récent utilisé par la page.
+
+## Valeur du portefeuille {#value}
+
+Le haut de la page affiche la **Valeur du portefeuille** : vos titres à leur
+dernier cours, plus les liquidités restées sur vos comptes.
+
+| Élément | Ce qu’il montre |
+|---|---|
+| Ligne sous la valeur | La variation de valeur sur la période choisie dans le graphique, en montant et en pourcentage. **hors versements** signifie que l’argent versé pendant la période ne compte pas comme un gain. |
+| **Premier versement** | La date de votre premier versement. |
+| **Liquidités** | Les liquidités restées sur vos comptes, tous comptes confondus. |
+| **Net d’impôt si tout vendu** | Ce que vous garderiez en vendant tout aujourd’hui, après l’impôt des comptes qui portent un modèle d’imposition. La ligne devient **Si tout vendu, avant impôt** quand aucun compte n’a de modèle. |
+| Barre en deux couleurs | La part de la valeur qui vient de vos versements, et la part qui est du gain. |
+| **Versé net** | Ce que vous avez versé, moins ce que vous avez retiré. Les actions gratuites y sont comptées et nommées à côté. |
+| **Gain total** | Votre gain : plus-values latentes et réalisées, plus les dividendes, moins les frais. |
+| **TRI** | Votre rendement annuel, qui tient compte des dates de vos versements. |
+
+Chaque chiffre est défini dans [Lire vos chiffres](./read-your-figures.mdx).
+
+Si vous n’avez enregistré aucun événement **Versement** ou **Retrait**, le haut
+de la page affiche **Titres** et la seule valeur de vos titres. Les liquidités,
+le versé net et les rendements ont besoin de vos versements. Voir
+[Grand livre](./ledger.mdx).
+
+## Utiliser le graphique {#chart}
+
+Le graphique se trouve sous la valeur. Ses réglages sont sur la barre au-dessus.
+
+1. Choisissez ce que le graphique trace :
+   - **Montants** : votre **Valeur totale** face à votre **Versé net**. La zone
+     entre les deux courbes est votre gain.
+   - **Performance** : la croissance de tout le portefeuille, liquidités comprises,
+     que les versements et les retraits ne font pas bouger.
+2. Choisissez la période : **1 mois**, **Cette année**, **1 an** ou **Tout**. La
+   page s’ouvre sur **1 an**.
+3. Pointez le graphique, ou donnez-lui le focus et utilisez les flèches, pour
+   lire les valeurs d’un jour.
+
+La période fixe aussi celle de la ligne de variation sous la valeur.
+
+Sans versements, le graphique ne propose que **Montants**. Il trace alors la
+**Valorisation** de vos titres face à leur **Prix de revient**.
+
+## Rythme d’investissement {#rhythm}
+
+**Rythme d’investissement** montre combien vous achetez chaque mois. Le grand
+chiffre est le montant médian acheté par mois. Les barres montrent chaque mois
+de la période, et un mois sans achat reste sur la ligne de base. La ligne sous
+le chiffre indique combien vous avez investi sur combien de mois, et quels mois
+n’ont eu aucun achat.
+
+## Valeur des titres {#securities}
+
+**Valeur des titres** montre où se trouve la valeur de vos titres, titre par
+titre. Les plus grosses lignes sont listées avec leur part du total. Les autres
+sont regroupées en autres lignes. Les liquidités sont laissées de côté.
+
+Pour voir toutes les lignes, allez dans [Titres](./shares.mdx).
+
+## Messages possibles {#messages}
+
+| Message | Que faire |
+|---|---|
+| **Aucun événement** | Enregistrez vos premiers événements. **Aller au grand livre** ouvre le **Grand livre**, **Reprendre la mise en place** rouvre les questions du premier lancement. Voir [Premiers pas](./first-steps.mdx). |
+| **Historique en reconstruction** | Patientez. La valeur s’affiche dès que chaque ligne a un cours. Voir [Reconstruction et résolution](./rebuild-and-resolution.mdx). |
+| **Sans cours :** suivi de symboles | Ces lignes sont comptées à leur prix d’achat. Vérifiez leur symbole dans le **Grand livre**. |
+| **Calcul en cours — chiffres provisoires.** | L’historique des cours est en reconstruction. Les chiffres se mettent à jour seuls. |
+| **Le dernier recalcul a échoué** | Les chiffres sont ceux du calcul précédent. La page [Système](./system.mdx) indique ce qui a échoué. |

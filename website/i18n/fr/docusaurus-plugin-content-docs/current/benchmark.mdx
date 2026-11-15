@@ -1,0 +1,116 @@
+---
+title: Comparaison
+description: Comparer vos titres avec un fonds indiciel acheté avec le même argent, aux mêmes dates
+---
+
+La page **Comparaison** vous dit, en euros, si un fonds indiciel vous aurait
+laissé davantage. Elle rejoue vos achats, vos ventes et vos dividendes dans le
+fonds, aux mêmes dates et pour les mêmes montants.
+
+![La page Comparaison : l’écart face au S&P 500, les chiffres clés et le graphique de l’écart](/img/app/fr/benchmark.png)
+
+## Suivre un fonds de comparaison {#follow}
+
+La page vous compare aux fonds que vous suivez. Vous les choisissez dans
+**Réglages**.
+
+1. Ouvrez **Réglages** et allez à **Portefeuille → Fonds de comparaison**.
+2. Cliquez sur **Ajouter un fonds**. Le panneau **Fonds de comparaison**
+   s’ouvre.
+3. Activez l’interrupteur en face de chaque fonds voulu. Chaque ligne indique
+   depuis quelle année le fonds est coté.
+
+| Fonds | Symbole | Coté depuis |
+|---|---|---|
+| MSCI World | `CW8.PA` | 2009 |
+| S&P 500 | `CSPX.AS` | 2010 |
+| Euro Stoxx 50 | `MSE.PA` | 2008 |
+| CAC 40 | `C40.PA` | 2008 |
+| MSCI Emerging Markets | `AEEM.PA` | 2010 |
+
+La liste est fixe : vous ne pouvez pas ajouter un autre symbole.
+
+L’historique des cours du fonds se télécharge ensuite en arrière-plan, un fonds
+à la fois. Sa ligne dans **Fonds de comparaison** montre la progression
+(**téléchargement 40 %**), puis **historique complet**. La page Comparaison ne
+propose un fonds qu’une fois son historique complet. Le téléchargement attend
+que votre grand livre contienne au moins un événement.
+
+## Ne plus suivre un fonds {#unfollow}
+
+1. Dans **Réglages → Portefeuille → Fonds de comparaison**, cliquez sur **Ne
+   plus suivre** sur la ligne du fonds.
+2. Confirmez.
+
+Le fonds quitte la liste de la page Comparaison, et son historique téléchargé
+est conservé. Pour supprimer cet historique, cliquez sur **Ajouter un fonds**,
+puis sur **Ne plus conserver l’historique** sous le fonds. Il part au prochain
+nettoyage, visible sur la page **Système**. **Annuler** le conserve.
+
+## Lire la comparaison {#read}
+
+La première ligne, **Vos titres face au …**, nomme le fonds. Cliquez sur le nom
+du fonds pour passer à un autre fonds suivi. **Ajouter un fonds**, en bas de
+cette liste, ouvre **Réglages**.
+
+Sous le titre, la page indique la période : **Comparé du … au …**.
+
+La phrase principale donne l’écart : **1 250 € de plus qu’en plaçant le même
+argent dans le MSCI World**, ou **de moins**. En dessous, l’écart en part de
+l’argent investi.
+
+| Chiffre | Ce que c’est |
+|---|---|
+| **Même argent investi** | Vos achats et vos actions gratuites à leur valeur déclarée, moins vos ventes et vos dividendes, chacun à sa date. Un versement resté en liquidités n’en fait pas partie. |
+| **Gain de vos titres** | Ce que vos titres ont gagné sur la période, en pourcentage du même argent investi |
+| **Gain du …** | Ce que le fonds aurait gagné avec les mêmes flux, en pourcentage du même argent investi |
+
+Les deux barres, **Vos titres** et **Dans le …**, montrent les deux valeurs côte
+à côte.
+
+Les gains couvrent la période et ne sont pas des taux annuels. La comparaison
+laisse vos liquidités de côté.
+[Comparaison avec un fonds](./read-your-figures.mdx#benchmark) explique le
+calcul avec un exemple.
+
+## Lire le graphique {#chart}
+
+Le graphique a deux vues :
+
+- **Écart** : l’écart en euros, jour après jour. Au-dessus de zéro, vos titres
+  sont devant.
+- **Montants** : deux courbes, **Votre portefeuille** et le fonds, par exemple
+  **MSCI World, même argent investi**.
+
+Choisissez la période avec **1 mois**, **Cette année**, **1 an** ou **Tout**.
+
+## Compte par compte {#accounts}
+
+Le tableau **Compte par compte** répète la comparaison pour chaque compte, sur
+la période propre au compte. La ligne **Ensemble** les additionne pour donner le
+chiffre du haut de la page.
+
+Un compte qui ne détenait aucun titre pendant que le fonds était coté
+n’apparaît pas dans le tableau.
+
+## Pourquoi la période est plus courte {#period}
+
+La page indique quand la période ne couvre pas tout votre grand livre :
+
+| Message | Cause |
+|---|---|
+| **Comparé depuis le …, premier cours de ce fonds** | Votre grand livre commence avant la cotation du fonds. Le message indique combien de vos années sont laissées de côté. Choisissez un fonds plus ancien pour les couvrir. |
+| **La période s’arrête le … : une sortie de titres à cette date, le fonds n’aurait pas pu la financer** | Une vente ou un dividende dépassait ce que détenait le fonds à ce moment-là. |
+| **La période s’arrête le … : le cours du lendemain n’a pas de taux de change** | Le cours du fonds du lendemain ne peut pas encore être converti dans votre devise de base. |
+
+## Quand aucun chiffre n’apparaît {#empty}
+
+| Ce que montre la page | Que faire |
+|---|---|
+| **Aucun fonds de comparaison suivi** | Cliquez sur **Choisir les fonds** et suivez-en un. |
+| **… en cours de téléchargement** | Attendez la fin du téléchargement. **Gérer les fonds** ouvre **Réglages**. |
+| **Rien à comparer pour l’instant** | Saisissez vos premiers événements. |
+| **Calcul en cours** | Patientez : les valeurs quotidiennes de vos comptes ne sont pas encore calculées. |
+| **Rien à comparer** | Aucun de vos comptes n’a détenu de titres depuis le premier cours du fonds. |
+| **Aucun cours reçu** | Le marché n’a envoyé aucun cours pour ce fonds. Consultez la page **Système**, ou suivez un autre fonds. |
+| **Total non comparable** | Un taux de change manque le premier jour. |

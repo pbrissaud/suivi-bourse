@@ -209,7 +209,8 @@ def test_france_2026_is_the_catalogue_of_the_redesign():
     av = fr['fr/assurance-vie']['parameters']
     assert (av['rate_before'], av['rate_after'], av['threshold_years'], av['social_rate']) \
         == (0.128, 0.075, 8, 0.172)
-    assert fr['fr/per']['kind'] == 'bracketed_realised'
+    assert fr['fr/per']['kind'] == 'flat_realised'
+    assert fr['fr/per']['parameters'] == {'rate': 0.128, 'social_rate': 0.186}
 
 
 def test_the_route_imports_several_ids_at_once_and_skips_a_name_already_held(http):

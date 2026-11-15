@@ -1,0 +1,70 @@
+---
+title: Shares
+description: Read the table of the lines you hold, and the page of each security
+---
+
+The **Shares** page lists every security you hold, with its value and its gain.
+Each line opens the page of that security, with its price chart and its events.
+
+![The Shares page: a summary line, then the table of held lines with their totals](/img/app/en/shares.png)
+
+## Read the table {#table}
+
+The line above the table sums it up: the value of your securities, across how
+many lines, what you invested and the **Securities gain**. This gain leaves out
+dividends and cash.
+
+Each row is one security, all accounts together. The last row holds the totals.
+
+| Column | What it shows |
+|---|---|
+| **Share** | The name of the security, with its symbol and its accounts under it. |
+| **Held · average price** | The number of shares you hold, and the average price you paid for one. |
+| **Price · day** | The latest price, in the currency the security is quoted in, and its change over the day. |
+| **Invested** | What the shares you hold cost you, fees included, in your base currency. |
+| **Value · weight** | The value of the line at the latest price, and its share of your securities. |
+| **Gain** | The unrealised gain of the line, in money and percent. |
+
+The table opens sorted by value, largest first. To sort it, click a column
+heading. Click it again to reverse the order.
+
+Only the lines you hold appear. A security you have sold in full leaves the
+table. Its realised gain still counts in **Total P&L** on the
+[Dashboard](./dashboard.mdx). On a phone, the table is a list.
+
+## See one account's lines {#account}
+
+On the **Accounts** page, the link under **This account's shares** opens
+**Shares** reduced to that account. A line above the table says so. Click
+**Show every account** to see all your lines again.
+
+## A line with no price {#no-price}
+
+A warning sign next to a name means SuiviBourse has received no price for that
+security. The line is counted at its purchase price until a price arrives.
+
+The cause is usually a typo in the symbol. Symbols are those of Yahoo! Finance,
+for example `ACME.PA` for a share listed in Paris. Check the symbol of the
+events of that security, and correct it. See [Ledger](./ledger.mdx#correct).
+
+## Open a security's page {#detail}
+
+Click a row, or the name in it, to open the page of that security.
+
+![The page of one security: its value, key points, price chart and latest events](/img/app/en/share-detail.png)
+
+From top to bottom, the page shows:
+
+| Part | What it shows |
+|---|---|
+| **Value of the line** | The value, the gain, and how many shares you hold at what average purchase price. |
+| **Key points** | The latest **Price**, the date of your **First purchase**, and how many **Purchases** you made over how many months. |
+| Two-colour bar | What you invested, and what it gained. |
+| **Price** | The price chart, with your **Purchases** marked on it and your **Average purchase price** as a line. Choose **1 month**, **1 year**, **2 years** or **All** above it. |
+| **Events** | Your latest events on this security. **See every event of this title** opens the **Ledger** filtered on it. |
+| **The security** | Its **Exchange**, its **Kind** (stock, ETF, fund…) and the currency it is **Quoted in**. |
+
+Click **← Shares** to go back to the table.
+
+You can also reach a security from the search palette: press ⌘K (Ctrl+K on
+Windows and Linux) and type its name or symbol.

@@ -1,0 +1,148 @@
+---
+title: Installer avec Docker
+description: Lancez SuiviBourse dans un seul conteneur et ouvrez-le dans votre navigateur
+---
+
+SuiviBourse tourne dans un seul conteneur. Il lui faut Docker et un volume. Il
+n’y a ni base de données à installer, ni fichier de configuration.
+
+L’image est publiée pour `linux/amd64` et `linux/arm64`.
+
+## Lancer le conteneur {#run}
+
+```bash
+docker run -d \
+  --name suivi-bourse \
+  --restart unless-stopped \
+  -v suivi-bourse:/data \
+  -p 8080:8080 \
+  ghcr.io/pbrissaud/suivi-bourse:5
+```
+
+| Option | Effet |
+|---|---|
+| `-v suivi-bourse:/data` | Garde votre portefeuille dans un volume Docker. Sans elle, vos données sont supprimées avec le conteneur. |
+| `-p 8080:8080` | Publie l’application sur le port 8080 de l’hôte. |
+| `--restart unless-stopped` | Relance le conteneur après un redémarrage ou un plantage. |
+
+La même image existe sur Docker Hub sous le nom `paulbrissaud/suivi-bourse`.
+
+| Étiquette | Ce que vous obtenez |
+|---|---|
+| `5` | La dernière version 5.x |
+| `5.3` | La dernière version 5.3.x |
+| `5.3.0` | Exactement cette version |
+
+### Avec Docker Compose {#compose}
+
+```yaml
+services:
+  suivi-bourse:
+    image: ghcr.io/pbrissaud/suivi-bourse:5
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - suivi-bourse:/data
+
+volumes:
+  suivi-bourse:
+```
+
+```bash
+docker compose up -d
+```
+
+## Ouvrir l’application {#open}
+
+Allez sur [http://localhost:8080](http://localhost:8080).
+
+Sur une nouvelle installation, l’application pose quelques questions, à
+commencer par la devise dans laquelle vos chiffres sont exprimés.
+
+![L’écran du premier lancement qui demande dans quelle devise vous tenez vos comptes](/img/app/fr/first-run-currency.png)
+
+[Premiers pas](./first-steps.mdx) vous guide dans ces questions et vos premiers
+événements.
+
+## Protéger l’application {#protect}
+
+:::warning
+Une nouvelle installation n’a pas de code d’accès. Toute personne qui atteint le port 8080 peut lire
+et modifier votre portefeuille.
+:::
+
+Faites l’une de ces choses avant d’ouvrir l’application au-delà de votre propre machine :
+
+- Définissez un code d’accès dans l’application. Voir [Sécuriser l’accès](./secure-access.mdx).
+- Publiez le port sur l’interface locale seulement : `-p 127.0.0.1:8080:8080`.
+- N’y accédez qu’à travers un VPN.
+
+Un proxy inverse ajoute le HTTPS, pas d’identification : derrière un proxy,
+définissez aussi un code d’accès. Voir [Configuration](./configuration.mdx#reverse-proxy).
+
+## Vérifier qu’elle tourne {#health}
+
+```bash
+docker ps --filter name=suivi-bourse
+```
+
+La colonne `STATUS` affiche `healthy` environ 30 secondes après le démarrage.
+
+Pour plus de détail, interrogez l’application :
+
+```bash
+curl -s http://localhost:8080/health
+```
+
+```json
+{
+  "status": "ok",
+  "now": "2026-11-14T15:00:00+00:00",
+  "scheduler_running": true,
+  "jobs": {
+    "scrape": {"status": "ok", "verdict": "open", "...": "..."},
+    "backfill": {"status": "ok", "verdict": "complete", "...": "..."},
+    "performance": {"status": "ok", "verdict": "ran", "...": "..."}
+  }
+}
+```
+
+| `status` | Signification |
+|---|---|
+| `ok` | Chaque tâche a tourné et rien ne demande votre attention. |
+| `attention` | Une tâche a échoué ou un cours ne se met plus à jour. La page **Système** de l’application dit lequel. |
+| `unknown` | L’application a démarré et aucune tâche n’a encore tourné. |
+
+Le code HTTP est `200` tant que l’application répond, quel que soit le `status`.
+Il vaut `503` seulement quand l’application ne peut pas ouvrir sa base.
+
+La [page Système](./system.mdx) montre les mêmes informations dans
+l’application, et liste chaque verdict de chaque tâche.
+
+## Mettre à jour {#update}
+
+```bash
+docker pull ghcr.io/pbrissaud/suivi-bourse:5
+docker rm -f suivi-bourse
+```
+
+Relancez ensuite la commande `docker run` de [Lancer le conteneur](#run). Vos
+données restent dans le volume `suivi-bourse`.
+
+Avec Docker Compose :
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Sauvegardez vos données avant une mise à jour majeure. Voir
+[Sauvegarder et mettre à jour](./backup-and-update.mdx).
+
+## Ensuite {#next}
+
+- [Premiers pas](./first-steps.mdx) : répondre aux premières questions et
+  enregistrer vos premiers événements.
+- [Configuration](./configuration.mdx) : les variables d’environnement.
+- [Installer sans Docker](./install-without-docker.mdx)
+- Vous utilisez la version 4 ? Voir [Venir de la v4](./coming-from-v4.mdx).

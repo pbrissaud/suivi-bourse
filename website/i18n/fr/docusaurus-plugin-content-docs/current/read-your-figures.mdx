@@ -1,0 +1,270 @@
+---
+title: Lire vos chiffres
+description: Ce que mesure chaque chiffre de SuiviBourse, comment il est calculé et comment le lire
+---
+
+{/* L’application pointe vers les ids des titres de cette page : ne les renommez pas. */}
+
+Cette page explique chaque chiffre affiché par SuiviBourse : ce qu’il mesure et
+comment il est calculé. Les exemples utilisent des montants inventés en euros.
+
+## Prix moyen d’achat {#avg-cost}
+
+Le coût d’une ligne est suivi au prix moyen pondéré. Un achat ajoute à la ligne
+sa quantité, et son prix frais compris. Une vente retire une part du coût
+proportionnelle à la quantité vendue : le prix moyen ne bouge donc pas.
+
+```
+prix moyen d’achat = coût des titres détenus / quantité détenue
+```
+
+| Événement | Quantité | Coût | Prix moyen |
+|---|---|---|---|
+| Achat de 10 à 50, frais 5 | 10 | 505,00 | 50,50 |
+| Achat de 10 à 60 | 20 | 1 105,00 | 55,25 |
+| Vente de 5 à 70, frais 2 | 15 | 828,75 | 55,25 |
+
+Une attribution d’actions gratuites ajoute sa quantité au prix que vous avez
+déclaré, ou à zéro si vous avez laissé le prix vide. Il n’existe pas d’option
+FIFO.
+
+## Gain total {#total-gain}
+
+Votre gain total est la somme de quatre termes :
+
+```
+gain total = plus-value latente + plus-value réalisée + dividendes − frais de versement
+```
+
+Il inclut les lignes vendues. Le pourcentage affiché à côté est le gain total
+divisé par votre [versé net](#net-contributed). Le **Gain** d’un compte est la
+même somme pour ce compte, et **D’où vient le gain**, sur la page du compte,
+détaille ses quatre termes.
+
+### Plus-value latente {#latent-gain}
+
+La valeur de marché des titres que vous détenez, moins leur coût.
+
+```
+plus-value latente = quantité détenue × cours − coût des titres détenus
+```
+
+Dans l’exemple ci-dessus, 15 titres à 62 valent 930,00. Leur coût est de
+828,75 : la plus-value latente est donc de 101,25. La colonne **Gain** et la
+ligne **Plus-value des titres** de la page **Titres** montrent ce terme.
+
+### Plus-value réalisée {#realized-gain}
+
+Ce qu’une vente a rapporté au-delà du coût qu’elle a retiré.
+
+```
+plus-value réalisée = quantité vendue × prix − frais − quantité vendue × prix moyen d’achat
+```
+
+Dans l’exemple, la vente de 5 à 70 rapporte 348,00 après frais et retire
+276,25 de coût : la plus-value réalisée est de 71,75. L’argent est déjà dans vos
+liquidités : il n’est pas ajouté une seconde fois à la valeur du portefeuille.
+
+### Dividendes {#dividends}
+
+Les dividendes reçus, nets des frais saisis avec chacun. Un dividende ne baisse
+pas le coût de la ligne et ne change pas sa plus-value latente.
+
+### Frais de versement {#deposit-fees}
+
+Les frais saisis sur vos versements et vos retraits. Ils n’appartiennent à
+aucune ligne : ils forment donc un terme à part. La page du compte n’affiche
+**Frais de versement** que s’ils ne sont pas nuls.
+
+## Versé net {#net-contributed}
+
+L’argent que vous avez versé, moins l’argent que vous avez retiré.
+
+```
+versé net = versements − retraits + actions gratuites à leur valeur déclarée
+```
+
+Versements et retraits comptent pour leur montant avant frais. Exemple : vous
+versez 1 000 avec 2 de frais, puis 500, puis retirez 200. Le versé net est de
+1 300, et les 2 de frais apparaissent dans les
+[frais de versement](#deposit-fees). Quand des actions gratuites comptent, le
+tableau de bord l’indique : **dont … d’actions gratuites**.
+
+Les cours ne font jamais bouger ce chiffre.
+
+## Valeur du portefeuille et sa variation {#value}
+
+La **Valeur du portefeuille** est la somme de vos liquidités et de la valeur de
+marché de vos titres. Si vous ne saisissez ni versement ni retrait, le tableau
+de bord affiche **Titres** à la place : la valeur de vos lignes seules.
+
+La ligne en dessous donne la variation sur la période du graphique (**1 mois**,
+**Cette année**, **1 an**, **Tout**) :
+
+- le montant est la variation de votre gain total sur la période : un versement
+  ne compte donc pas comme un gain. La ligne indique **hors versements** quand de
+  l’argent est entré ou sorti pendant la période ;
+- le pourcentage est ce montant divisé par la valeur du portefeuille au premier
+  jour de la période ;
+- pour **Tout**, le montant est votre gain total entier et le pourcentage est
+  calculé sur votre versé net.
+
+## Performance {#twr}
+
+La vue **Performance** du graphique du tableau de bord montre un rendement
+pondéré par le temps : la croissance de l’argent placé dans le portefeuille,
+versements et retraits mis à part.
+
+La série part de 100 le premier jour où le portefeuille a une valeur. Chaque
+jour :
+
+```
+indice du jour = indice de la veille × (valeur du jour − argent entré du jour) / valeur de la veille
+```
+
+L’« argent entré » correspond aux versements moins les retraits, plus les
+actions gratuites à leur valeur déclarée. La valeur inclut vos liquidités. Le
+graphique montre la variation depuis le premier jour de la période choisie.
+
+Exemple : le portefeuille vaut 1 000. Le lendemain, vous versez 500 et il vaut
+1 530. L’indice varie de (1 530 − 500) / 1 000, soit +3 %.
+
+Tant que l’historique est en cours de reconstitution, le début de la série
+recule et la courbe peut changer sans qu’aucun cours ne change. Voir
+[Reconstruction et résolution](./rebuild-and-resolution.mdx).
+
+Elle peut différer du [rendement pondéré par l’argent](#xirr), même en signe,
+parce qu’elle ne tient pas compte du moment où votre argent est arrivé.
+
+## Rendement pondéré par l’argent {#xirr}
+
+Le taux annuel qu’a rapporté votre argent, en tenant compte de la date de
+chaque entrée et de chaque sortie. L’application cherche le taux *r* qui annule
+cette somme :
+
+```
+Σ flux / (1 + r) ^ (jours depuis le premier flux / 365)
+```
+
+Les versements et les actions gratuites comptent comme des flux négatifs, les
+retraits comme des flux positifs, et la valeur du jour comme un dernier flux
+positif.
+
+Exemple : vous versez 1 000 le 1er janvier et 1 000 le 1er juillet. Le
+1er janvier suivant, le compte vaut 2 100. Le rendement est d’environ 6,7 % par
+an, parce que le second versement n’a travaillé que six mois.
+
+Le tableau de bord l’affiche sous la forme **TRI … par an**, un compte sous le
+nom **TRI**. Il est absent quand le compte n’a ni versement, ni retrait, ni
+attribution d’actions gratuites, pendant la reconstitution de l’historique, ou
+quand tous les flux tombent le même jour.
+
+## Impôt estimé {#projected-tax}
+
+Un compte doté d’un [modèle d’imposition](./your-taxation-model.mdx) affiche
+**Si je sors aujourd’hui** : ce que vous devriez si vous vendiez tout ce qu’il
+contient aujourd’hui.
+
+La carte indique le **Gain imposable**, l’**Impôt sur le revenu**, les
+**Prélèvements sociaux**, leur somme en **Impôt estimé**, et le **Taux
+appliqué**, prélèvements compris. Le grand chiffre, **nets après impôt**, est la
+valeur du compte moins l’impôt estimé.
+
+La base dépend de la forme du modèle :
+
+| Forme | Gain imposable | Impôt |
+|---|---|---|
+| **Un taux unique sur la plus-value** | La [plus-value latente](#latent-gain) du compte | base × (taux + prélèvements sociaux) |
+| **Un taux qui change avec l’âge de l’enveloppe** | Valeur du compte − [versé net](#net-contributed) | base × (taux en vigueur aujourd’hui + prélèvements sociaux) |
+| **Un barème sur la plus-value** | La plus-value latente du compte | chaque tranche taxe la part de la base qui y tombe, plus les prélèvements sociaux sur toute la base |
+
+Exemple de barème : jusqu’à 6 000 à 19 %, jusqu’à 50 000 à 21 %, et au-delà à
+23 %. Un gain imposable de 10 000 doit 6 000 × 19 % + 4 000 × 21 % = 1 980.
+
+Une base négative compte pour zéro. Chaque compte est pris seul : une perte sur
+l’un ne réduit pas l’impôt d’un autre. **Non imposé** et **Un prélèvement sur
+les revenus** n’affichent pas d’impôt. Si une ligne détenue n’a pas de valeur,
+le compte n’affiche pas d’estimation.
+
+Pour la forme liée à l’âge, voir
+[À partir de quand l’âge est compté](./your-taxation-model.mdx#age-basis). La
+carte indique **Le taux change le …** tant que ce jour est à venir.
+
+Un compte sans modèle affiche **aucun modèle d’imposition** et un bouton
+**Choisir un modèle**. Sur le tableau de bord, **Net d’impôt si tout vendu** est
+la valeur du portefeuille moins l’impôt estimé des comptes qui en ont un. Sans
+aucun modèle, la ligne indique **Si tout vendu, avant impôt**.
+
+## Une ligne sans cours {#carrying-price}
+
+Certains titres ne reçoivent jamais de cours. Une fois que l’application a
+cessé de chercher, elle valorise une telle ligne à son propre coût : son prix
+moyen d’achat. Sa plus-value latente est alors nulle.
+
+Tant que l’application reconstitue l’historique de ce titre, la ligne indique
+plutôt **historique en cours de reconstitution**. Un titre coté sans devise est
+lui aussi valorisé à son coût. Le tableau de bord liste ces lignes sous
+**Sans cours :**.
+
+Un titre qui a un cours mais pas de taux de change vers votre devise de base est
+un autre cas : il affiche son propre cours et indique **en attente du taux**.
+
+## Quand un chiffre manque {#absence}
+
+Un tiret cadratin (—) signifie qu’il n’y a rien à calculer. Un chiffre qui
+manque pour une raison le dit en toutes lettres.
+
+| Cas | Cours | Valeur | Plus-value latente |
+|---|---|---|---|
+| Aucun cours, valorisé au coût | — | son coût | 0,00 |
+| Cours connu, pas de taux de change | son propre cours | en attente du taux | en attente du taux |
+| Ligne entièrement vendue | — | 0,00 | — |
+| Historique en reconstitution | historique en cours de reconstitution | historique en cours de reconstitution | historique en cours de reconstitution |
+| Demandé plusieurs fois, aucun cours | un nombre, par exemple 17 relevés consécutifs, aucun cours | son coût | 0,00 |
+
+Le dernier cas vient en général d’un symbole erroné : vérifiez-le dans le grand
+livre.
+
+## Rythme d’investissement {#rhythm}
+
+Le **Rythme d’investissement** du tableau de bord regarde vos achats des douze
+derniers mois. **achetés par mois (médiane)** est la médiane des totaux mensuels
+de vos achats, en ne comptant que les mois avec au moins un achat. Les barres
+montrent chaque mois, et la légende nomme les mois sans achat.
+
+## Comparaison avec un fonds {#benchmark}
+
+La page **Comparaison** répond à une question, en euros : un fonds indiciel
+vous aurait-il laissé davantage, pour le même argent, aux mêmes dates ?
+
+L’application rejoue votre argent dans le fonds :
+
+- chaque achat achète des parts du fonds pour le même montant, le même jour ;
+- chaque vente et chaque dividende vend des parts du fonds pour le même montant ;
+- une attribution d’actions gratuites achète des parts à sa valeur déclarée :
+  une attribution sans prix ne donne donc rien au fonds et compte en votre
+  faveur ;
+- un versement resté en liquidités n’achète rien.
+
+Le **Même argent investi** est la somme de ces flux. L’**Écart** est la valeur
+de vos titres moins celle des parts du fonds. **Gain de vos titres** et
+**Gain du …** sont chacun la valeur moins le même argent investi, divisée par le
+même argent investi. Ils couvrent la période et ne sont pas des taux annuels.
+
+Exemple : vous achetez pour 1 000 en mars et 1 000 en septembre. Aujourd’hui,
+vos titres valent 2 300. Les mêmes flux placés dans le fonds vaudraient 2 200.
+L’écart est de +100, votre gain de +15 % et celui du fonds de +10 %.
+
+La période commence à votre premier achat, ou au premier cours du fonds s’il
+est plus tardif. [Comparaison](./benchmark.mdx#period) liste les cas qui la
+raccourcissent.
+
+## D’où viennent les chiffres {#sources}
+
+- Vos événements : [Importer vos événements](./import-your-events.mdx) et
+  [Grand livre](./ledger.mdx).
+- Les cours et les taux de change :
+  [Comment les cours sont collectés](./how-prices-are-collected.mdx).
+- L’historique avant votre premier achat :
+  [Reconstruction et résolution](./rebuild-and-resolution.mdx).
+- La devise de base de chaque chiffre : [Réglages](./settings.mdx).

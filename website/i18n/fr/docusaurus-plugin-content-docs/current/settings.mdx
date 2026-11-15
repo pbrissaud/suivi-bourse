@@ -1,0 +1,145 @@
+---
+title: Réglages
+description: Ce que règle chaque section de la page Réglages, du code d’accès au thème
+---
+
+La page **Réglages** regroupe ce que vous pouvez modifier depuis l’application.
+Ses sections sont décrites ci-dessous dans l’ordre de la page.
+
+![La page Réglages avec ses sections Sécurité, Portefeuille et Agent](/img/app/fr/settings.png)
+
+La plupart des lignes s’enregistrent dès que vous les modifiez et affichent
+**✓ Enregistré**. Si une valeur est refusée, la ligne affiche **Non
+enregistré :** suivi de la raison. Les réglages fixés au démarrage du conteneur
+sont des variables d’environnement. Voir [Configuration](./configuration.mdx).
+
+## Sécurité {#security}
+
+Cette section regroupe le **Code d’accès**, le délai de **Verrouillage
+automatique** et les **Jetons d’accès**. [Sécuriser l’accès](./secure-access.mdx)
+les détaille pas à pas.
+
+## Portefeuille {#portfolio}
+
+### Devise {#base-currency}
+
+La devise de base est celle dans laquelle chaque chiffre est exprimé. Vous la
+choisissez au premier lancement. Une fois fixée, la ligne affiche le code avec
+**fixée au premier lancement** et ne peut plus changer : vos montants sont
+enregistrés dans cette devise.
+
+### Fonds de comparaison {#funds}
+
+Les fonds indiciels auxquels la page **Comparaison** peut vous comparer.
+**Ajouter un fonds** ouvre la liste des cinq fonds, chacun avec un interrupteur
+pour le suivre. **Ne plus suivre** retire un fonds de la page. Voir
+[Comparaison](./benchmark.mdx#follow).
+
+### Modèles d’imposition {#taxation}
+
+Vos modèles d’imposition, chacun avec le résumé de ses taux et les comptes qui
+le portent. **Ajouter un modèle** importe un modèle publié ou vous laisse écrire
+le vôtre. **Modifier** ouvre un modèle. Voir
+[Votre modèle d’imposition](./your-taxation-model.mdx).
+
+## Agent {#agent}
+
+Cette section active la page **Agent**, liste les **Fournisseurs** qui font
+tourner le modèle et règle sa **Réflexion**. [Configurer l’agent](./set-up-the-agent.mdx)
+explique chaque ligne, et [Agent](./agent.mdx) explique comment l’utiliser.
+
+## Notifications {#notifications}
+
+Un canal vous envoie un message hors de l’application quand quelque chose
+demande votre attention.
+
+1. Cliquez sur **Ajouter un canal**.
+2. Choisissez le **Type de canal** : **Webhook**, **ntfy**, **Apprise** ou
+   **E-mail**.
+3. Renseignez l’adresse. Par exemple, une **Adresse du sujet** ntfy ressemble à
+   `https://ntfy.sh/my-topic`. Un canal e-mail demande aussi le **Serveur
+   SMTP**, le **Port**, l’**Identifiant**, le **Mot de passe**, l’**Expéditeur**
+   et **STARTTLS**.
+4. Sous **Envoyer**, cochez au moins une sorte de message : **Cours en
+   retard**, **Nouvelles versions**, **Erreurs**.
+5. Cliquez sur **Enregistrer**.
+
+**Tester**, sur la ligne du canal, envoie un message de test. Dans le panneau du
+canal, **Canal actif** le met en pause et **Supprimer ce canal** le supprime.
+
+| Sorte de message | Quand il est envoyé |
+|---|---|
+| **Cours en retard** | Le marché d’un titre que vous détenez est ouvert, mais son cours n’a pas changé depuis plus longtemps que le **Seuil de cours figé** de la section [Avancé](#advanced). Renvoyé seulement après que le cours a repris puis s’est de nouveau arrêté. |
+| **Nouvelles versions** | Une nouvelle version de SuiviBourse est sortie. La vérification ne tourne que si **Signaler les nouvelles versions** est activé, sur la page **Système**. |
+| **Erreurs** | Une tâche de fond échoue : mise à jour des cours, reconstitution de l’historique ou calcul de la performance. Au plus une fois toutes les 6 heures par tâche. |
+
+## Affichage {#display}
+
+Ces lignes s’appliquent au navigateur que vous utilisez. Un autre navigateur
+garde son propre choix.
+
+| Ligne | Choix |
+|---|---|
+| **Apparence** | **Automatique** (suit votre système), **Clair**, **Sombre** |
+| **Langue** | **Français**, **English** |
+| **Densité des tables** | **Confortable**, **Compact** |
+| **Thème** | Indique **Atelier** (le thème intégré) ou **Personnalisé**. **Personnaliser** ouvre l’éditeur de thème. |
+
+### Modifier le thème {#theme}
+
+L’éditeur de thème, à l’adresse `/settings/theme`, change les couleurs, la forme
+et les polices de l’application. Le thème est enregistré sur le serveur : tous
+les navigateurs le reçoivent.
+
+![L’éditeur de thème : la liste des couleurs à gauche et l’aperçu d’une page à droite](/img/app/fr/settings-theme.png)
+
+1. Dans **Affichage → Thème**, cliquez sur **Personnaliser**.
+2. Sous **Palette à modifier**, choisissez **Clair** ou **Sombre**.
+3. Modifiez les couleurs dans **Fonds et texte**, **Encre et signes** et
+   **Graphiques**. Un point signale une couleur modifiée, et **Rétablir** sur sa
+   ligne la remet.
+4. Ajustez la **Forme** (**Rayon des angles**, **Ombres**, **Interlettrage**) et
+   les **Polices** (**Texte**, **Chiffres et identifiants**).
+5. Vérifiez l’aperçu à droite. Vous pouvez changer la page qu’il montre.
+6. Cliquez sur **Appliquer** pour enregistrer.
+
+Si vous partez avec des modifications non appliquées, l’application demande :
+**Rester** ou **Abandonner**.
+
+En haut de l’éditeur :
+
+- **Importer depuis tweakcn** charge un thème depuis tweakcn.com. Saisissez son
+  identifiant ou l’adresse de sa page, par exemple `tweakcn.com/themes/…`, puis
+  cliquez sur **Importer**. Le serveur contacte tweakcn.com une fois, à ce clic.
+- **Modifier le JSON** ouvre le thème en JSON. **Appliquer**, dans cette
+  fenêtre, l’enregistre aussitôt.
+- **Exporter** télécharge le thème actuel sous le nom `theme.json`.
+
+**Rétablir Atelier**, en bas de l’éditeur, remet le thème intégré.
+
+## Avancé {#advanced}
+
+Ces lignes règlent la fréquence à laquelle l’application collecte les cours et
+recalcule vos chiffres. Chaque ligne montre sa valeur par défaut, et un lien
+**Rétablir** quand vous l’avez modifiée.
+
+| Ligne | Ce qu’elle règle | Par défaut |
+|---|---|---|
+| **Fréquence des cours** | La fréquence de mise à jour des cours, marchés ouverts | 2 min |
+| **Fréquence de recalcul** | La fréquence de la reconstitution de l’historique. Le calcul de la performance tourne toutes les 2 minutes, quelle que soit cette valeur. | 1 min |
+| **Pause entre deux requêtes** | L’attente entre deux appels à la source des cours | 10 s |
+| **Profondeur d’historique** | Les jours de cours chargés par requête quand l’historique est récupéré | 365 j |
+| **Seuil de cours figé** | Combien de temps un cours peut rester inchangé avant que la page **Système** le signale. 0 désactive la vérification. | 15 min |
+
+[Comment les cours sont collectés](./how-prices-are-collected.mdx) explique ce
+que font ces tâches.
+
+## Rechercher avec ⌘K {#palette}
+
+Appuyez sur ⌘K, ou Ctrl+K sous Windows et Linux, pour ouvrir la palette de
+recherche depuis n’importe quelle page. Tapez pour atteindre un titre, un
+compte, un événement, un fil de l’agent ou une page, ou pour lancer une action :
+**Saisir un événement**, **Importer un relevé**, **Ajouter un compte**,
+**Nouveau fil avec l’agent** ou **Verrouiller**.
+
+![La palette de recherche ouverte sur le tableau de bord, avec des titres, des comptes et des actions](/img/app/fr/palette.png)

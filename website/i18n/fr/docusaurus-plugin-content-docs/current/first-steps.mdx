@@ -1,0 +1,115 @@
+---
+title: Premiers pas
+description: Répondre aux quatre questions du premier lancement et enregistrer vos premiers événements
+---
+
+Au premier lancement, SuiviBourse pose quatre questions à la suite. Cette page
+vous guide à travers elles, puis montre ce qui se passe une fois vos premiers
+événements enregistrés.
+
+Seule la première question est obligatoire. Vous pouvez passer les trois autres
+et y revenir plus tard.
+
+## Choisir votre devise de base {#currency}
+
+![Étape 1 sur 4, qui demande dans quelle devise vous tenez vos comptes](/img/app/fr/first-run-currency.png)
+
+SuiviBourse exprime tous les chiffres dans une seule devise, la devise de base.
+Les cours cotés dans une autre devise y sont convertis.
+
+1. Dans **Devise**, choisissez la devise de vos comptes. Le champ en propose une
+   d’après la langue de votre navigateur.
+2. Cliquez sur **Continuer**.
+
+Une fois enregistrée, la devise de base ne peut plus être changée dans
+l’application. Chaque montant que vous saisissez est lu dans cette devise :
+choisissez-la avec soin.
+
+L’application n’affiche que cet écran tant que vous n’avez pas répondu.
+
+## Choisir vos modèles d’imposition {#taxation}
+
+![Étape 2 sur 4, qui liste les modèles d’imposition publiés pour un pays](/img/app/fr/first-run-taxation.png)
+
+Un modèle d’imposition indique à SuiviBourse comment un gain est imposé à la
+vente, pour afficher ce que vous garderiez après impôt.
+
+1. Dans **Pays**, choisissez votre pays. La liste montre les modèles publiés pour lui.
+2. Cochez les modèles qui correspondent à vos comptes. Chaque ligne indique son taux.
+3. Cliquez sur **Continuer**.
+
+Pour continuer sans modèle, cliquez sur **Continuer** sans rien cocher. Pour
+écrire le vôtre, cliquez sur **Écrire mon propre modèle** : le parcours se ferme
+et **Réglages** s’ouvre. Voir [Votre modèle d’imposition](./your-taxation-model.mdx).
+
+## Créer votre premier compte {#account}
+
+![Étape 3 sur 4, avec les champs Identifiant, Libellé et Modèle d’imposition](/img/app/fr/first-run-accounts.png)
+
+Un compte est l’endroit où vos événements sont enregistrés, par exemple un
+compte-titres ou un PEA.
+
+1. Dans **Identifiant**, tapez un identifiant court comme `broker-a`. Utilisez
+   des lettres, des chiffres, `-`, `_` et `.`, sans espace. Il ne change plus ensuite.
+2. Dans **Libellé**, tapez le nom à afficher à l’écran (facultatif).
+3. Dans **Modèle d’imposition**, choisissez l’un des modèles cochés, ou **Aucun modèle**.
+4. Cliquez sur **Continuer**.
+
+Pour continuer sans compte, cliquez sur **Passer cette étape**. Vos événements
+vont alors dans le compte **Non affecté**, et vous pourrez les déplacer plus
+tard. Voir [Comptes](./accounts.mdx).
+
+## Ajouter vos premiers événements {#events}
+
+![Étape 4 sur 4, qui propose d’importer un relevé, de saisir à la main ou de le faire plus tard](/img/app/fr/first-run-events.png)
+
+Choisissez d’où viennent vos premiers événements :
+
+| Choix | Ce qui s’ouvre |
+|---|---|
+| **Importer un relevé** | La page d’import, pour un fichier `.csv` ou Excel. Voir [Importer vos événements](./import-your-events.mdx). |
+| **Saisir à la main** | Le formulaire d’événement du **Grand livre**, pour un versement ou un achat. Voir [Grand livre](./ledger.mdx). |
+| **Plus tard** | Le **Tableau de bord**. Vous pouvez ajouter des événements depuis le **Grand livre** à tout moment. |
+
+Commencez par un événement **Versement** pour l’argent versé sur le compte, puis
+vos achats. Sans versements, l’application ne peut calculer ni votre versé net
+ni vos rendements.
+
+Si vous quittez le parcours avant la fin, le **Tableau de bord** vide propose
+**Reprendre la mise en place**.
+
+## Ce qui se passe ensuite {#next}
+
+Une fois vos événements enregistrés :
+
+1. SuiviBourse récupère le cours actuel de chaque titre détenu.
+2. Il reconstruit l’historique des cours jusqu’à votre premier achat. Cela se
+   fait en arrière-plan. Tant que ce n’est pas fini, le **Tableau de bord**
+   indique combien de séries sont complètes. Voir
+   [Reconstruction et résolution](./rebuild-and-resolution.mdx).
+3. Le **Tableau de bord** affiche la valeur de votre portefeuille, son graphique
+   et votre gain.
+
+Une ligne encore sans cours est comptée à son prix d’achat. Si elle reste sans
+cours, vérifiez son symbole dans le **Grand livre**.
+
+## Vous repérer {#navigate}
+
+La barre latérale mène à **Tableau de bord**, **Titres**, **Comptes**,
+**Grand livre**, **Comparaison**, **Agent**, **Réglages** et **Système**.
+
+![La palette de recherche, qui liste des titres, des comptes, des pages et des actions](/img/app/fr/palette.png)
+
+Appuyez sur ⌘K (Ctrl+K sous Windows et Linux) pour ouvrir **Rechercher**. Tapez
+le nom d’un titre, d’un compte, d’un événement ou d’une page, ou choisissez une
+action comme **Saisir un événement** ou **Ajouter un compte**.
+
+Pour changer la langue ou le thème, allez dans **Réglages → Affichage**. Voir
+[Réglages](./settings.mdx).
+
+## Pour aller plus loin {#more}
+
+- [Tableau de bord](./dashboard.mdx) : votre portefeuille d’un coup d’œil.
+- [Lire vos chiffres](./read-your-figures.mdx) : ce que veut dire chaque chiffre.
+- [Sécuriser l’accès](./secure-access.mdx) : définissez un code d’accès avant
+  d’exposer l’application.

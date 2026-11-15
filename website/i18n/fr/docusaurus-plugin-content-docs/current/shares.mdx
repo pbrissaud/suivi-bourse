@@ -1,0 +1,73 @@
+---
+title: Titres
+description: Lire le tableau des lignes détenues, et la page de chaque titre
+---
+
+La page **Titres** liste chaque titre que vous détenez, avec sa valorisation et
+son gain. Chaque ligne ouvre la page de ce titre, avec son graphique de cours et
+ses événements.
+
+![La page Titres : une ligne de résumé, puis le tableau des lignes détenues avec leurs totaux](/img/app/fr/shares.png)
+
+## Lire le tableau {#table}
+
+La ligne au-dessus du tableau le résume : la valeur de vos titres, sur combien
+de lignes, ce que vous avez investi et la **Plus-value des titres**. Cette
+plus-value laisse de côté les dividendes et les liquidités.
+
+Chaque rangée est un titre, tous comptes confondus. La dernière rangée porte les totaux.
+
+| Colonne | Ce qu’elle montre |
+|---|---|
+| **Titre** | Le nom du titre, avec son symbole et ses comptes en dessous. |
+| **Détenu · prix moyen** | Le nombre de titres détenus, et le prix moyen payé pour un titre. |
+| **Cours · jour** | Le dernier cours, dans la devise de cotation du titre, et sa variation du jour. |
+| **Investi** | Ce que vous ont coûté les titres détenus, frais compris, dans votre devise de base. |
+| **Valorisation · poids** | La valeur de la ligne au dernier cours, et sa part dans vos titres. |
+| **Gain** | La plus-value latente de la ligne, en montant et en pourcentage. |
+
+Le tableau s’ouvre trié par valorisation, de la plus grosse à la plus petite.
+Pour le trier, cliquez sur un en-tête de colonne. Cliquez de nouveau pour
+inverser l’ordre.
+
+Seules les lignes détenues apparaissent. Un titre vendu en totalité quitte le
+tableau. Sa plus-value réalisée compte toujours dans le **Gain total** du
+[Tableau de bord](./dashboard.mdx). Sur téléphone, le tableau devient une liste.
+
+## Voir les lignes d’un compte {#account}
+
+Sur la page **Comptes**, le lien sous **Titres du compte** ouvre **Titres**
+réduit à ce compte. Une ligne au-dessus du tableau l’indique. Cliquez sur
+**Afficher tous les comptes** pour revoir toutes vos lignes.
+
+## Une ligne sans cours {#no-price}
+
+Un signe d’alerte à côté d’un nom signifie que SuiviBourse n’a reçu aucun cours
+pour ce titre. La ligne est comptée à son prix d’achat jusqu’à l’arrivée d’un cours.
+
+La cause est le plus souvent une faute de frappe dans le symbole. Les symboles
+sont ceux de Yahoo! Finance, par exemple `ACME.PA` pour une action cotée à
+Paris. Vérifiez le symbole des événements de ce titre, et corrigez-le. Voir
+[Grand livre](./ledger.mdx#correct).
+
+## Ouvrir la page d’un titre {#detail}
+
+Cliquez sur une rangée, ou sur le nom qu’elle porte, pour ouvrir la page de ce titre.
+
+![La page d’un titre : sa valorisation, ses repères, son graphique de cours et ses derniers événements](/img/app/fr/share-detail.png)
+
+De haut en bas, la page montre :
+
+| Partie | Ce qu’elle montre |
+|---|---|
+| **Valorisation de la ligne** | La valorisation, le gain, et combien de titres vous détenez à quel prix moyen d’achat. |
+| **Repères** | Le dernier **Cours**, la date de votre **Premier achat**, et combien d’**Achats** vous avez faits sur combien de mois. |
+| Barre en deux couleurs | Ce que vous avez investi, et ce que cela a rapporté. |
+| **Cours** | Le graphique de cours, avec vos **Achats** marqués dessus et votre **Prix moyen d’achat** en ligne. Choisissez **1 mois**, **1 an**, **2 ans** ou **Tout** au-dessus. |
+| **Événements** | Vos derniers événements sur ce titre. **Voir tous les événements de ce titre** ouvre le **Grand livre** filtré sur lui. |
+| **Le titre** | Sa **Place**, sa **Nature** (action, ETF, fonds…) et la devise dans laquelle il est **Coté en**. |
+
+Cliquez sur **← Titres** pour revenir au tableau.
+
+Vous pouvez aussi atteindre un titre depuis la palette de recherche : appuyez
+sur ⌘K (Ctrl+K sous Windows et Linux) et tapez son nom ou son symbole.

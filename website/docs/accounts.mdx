@@ -1,0 +1,93 @@
+---
+title: Accounts
+description: Create, edit and remove your accounts, attach a taxation model, and read each account
+---
+
+The **Accounts** page lets you create your accounts and read each one: its
+value, its gain, where the gain comes from and the tax if you sold today.
+
+![The Accounts page: the accounts as tabs with their value, then the detail of the open account](/img/app/en/accounts.png)
+
+Your accounts are listed across the top, each with its value. Click one to open
+its detail below. **Edit this account** and **Add an account** sit on the same line.
+
+## Add an account {#add}
+
+![The Add an account panel with the Identifier, Label, Opened on and Taxation model fields](/img/app/en/account-form.png)
+
+1. Click **Add an account**.
+2. In **Identifier**, type a short id such as `broker-a`. Use letters, digits,
+   `-`, `_` and `.`, with no space. Your import files name the account by this id.
+3. In **Label**, type the name to show on screen, for example `Broker A` (optional).
+4. In **Opened on**, enter the day the account was opened (optional).
+5. In **Taxation model**, pick a model, or leave **No model**.
+6. Click **Add**.
+
+You cannot change the identifier afterwards. If another account already uses
+it, the panel says so under the field.
+
+If some events name no account yet, the panel offers to assign them to the new
+account. The box is ticked by default.
+
+## Edit an account {#edit}
+
+1. Open the account.
+2. Click **Edit this account**.
+3. Change the **Label**, **Opened on** or **Taxation model**.
+4. Click **Save**.
+
+The panel also shows what the account carries: its events, its securities and
+its value.
+
+## Attach a taxation model {#taxation}
+
+A taxation model lets the account show the tax due if you sold today, and feeds
+**After tax if all sold** on the **Dashboard**.
+
+1. Open the account.
+2. Click **Edit this account**. On an account with no model, **Choose a model**
+   under **If I sell today** opens the same panel.
+3. In **Taxation model**, pick a model.
+4. Click **Save**.
+
+The list shows the models you have imported or written. To add one, see
+[Your taxation model](./your-taxation-model.mdx).
+
+## Remove an account {#remove}
+
+1. Open the account.
+2. Click **Edit this account**.
+3. Click **Remove this account** at the bottom of the panel.
+4. Confirm with **Delete the account**.
+
+The removal cannot be undone. It is offered only when no event names the
+account. Otherwise the panel says how many events do: move them to another
+account or delete them first. See [Ledger](./ledger.mdx).
+
+The **Unassigned** account, which every installation has, cannot be removed.
+Rename it instead.
+
+## Read an account {#read}
+
+| Part | What it shows |
+|---|---|
+| **Account value** | The value of the account, its gain in money and percent, and its **MWR** (money-weighted return) a year. |
+| Facts on the right | **Opened on**, **Cash** and the account's **Share of the portfolio**. |
+| Monthly line | How much you paid in a month on average since opening. |
+| **Value against what you have paid in** | The account's chart. Choose **Amounts** or **Performance**, and a period: **1 month**, **This year**, **1 year** or **All**. |
+| **Where the gain comes from** | The gain since opening, split into **Unrealised gain**, **Realised gain**, **Dividends** and **Transfer fees**. |
+| **If I sell today** | The **Taxable gain**, the **Income tax**, the **Social levies** and what you would keep **net after tax**, with the **Model** used. |
+| **This account's shares** | The securities held in the account, with **Invested**, **Value**, **Gain** and **Weight**. The link under it opens [Shares](./shares.mdx#account) reduced to this account. |
+
+The figures are defined in [Read your figures](./read-your-figures.mdx).
+
+A warning under the facts means the opening day looks wrong: it is in the
+future, or later than the first payment. Correct it with **Edit this account**.
+
+## Events with no account {#unassigned}
+
+Events recorded before you declared any account sit in **Unassigned**. Its page
+shows **Events assigned to no account**.
+
+1. In **Assign them to**, choose an account.
+2. Click **Assign these events**.

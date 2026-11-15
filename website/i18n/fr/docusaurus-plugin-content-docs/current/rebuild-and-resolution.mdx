@@ -1,0 +1,119 @@
+---
+title: Reconstruction et résolution
+description: Comment les cours passés sont récupérés après l’ajout d’événements, comment suivre la reconstruction, et quel détail est gardé à mesure que les cours vieillissent
+---
+
+Quand vous ajoutez des événements, SuiviBourse récupère les cours passés dont
+votre historique a besoin. Cette page explique combien de temps cela prend, ce
+que vous voyez en attendant, et quel détail l’app garde à mesure que les cours
+vieillissent.
+
+## Ce que fait la reconstruction {#what}
+
+La tâche **Reconstruction de l’historique** récupère les cours passés de chaque
+titre que vous avez détenu, sur la période où vous l’avez détenu : de son
+premier achat à sa vente, ou jusqu’à aujourd’hui. Elle démarre d’elle-même
+dans la minute qui suit une modification de votre grand livre.
+
+Chaque passage fait trois choses pour chaque titre :
+
+- récupère des cours plus anciens, un pas de plus vers son premier achat ;
+- comble les jours manqués pendant que l’app était arrêtée ;
+- ajoute le taux de change aux cours stockés qui n’en ont pas.
+
+Elle télécharge aussi les fonds de référence que vous suivez pour la
+[comparaison](./benchmark.mdx), un fonds à la fois.
+
+## Combien de temps cela prend {#duration}
+
+Avec les réglages par défaut, chaque passage fait une requête par titre,
+couvrant 365 jours (**Profondeur d’historique**), et marque une pause de
+10 secondes après chaque requête (**Pause entre deux requêtes**). Un passage
+démarre chaque minute.
+
+Comptez donc environ une requête par titre et par année d’historique, et
+10 secondes par requête. Pour 30 titres détenus sur 5 ans, cela fait environ
+150 requêtes : 25 minutes ou plus.
+
+Vous pouvez réduire **Pause entre deux requêtes** dans **Réglages → Avancé**
+pour aller plus vite. Les requêtes arrivent alors plus souvent chez Yahoo
+Finance.
+
+## Suivre la progression {#progress}
+
+- La page **Système** affiche un bandeau **Reconstruction en cours**, avec le
+  compte le plus en retard et la part de la période couverte.
+- Le tableau de bord indique combien de séries remontent déjà au premier
+  achat, et sur combien.
+- La cloche des notifications prend la couleur d’attention jusqu’à la fin de
+  la reconstruction.
+- Dans `/health`, la tâche `backfill` indique `running`, avec les compteurs
+  `complete` et `in_scope`. Elle indique `complete` quand tous les historiques
+  sont terminés. Voir [Système](./system.mdx#health).
+
+## Ce qui reste incomplet en attendant {#incomplete}
+
+L’app n’écrit la valeur et le rendement d’un jour que lorsque chaque titre
+détenu ce jour-là a un cours. D’ici là :
+
+- la valeur du portefeuille apparaît sur le tableau de bord dès que chaque
+  ligne a un cours ;
+- les graphiques commencent après votre premier événement et se complètent
+  vers le passé ;
+- les chiffres qui ont besoin des jours manquants indiquent **historique en
+  cours de reconstitution** ;
+- les rendements changent d’un rafraîchissement à l’autre, à mesure que les
+  jours plus anciens arrivent.
+
+## Un titre sans cours passés {#no-price}
+
+Si la reconstruction atteint le premier achat sans trouver aucun cours, le
+titre est terminé, et l’app compte la ligne à son prix d’achat. Cela signale en
+général un symbole mal saisi : voir
+[Un symbole qui ne répond plus](./how-prices-are-collected.mdx#failing).
+
+Si les requêtes d’un titre échouent 9 fois de suite, la reconstruction cesse
+de l’attendre, pour que le reste de votre historique puisse se terminer. Elle
+continue de réessayer en arrière-plan. `/health` indique `failing` pour
+`backfill` et, si le titre n’a aucun cours, la cloche affiche **Aucun cours
+pour** ce titre.
+
+## Résolution selon l’âge {#resolution}
+
+Plus un cours est ancien, moins l’app garde de points. Chaque passage de la
+reconstruction de l’historique applique cette règle à tous les cours stockés.
+
+| Âge du cours | Ce qui est gardé |
+|---|---|
+| Moins d’un an | Chaque point tel qu’il a été stocké |
+| De 1 à 2 ans | Un point par heure, le dernier de l’heure |
+| Plus de 2 ans | Un point par jour, le dernier du jour |
+
+La règle ne fait que retirer des points. Elle n’en ajoute jamais pour combler
+un trou.
+
+## Ce qu’une reconstruction ne peut pas récupérer {#limits}
+
+Une reconstruction récupère ce que Yahoo Finance fournit encore :
+
+| Période | Cours le plus fin qu’une reconstruction peut récupérer |
+|---|---|
+| Les 2 dernières années | Un par heure |
+| Plus ancienne | Un par jour |
+
+Tant que l’app tourne, elle stocke un cours à chaque passage de la
+**Fréquence des cours**, toutes les 2 minutes par défaut. Ce détail n’existe
+que pour la période où l’app tournait. Ni une reconstruction, ni une nouvelle
+installation, ni un import de vos événements ne peuvent le rétablir.
+
+L’export du grand livre ne contient pas les cours. Pour les garder,
+sauvegardez le fichier de la base de données. Voir
+[Sauvegarder et mettre à jour](./backup-and-update.mdx).
+
+## Historiques orphelins {#orphans}
+
+Quand vous supprimez tous les événements d’un titre, ses cours restent
+stockés. La page **Système** les liste sous **Historiques orphelins**, où
+**Purger** les supprime. Si vous enregistrez de nouveau le titre, son
+historique est récupéré à nouveau, à la résolution que la reconstruction peut
+encore obtenir.

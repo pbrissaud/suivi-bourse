@@ -1,0 +1,89 @@
+{
+  "taxationRegime.kind.none": {
+    "message": "Non imposé"
+  },
+  "taxationRegime.kind.flat_realised": {
+    "message": "Un taux unique sur la plus-value"
+  },
+  "taxationRegime.kind.aged_flat_realised": {
+    "message": "Un taux qui change avec l’âge de l’enveloppe"
+  },
+  "taxationRegime.kind.bracketed_realised": {
+    "message": "Un barème sur la plus-value"
+  },
+  "taxationRegime.kind.withholding_income": {
+    "message": "Un prélèvement sur les revenus"
+  },
+  "taxationRegime.param.rate": {
+    "message": "Taux"
+  },
+  "taxationRegime.param.social_rate": {
+    "message": "Prélèvements sociaux"
+  },
+  "taxationRegime.param.rate_before": {
+    "message": "Taux avant le seuil"
+  },
+  "taxationRegime.param.rate_after": {
+    "message": "Taux après le seuil"
+  },
+  "taxationRegime.param.threshold_years": {
+    "message": "Seuil, en années"
+  },
+  "taxationRegime.param.age_basis": {
+    "message": "Compté à partir de"
+  },
+  "taxationRegime.ageBasis.opening": {
+    "message": "L’ouverture de l’enveloppe"
+  },
+  "taxationRegime.ageBasis.first_payment": {
+    "message": "Le premier versement"
+  },
+  "taxationRegime.bracket.above": {
+    "message": "Au-delà de {bound}"
+  },
+  "taxationRegime.bracket.upTo": {
+    "message": "Jusqu’à {bound}"
+  },
+  "taxationRegime.noShape": {
+    "message": "Aucune forme de l’application ne représente ce régime."
+  },
+  "taxationRegime.taxYear": {
+    "message": "année fiscale {year}"
+  },
+  "taxationRegime.asOf": {
+    "message": "Au {date}"
+  },
+  "home.tagline": {
+    "message": "Suivez votre portefeuille : vos opérations en entrée, vos chiffres en sortie, dans un seul conteneur"
+  },
+  "home.cta.install": {
+    "message": "Installer"
+  },
+  "home.cta.use": {
+    "message": "Premiers pas"
+  },
+  "home.screenshot.alt": {
+    "message": "Le tableau de bord de SuiviBourse : la valeur du portefeuille, sa courbe face aux versements, le rythme d’investissement et la valeur de chaque titre"
+  },
+  "home.title": {
+    "message": "Suivez votre portefeuille"
+  },
+  "home.feature.ledger.title": {
+    "message": "Vos opérations en entrée"
+  },
+  "home.feature.ledger.body": {
+    "message": "Saisissez vos achats, ventes, dividendes et versements dans l’application, ou importez-les depuis un fichier CSV ou Excel."
+  },
+  "home.feature.figures.title": {
+    "message": "Vos chiffres en sortie"
+  },
+  "home.feature.figures.body": {
+    "message": "Les cours sont récupérés et l’historique reconstruit pour vous. Vous obtenez vos plus-values, vos rendements et l’impôt estimé, dans une seule devise."
+  },
+  "home.feature.container.title": {
+    "message": "Un seul conteneur"
+  },
+  "home.feature.container.body": {
+    "message": "Une image Docker avec sa propre base et sa propre interface. Rien d’autre à installer, et vos données restent chez vous."
+  }
+}

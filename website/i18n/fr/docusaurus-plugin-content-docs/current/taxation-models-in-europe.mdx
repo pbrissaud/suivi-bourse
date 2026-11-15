@@ -1,0 +1,175 @@
+---
+title: Modèles d’imposition en Europe
+description: Le modèle d’imposition à saisir pour une enveloppe courante en France, en Allemagne, en Belgique, en Espagne ou en Italie
+---
+
+import TaxationRegime from '@site/src/components/TaxationRegime';
+
+# Modèles d’imposition en Europe {#top}
+
+Cette page liste une enveloppe courante par pays, la forme de
+[modèle d’imposition](./your-taxation-model.mdx) qui lui convient et ce qu’il
+faut saisir. Vous pouvez [importer chaque modèle](./your-taxation-model.mdx#import)
+dans **Réglages**.
+
+Chaque tableau donne sa source officielle et la date de sa vérification.
+Vérifiez chaque valeur à la source avant de vous y fier. Cette page n’est pas un
+conseil fiscal.
+
+## France {#fr}
+
+### Plan d’épargne en actions (PEA) {#fr-pea}
+
+Une enveloppe d’actions : actions européennes cotées et fonds qui en détiennent.
+L’impôt dépend de l’âge de l’enveloppe, compté depuis son **premier
+versement**.
+
+<TaxationRegime id="fr/pea" />
+
+**Ce que le modèle laisse de côté :**
+
+- Un retrait avant le seuil, qui clôt en général le plan.
+- Les anciennes règles de prélèvements sociaux sur les gains passés d’un plan
+  ouvert de longue date.
+- L’option pour l’imposition au barème progressif.
+- Les cas particuliers des titres non cotés.
+
+### PEA-PME {#fr-pea-pme}
+
+Le pendant du PEA pour les petites et moyennes entreprises, imposé comme le PEA.
+
+<TaxationRegime id="fr/pea-pme" />
+
+**Ce que le modèle laisse de côté.** La même chose que pour le PEA.
+L’application ne vérifie pas le plafond de versements.
+
+### Compte-titres ordinaire (CTO) {#fr-compte-titres}
+
+Un compte-titres ordinaire, sans avantage fiscal. La plus-value est imposée à la
+vente, au prélèvement forfaitaire : une part d’impôt sur le revenu plus les
+prélèvements sociaux.
+
+<TaxationRegime id="fr/compte-titres" />
+
+**Ce que le modèle laisse de côté :**
+
+- L’option pour le barème progressif, qui peut coûter moins ou plus selon vos
+  revenus.
+- Les moins-values reportées des années précédentes.
+- L’impôt sur les dividendes. C’est un prélèvement sur les revenus, et un compte
+  ne porte qu’un modèle : celui-ci est celui de la plus-value.
+
+### Assurance-vie {#fr-assurance-vie}
+
+Un contrat d’assurance-vie utilisé comme enveloppe d’épargne. Le taux appliqué à
+un rachat change quand le contrat dépasse un certain âge, compté depuis le jour
+de son **ouverture**. Les prélèvements sociaux diffèrent de ceux des autres
+enveloppes de cette page.
+
+<TaxationRegime id="fr/assurance-vie" />
+
+**Ce que le modèle laisse de côté :**
+
+- Le plafond de primes au-delà duquel le taux réduit après le seuil ne
+  s’applique plus.
+- L’abattement annuel sur les gains après le seuil, commun à tous vos contrats.
+- Les contrats dont les primes ont été versées avant la réforme de 2017, qui
+  ont leur propre barème.
+- Les règles de succession.
+
+### Plan d’épargne retraite (PER) {#fr-per}
+
+Un plan d’épargne retraite, bloqué jusqu’à la retraite dans la plupart des cas.
+Le modèle applique aux gains le taux forfaitaire de l’impôt sur le revenu et
+les prélèvements sociaux, comme pour une sortie en capital.
+
+<TaxationRegime id="fr/per" />
+
+**Ce que le modèle laisse de côté :**
+
+- L’impôt sur le capital à la sortie. Les versements que vous avez déduits de
+  votre revenu sont imposés comme un revenu quand vous quittez le plan, et le
+  modèle ne compte que les gains.
+- Les sorties anticipées pour quelques motifs listés, qui suivent leurs propres
+  règles.
+- Une sortie en rente, imposée comme une pension sur tout le montant.
+
+## Allemagne {#de}
+
+### Wertpapierdepot {#de-depot}
+
+Un compte-titres tenu par une banque en Allemagne. La banque retient l’impôt sur
+la plus-value au moment de la vente.
+
+<TaxationRegime id="de/depot" />
+
+La ligne des prélèvements correspond à la contribution de solidarité. C’est un
+pourcentage de l’impôt : elle est donc saisie ici comme une part de la
+plus-value qui donne le même montant.
+
+**Ce que le modèle laisse de côté :**
+
+- L’abattement annuel sur les revenus de placement, que la banque applique
+  avant de retenir l’impôt.
+- L’impôt d’Église, dû si vous appartenez à une Église, qui dépend de votre lieu
+  de résidence.
+- La compensation des pertes entre les pots de la banque : les actions et les
+  autres revenus ne se compensent pas.
+- Les exonérations partielles sur certains fonds.
+
+## Belgique {#be}
+
+### Effectenrekening / compte-titres {#be-compte-titres}
+
+Un compte-titres tenu par une banque ou un courtier en Belgique. Un impôt sur
+les plus-values d’actifs financiers s’applique aux gains réalisés depuis le
+début de 2026.
+
+<TaxationRegime id="be/compte-titres" />
+
+**Ce que le modèle laisse de côté :**
+
+- L’exonération annuelle sur les plus-values, et son report.
+- La valeur de référence des actifs achetés avant l’existence de l’impôt, qui
+  fixe le gain imposable.
+- La taxe sur les comptes-titres, due sur le compte lui-même.
+- La taxe sur les opérations de bourse, à chaque transaction.
+- Le précompte sur les dividendes et les intérêts, qui relève d’une autre forme.
+
+## Espagne {#es}
+
+### Cuenta de valores {#es-cuenta-valores}
+
+Un compte-titres. La plus-value entre dans la *base del ahorro*, imposée par
+tranches. Les plafonds ci-dessous sont en euros.
+
+<TaxationRegime id="es/cuenta-valores" />
+
+Les taux additionnent le barème de l’État et celui de la région, pour une région
+qui applique le barème par défaut.
+
+**Ce que le modèle laisse de côté :**
+
+- Vos autres revenus d’épargne, qui remplissent les tranches avant la
+  plus-value. Le modèle ne voit que les gains de ce compte : il part donc de la
+  première tranche.
+- Une région qui fixe son propre barème.
+- Les pertes reportées.
+- Les règles sur les titres achetés et revendus dans un court délai.
+
+## Italie {#it}
+
+### Regime amministrato {#it-regime-amministrato}
+
+Un compte-titres sous l’option *risparmio amministrato* : la banque calcule et
+paie l’impôt de substitution à chaque vente.
+
+<TaxationRegime id="it/regime-amministrato" />
+
+**Ce que le modèle laisse de côté :**
+
+- Le taux réduit sur les obligations d’État et les titres assimilés.
+- La compensation des pertes avec des gains ultérieurs dans le compte, pendant
+  un nombre limité d’années.
+- Le droit de timbre sur le compte.
+- Les autres options fiscales, qui changent qui calcule l’impôt.

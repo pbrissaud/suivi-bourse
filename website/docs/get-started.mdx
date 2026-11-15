@@ -1,12 +1,14 @@
 ---
-title: Get started
-description: One command, one screen
+title: Install with Docker
+description: Start SuiviBourse in one container and open it in your browser
 ---
 
-You need Docker, and you need nowhere to put anything yet — the app names its
-own store file inside the directory you give it.
+SuiviBourse runs as a single container. It needs Docker and one volume. There
+is no database to install and no configuration file.
 
-## Run
+The image is published for `linux/amd64` and `linux/arm64`.
+
+## Start the container {#run}
 
 ```bash
 docker run -d \
@@ -17,169 +19,130 @@ docker run -d \
   ghcr.io/pbrissaud/suivi-bourse:5
 ```
 
-`--restart unless-stopped` is what brings the container back after a reboot —
-and after a crash. Nothing inside the container restarts anything: the app is one
-process, so when it stops the container exits and this policy is what decides
-whether it comes back.
+| Option | What it does |
+|---|---|
+| `-v suivi-bourse:/data` | Keeps your portfolio in a Docker volume. Without it, your data is deleted with the container. |
+| `-p 8080:8080` | Publishes the app on port 8080 of the host. |
+| `--restart unless-stopped` | Restarts the container after a reboot or a crash. |
 
-The `-v` is the whole difference between a trial and an install. Without it the
-container still starts, but it keeps nothing. That is a fair
-way to try the app for an evening. It is not a way to keep a portfolio: the store
-lives in the container's writable layer, and the first `docker rm` takes it.
+The same image is on Docker Hub as `paulbrissaud/suivi-bourse`.
 
-## Open
+| Tag | What you get |
+|---|---|
+| `5` | The latest 5.x release |
+| `5.3` | The latest 5.3.x release |
+| `5.3.0` | Exactly that release |
+
+### With Docker Compose {#compose}
+
+```yaml
+services:
+  suivi-bourse:
+    image: ghcr.io/pbrissaud/suivi-bourse:5
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - suivi-bourse:/data
+
+volumes:
+  suivi-bourse:
+```
+
+```bash
+docker compose up -d
+```
+
+## Open the app {#open}
 
 Go to [http://localhost:8080](http://localhost:8080).
 
-On a store nobody has answered for yet, the app opens on a short walk of **three
-passages**. It says in three sentences what it is — a ledger of dated events,
-quotes it fetches itself, one currency everything is reported in.
+On a new installation, the app asks a few questions, starting with the currency
+your figures are reported in.
 
-1. **The required settings.** Exactly one thing has to be decided at
-   installation: **the base currency** every figure is reported in. It has no
-   default, which is why it is asked at all.
-2. **Your accounts.** Every event is recorded on an account, and your install
-   already owns one — so this passage shows you what you have and asks for
-   nothing. You declare others, and rename this one, on the *Accounts* page. It
-   comes before the next passage on purpose: a file you import names its accounts
-   by their identifier.
-3. **Your first events.** Two doors, side by side and neither recommended over
-   the other: hand the app a `.csv` or an `.xlsx`, or type a first purchase.
-   Typing a position *is* creating dated events, so a reader with no file to
-   import has not missed anything.
+![The first-launch screen asking which currency you keep your accounts in](/img/app/en/first-run-currency.png)
 
-**Walking through is not answering.** No passage extracts anything: you can go
-through all three, supply nothing, and end up on a working app. And you may leave
-at any point — the modal closes on its cross, with no *Later* button, because the
-way out should not have the weight of the answer. Whichever way you leave, your
-browser remembers that you have been through: the walk does not come back on the
-next page load, and emptying your ledger later does not bring it back either.
-Nothing about it is recorded in your store, so a store you wipe asks the question
-again.
+[First steps](./first-steps.mdx) walks you through these questions and your
+first events.
 
-The currency may be answered later, and where you left it the app says so.
-While your ledger is empty the answer is still yours to change; from your first
-event it is fixed, because changing it afterwards would reinterpret amounts you
-already recorded. Until it is answered, prices are still fetched, nothing is
-converted and no return is computed; the app says so on screen rather than
-refusing.
+## Protect the app {#protect}
 
-If you would rather not answer it by hand, the same question is answered with
-one `curl` on the write API, which is served on the same port as the page. An
-import that declares its own currency answers it too, and then even that call is
-unnecessary.
+:::warning
+A new installation has no access code. Anyone who can reach port 8080 can read
+and change your portfolio.
+:::
 
-Then record a position, or import the files you already have. Prices appear as
-they are fetched; the history behind them is rebuilt backwards while you use
-the app. Give it time rather than reloading: **about 25 minutes for 30 symbols
-over five years**, and figures that depend on a price you do not have yet say
-so instead of guessing.
+Do one of these before you expose the app beyond your own machine:
 
-## Switch on the agent (optional)
+- Set an access code in the app. See [Secure access](./secure-access.mdx).
+- Publish the port on the local interface only: `-p 127.0.0.1:8080:8080`.
+- Reach it only through a VPN.
 
-The agent is **off** until you switch it on, in **Settings → The agent**:
-press **Set up**, choose a provider (Anthropic, OpenAI, an OpenAI-compatible
-gateway, or Ollama on your own machine), give it its key or its address, press
-**Test the connection**, pick one of the models the provider lists, and press
-**Save**: the first save switches the agent on. A configuration is kept only once
-**Test the connection** passes: a key the provider refuses is never stored, and a
-failed test leaves the previous configuration as it was. A test that changes the
-provider, its address or its key switches the agent off, and **Save** puts it
-back on if it was on. The **Agent on** switch turns it off and on, and the
-**Model** row changes the model without asking for the key again.
+A reverse proxy adds HTTPS, not a login: behind one, set an access code too.
+See [Configuration](./configuration.mdx#reverse-proxy).
 
-**The key lives in the store, so it lives in your `/data` volume.** It is kept
-there in clear, in the app's own table, and never sent back to the browser —
-the page only ever shows its last four characters, and so does every log line.
-There is no environment variable for it. Anyone who can copy the volume, or a
-backup of it, holds the key: treat that volume the way you treat the key.
-
-**Do not switch the agent on in an instance reachable without
-authentication.** The app has no login: whoever reaches its port can ask the
-agent questions, and every question is spent on *your* key, at your
-provider's rates. Keep the port on your own machine or network, or behind a
-reverse proxy with authentication, a VPN or a tunnel — the rule
-[Connect your own agent](./connect-your-own-agent.mdx#who-can-reach-it) already
-sets for the app as a whole. With Ollama there is no key to lend, and nothing
-leaves your machine.
-
-## Is it working?
-
-The image carries its own probe, and the app answers it on `/health`, on the
-same port as everything else. That one answer speaks to two readers at once, and
-they never mix.
-
-**The status code is for whatever supervises the container.** It answers one
-question — *should this container be restarted* — and `200` means the process is
-serving and its store answers. A `503` means it cannot do its work at all, which
-is the only failure a restart repairs. That is what `docker ps` reads to mark the
-container `healthy`, and what a Kubernetes probe would read.
-
-**The body is for you.** It names each of the three jobs — the scrape, the
-rebuild, the returns — with the last time it ran and what came of that pass, plus
-one word for the whole:
+## Check that it runs {#health}
 
 ```bash
-curl -s localhost:8080/health
+docker ps --filter name=suivi-bourse
+```
+
+The `STATUS` column shows `healthy` about 30 seconds after the start.
+
+For more detail, ask the app:
+
+```bash
+curl -s http://localhost:8080/health
 ```
 
 ```json
 {
-  "status": "attention",
-  "now": "2026-08-24T15:00:00+00:00",
+  "status": "ok",
+  "now": "2026-11-14T15:00:00+00:00",
   "scheduler_running": true,
   "jobs": {
-    "scrape": {
-      "status": "attention", "at": "2026-08-24T14:59:12+00:00",
-      "verdict": "frozen", "held": 12, "closed": 0, "attention": ["ASML.AS"]
-    },
-    "backfill": {
-      "status": "ok", "at": "2026-08-24T14:58:40+00:00",
-      "verdict": "running", "complete": 7, "in_scope": 12, "attention": []
-    },
-    "performance": {
-      "status": "ok", "at": "2026-08-24T14:58:41+00:00",
-      "verdict": "ran", "error": null
-    }
+    "scrape": {"status": "ok", "verdict": "open", "...": "..."},
+    "backfill": {"status": "ok", "verdict": "complete", "...": "..."},
+    "performance": {"status": "ok", "verdict": "ran", "...": "..."}
   }
 }
 ```
 
-Each job — and the whole above them — carries one of three words. `ok` is
-everything ran and nothing asks to be looked at. `attention` is something ran
-badly, or has stopped running. `unknown` is *nothing has been observed yet*,
-which is what a container that started a minute ago honestly says, and which is
-deliberately not `ok`. `attention` lists the securities the verdict is about, so
-you know which line to go and read; `verdict` is the job's own word for its last
-pass, and `at` is when that pass happened.
+| `status` | Meaning |
+|---|---|
+| `ok` | Every job ran and nothing needs your attention. |
+| `attention` | A job failed or a price has stopped updating. The **System** page of the app says which. |
+| `unknown` | The app has started and no job has run yet. |
 
-**The bell at the top right of the app reads this same body**, so you do not
-have to `curl` anything to know. It carries two channels at once: its icon takes
-the colour — green is `ok`, amber is `attention` or a rebuild still running, red
-is the app not answering at all — and its badge counts everything still open. It
-opens onto a panel where the health, the facts about this installation and the
-advisories about your portfolio sit together, and from there onto the
-**System** page, where the jobs are written out in full.
+The HTTP code is `200` while the app is serving, whatever the `status`. It is
+`503` only when the app cannot open its store.
 
-:::note A scrape that has gone quiet is amber, and the code stays `200`
-Restarting the container repairs nothing that Yahoo or the market broke, and a
-probe that failed on a stuck job would turn it into a restart loop that fixes
-nothing and hides everything. So a job that is late, wedged or silent is read in
-the body and never in the status code. The one thing that makes the code fail is
-the store not answering — and then there is no body at all, which is itself the
-answer.
-:::
+The [System page](./system.mdx) shows the same information in the app, and
+lists every verdict of each job.
 
-:::note Backups come in two forms, and neither is hot
-Exporting your events backs up **the portfolio**: re-import them into a fresh
-install and the rebuild fetches the prices again. Stopping the container,
-copying the volume and restarting backs up **the installation** — the only form
-that also keeps your settings, your base currency and the fine-grained price
-history you have accumulated. That last one is the thing no late backup ever
-recovers: past 60 days, nothing sells you a price finer than hourly.
-:::
+## Update {#update}
 
----
+```bash
+docker pull ghcr.io/pbrissaud/suivi-bourse:5
+docker rm -f suivi-bourse
+```
 
-Running version 4 today? Nothing here is an upgrade, and the reconciliation is
-its own page: [Coming from v4](./coming-from-v4.mdx).
+Then run the `docker run` command from [Start the container](#run) again. Your
+data stays in the `suivi-bourse` volume.
+
+With Docker Compose:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Back up your data before a major update. See
+[Back up and update](./backup-and-update.mdx).
+
+## Next {#next}
+
+- [First steps](./first-steps.mdx): answer the first questions and record your
+  first events.
+- [Configuration](./configuration.mdx): the environment variables.
+- [Install without Docker](./install-without-docker.mdx)
+- Running version 4? See [Coming from v4](./coming-from-v4.mdx).

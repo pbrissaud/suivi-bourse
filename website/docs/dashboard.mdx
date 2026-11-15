@@ -1,0 +1,77 @@
+---
+title: Dashboard
+description: Read your portfolio value, its chart, your investment rhythm and where your money sits
+---
+
+The **Dashboard** answers how much your portfolio is worth and how it got
+there. This page explains each part of it and the controls of its chart.
+
+![The dashboard: the portfolio value at the top, the chart under it, then the investment rhythm and the securities value](/img/app/en/dashboard.png)
+
+The header shows **Prices as of** and the time of the freshest price the page uses.
+
+## Portfolio value {#value}
+
+The top of the page shows your **Portfolio value**: your securities at their
+latest price, plus the cash left in your accounts.
+
+| Item | What it shows |
+|---|---|
+| Line under the value | The change in value over the period chosen on the chart, in money and percent. **excluding deposits** means money you paid in during the period does not count as a gain. |
+| **First deposit** | The date of your first deposit. |
+| **Cash** | The cash left in your accounts, all accounts together. |
+| **After tax if all sold** | What you would keep if you sold everything today, after the tax of the accounts that carry a taxation model. It reads **If all sold, before tax** when no account has a model. |
+| Two-colour bar | How much of the value is money you paid in, and how much is gain. |
+| **Net contributed** | What you paid in, minus what you took out. Free shares are counted in it and named beside it. |
+| **Total P&L** | Your gain: unrealised and realised gains, plus dividends, minus fees. |
+| **Money-weighted return** | Your yearly return, taking into account when you paid money in. |
+
+Each figure is defined in [Read your figures](./read-your-figures.mdx).
+
+If you have recorded no **Cash in** or **Cash out** events, the top reads
+**Securities** and shows the value of your securities alone. Cash, net
+contributed and the returns need your deposits. See [Ledger](./ledger.mdx).
+
+## Use the chart {#chart}
+
+The chart sits under the value. Its controls are on the bar above it.
+
+1. Choose what the chart draws:
+   - **Amounts**: your **Total value** against your **Net contributed**. The
+     area between the two curves is your gain.
+   - **Performance**: the growth of the whole portfolio, cash included, which
+     deposits and withdrawals do not move.
+2. Choose the period: **1 month**, **This year**, **1 year** or **All**. The
+   page opens on **1 year**.
+3. Point at the chart, or focus it and use the arrow keys, to read the values of
+   one day.
+
+The range also sets the period of the change line under the value.
+
+Without deposits, the chart offers **Amounts** only. It then draws the
+**Market value** of your securities against their **Cost**.
+
+## Investment rhythm {#rhythm}
+
+**Investment rhythm** shows how much you buy each month. The large figure is the
+median amount bought a month. The bars show each month of the period, and a
+month with no purchase sits on the baseline. The line under the figure says how
+much you invested over how many months, and which months had no purchase.
+
+## Securities value {#securities}
+
+**Securities value** shows where the value of your securities sits, by security.
+The largest holdings are listed with their share of the total. The rest are
+grouped as other holdings. Cash is left out.
+
+To see every line, go to [Shares](./shares.mdx).
+
+## Messages you may see {#messages}
+
+| Message | What to do |
+|---|---|
+| **No events yet** | Record your first events. **Go to the ledger** opens the **Ledger**, **Resume the set-up** reopens the first-launch questions. See [First steps](./first-steps.mdx). |
+| **History is being rebuilt** | Wait. The value appears once every line has a price. See [Rebuild and resolution](./rebuild-and-resolution.mdx). |
+| **No price:** followed by symbols | These lines are counted at their purchase price. Check their symbol in the **Ledger**. |
+| **Calculation in progress — provisional figures.** | The price history is being rebuilt. The figures update on their own. |
+| **The last recompute failed** | The figures are those of the previous computation. The [System](./system.mdx) page says what failed. |

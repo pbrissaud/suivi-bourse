@@ -1,0 +1,165 @@
+---
+title: Agent
+description: Poser des questions sur votre portefeuille et transformer un relevé de courtier en événements du grand livre
+---
+
+Sur la page **Agent**, vous posez des questions sur votre portefeuille en
+langage courant. L’agent lit vos lignes, vos comptes et votre grand livre,
+simule une vente et son impôt, et propose des événements pour votre grand livre.
+Il ne donne pas de conseil.
+
+![La page Agent : les fils à gauche, une question, les lignes d’outils et la réponse](/img/app/fr/agent.png)
+
+L’agent a d’abord besoin d’un modèle branché. Voir
+[Configurer l’agent](./set-up-the-agent.mdx). D’ici là, la page affiche
+**Branchez un modèle pour poser des questions sur votre portefeuille** et un
+bouton **Configurer**.
+
+## Poser une question {#ask}
+
+1. Ouvrez **Agent** dans la barre latérale.
+2. Tapez votre question dans **Posez une question sur votre portefeuille…**, ou
+   cliquez sur l’une des questions d’exemple.
+3. Appuyez sur Entrée ou cliquez sur **Envoyer**. Maj+Entrée passe à la ligne.
+
+Cliquez sur **Arrêter** pour interrompre la réponse, ou sur **Réessayer** si
+elle s’arrête sur une erreur.
+
+| Vous pouvez demander | Ce que fait l’agent |
+|---|---|
+| Où en est mon portefeuille aujourd’hui ? | Lit vos totaux et vos lignes |
+| Quels sont mes derniers mouvements ? | Lit votre grand livre |
+| Est-ce que j’investis régulièrement depuis douze mois ? | Lit votre rythme d’investissement |
+| Si je vends toute ma ligne ACME sur mon PEA, combien je paie et combien il me reste ? | Simule la vente et son impôt |
+| Combien coûterait de tout vendre sur mon compte-titres aujourd’hui ? | Simule la vente des lignes du compte |
+| Est-ce que je fais mieux que mon fonds de comparaison ? | Lit la page **Comparaison** |
+| Comment mon portefeuille a-t-il évolué depuis janvier ? | Lit l’historique de votre portefeuille |
+
+## Voir les outils utilisés {#tools}
+
+Chaque étape de l’agent apparaît comme une ligne dans la réponse, par exemple
+**Lecture de votre grand livre.** ou **Simulation d’une vente et de son
+impôt.** Cliquez sur une ligne pour voir l’**Appel** et le **Résultat**. Une
+étape qui échoue indique **L’outil a échoué :** suivi de la raison.
+
+## Ajouter les événements qu’il propose {#events}
+
+Quand vous décrivez des mouvements, ou que vous lui donnez un relevé, l’agent
+propose des événements. Ils apparaissent sous la réponse dans un tableau :
+date, type, événement et montant. Une ligne déjà présente dans votre grand livre
+indique **déjà dans le grand livre** et reste décochée.
+
+1. Cochez les lignes à garder.
+2. Cliquez sur **Ajouter 3 événements**. Le nombre suit votre sélection.
+
+Quand une proposition attend vos réponses, le bouton indique plutôt **Revoir
+dans le grand livre**. Voir [Revoir une proposition dans le grand
+livre](#review).
+
+Rien n’est écrit avant votre clic. La carte affiche ensuite l’un de ces états :
+
+| État | Signification |
+|---|---|
+| **Ajoutée le …** | Les événements sont dans votre grand livre. |
+| **Ignorée** | Vous avez cliqué sur **Ignorer**. |
+| **Expirée** | Personne n’a décidé dans les 7 jours. |
+| **Le grand livre a changé depuis cette proposition** | Cliquez sur **Relancer** pour confronter les mêmes événements à votre grand livre tel qu’il est maintenant. |
+
+## Revoir une proposition dans le grand livre {#review}
+
+**Revoir dans le grand livre** ouvre le **Grand livre** avec une fenêtre
+intitulée **Ce que cet import ferait**. Elle liste **Les événements proposés**
+et pose les questions que la proposition laisse ouvertes. Rien n’est écrit
+avant que vous cliquiez sur **Importer**.
+
+| Partie de la fenêtre | Ce que vous décidez |
+|---|---|
+| **Les comptes** | Pour chaque compte nommé par les événements, choisissez sa cible dans **Cible pour …** : l’un de vos comptes, ou **Ajouter « … » comme nouveau compte**. Ce choix ne vaut que pour cet import. |
+| **Les montants en devise** | Pour les titres cotés hors de votre devise de base, indiquez si les montants sont **En EUR, déjà convertis** ou dans la devise propre à chaque titre. Le second choix convertit au taux de clôture du jour de chaque opération. |
+| **Répétées dans le fichier** | Les lignes qui apparaissent plusieurs fois. Choisissez **N’en écrire qu’une** ou écrivez chaque copie, ligne par ligne ou avec **Une seule de chaque** et **Tout écrire**. |
+| **Déjà dans votre grand livre** | Les lignes que votre grand livre contient déjà. Elles sont ignorées, sauf si vous cochez **Écrire quand même les lignes déjà dans votre grand livre**. |
+| **La devise** | Affichée quand vous n’avez pas encore de devise de base. **Utiliser … comme devise de base** adopte la devise des événements. Vous ne pourrez plus la changer ensuite. |
+
+**Importer** reste désactivé tant qu’une réponse manque, et la fenêtre dit
+laquelle. Fermer la fenêtre n’écrit rien et laisse la proposition en attente.
+
+## Transformer un relevé de courtier en événements {#statement}
+
+1. Sous la zone de question, cliquez sur **Joindre un relevé**.
+2. Dans **Compte du relevé**, choisissez le compte auquel appartient le relevé.
+3. Collez le relevé dans **Texte du relevé**, jusqu’à 50 000 caractères.
+4. Cliquez sur **Envoyer**.
+
+Vous pouvez aussi déposer un fichier `.txt` ou `.csv` dans la zone de question
+pour remplir la fenêtre. La fenêtre nomme le fournisseur et le modèle qui liront
+le relevé.
+
+L’agent répond avec des événements proposés. Une ligne peut porter une
+mention : **extrait du relevé**, **déduit d’un écart** ou **prix estimé**.
+
+Si l’agent a mal lu le relevé, cliquez sur **Lire comme relevé d’opérations** ou
+**Lire comme relevé de lignes**. Cliquez ensuite sur
+[Revoir dans le grand livre](#review).
+
+L’agent ne lit que du texte. Une image ou un PDF est refusé avec **Ce modèle ne
+lit pas les images. Collez le texte ou un CSV.**
+
+## Votre profil d’investisseur {#profile}
+
+Pendant une conversation, l’agent peut proposer de retenir un fait vous
+concernant. La carte indique **Retenir pour la suite :** suivi du fait, avec
+**Confirmer** et **Ignorer**.
+
+| Fait | Valeurs |
+|---|---|
+| Revenu annuel | Un montant dans votre devise de base |
+| Taux marginal d’imposition | Un pourcentage, 60 % au plus |
+| Tolérance au risque | **Prudent**, **Équilibré** ou **Dynamique** |
+| Projet | Un nom, une année cible et un montant facultatif |
+
+Les faits confirmés apparaissent sous **Votre profil**, chacun avec
+**Modifier** et **Oublier**. L’agent s’en sert dans ses réponses suivantes. Le
+montant de votre revenu n’est jamais envoyé au modèle : l’agent sait seulement
+que vous en avez déclaré un.
+
+## Fils {#threads}
+
+Chaque conversation est un fil, conservé sur votre serveur.
+
+- **Nouveau fil** démarre une nouvelle conversation.
+- La liste de gauche montre vos fils par jour. Tapez dans **Rechercher un fil**
+  pour en trouver un.
+- **Supprimer**, à côté du titre du fil, supprime le fil ouvert après
+  confirmation.
+- Le nom du modèle, dans la zone de question, ouvre la liste des modèles.
+  Choisissez-en un autre pour ce fil.
+
+La palette ⌘K liste aussi vos fils.
+
+## Statistiques d’utilisation {#stats}
+
+Cliquez sur **Statistiques** dans la liste des fils pour voir la consommation
+de l’agent.
+
+![La page des statistiques de l’agent : tokens échangés, fils, tours, appels d’outils et le graphique par semaine](/img/app/fr/agent-stats.png)
+
+Choisissez la **Période** : **1 mois**, **Cette année**, **1 an** ou **Tout**.
+
+| Chiffre | Ce qu’il compte |
+|---|---|
+| **Tokens échangés** | Tous les tokens envoyés et reçus sur la période |
+| **Fils**, **Tours**, **Appels d’outils** | Les conversations, les réponses et les étapes d’outils |
+| **Entrée relue du cache**, **Entrée nouvelle**, **Sortie** | Les trois sortes de tokens |
+| **Par modèle**, **Par fil** | Les mêmes comptes par modèle et par fil |
+
+## Ce qu’il ne peut pas faire {#limits}
+
+- Il n’écrit rien de lui-même. Les événements et les faits du profil sont des
+  propositions que vous confirmez.
+- Il ne donne pas de conseil. Il travaille à partir de vos données et simule.
+- Il ne peut pas modifier vos réglages, vos comptes ni vos modèles
+  d’imposition.
+- Il ne lit que du texte.
+
+Quand l’agent répond, vos lignes, vos comptes et votre grand livre sont envoyés
+au fournisseur du modèle. Avec un modèle sur votre propre réseau, ils y restent.

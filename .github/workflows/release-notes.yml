@@ -72,7 +72,10 @@ jobs:
             before upgrading (a `### Before you upgrade` subsection only when there
             is something to say). No commit hashes, no file or function names.
             Match the tone, length and structure of the sections already in the
-            file — read them first. English only.
+            file — read them first. English only. Link to another page of the
+            docs as `./<page>` or `./<page>#<id>`, without the `.mdx` extension:
+            this page is not translated, and the French build only resolves its
+            links in that form.
 
       - name: Commit the notes onto the release PR
         env:

@@ -1,0 +1,170 @@
+---
+title: Installer sans Docker
+description: Construisez et lancez SuiviBourse depuis ses sources sur un hôte sans Docker
+---
+
+Cette page installe SuiviBourse depuis ses sources et le lance comme service.
+Vous obtenez la même application que l’image Docker : un processus, un
+répertoire de données.
+
+## Ce qu’il vous faut {#prerequisites}
+
+| Outil | Version | Sert à |
+|---|---|---|
+| [uv](https://docs.astral.sh/uv/) | récente | Installer Python et les dépendances du backend depuis le fichier de verrouillage |
+| Python | 3.15 ou plus | Faire tourner l’application. uv le télécharge si votre système ne l’a pas. |
+| Node.js | 26 | Construire l’interface web, une fois par installation ou mise à jour |
+| pnpm | la version que nomment les sources | Installer les dépendances de l’interface web |
+
+Node.js et pnpm ne servent qu’à la construction. L’application en marche ne les
+utilise pas.
+
+## Installer {#install}
+
+1. Téléchargez l’archive des sources de la
+   [dernière version](https://github.com/pbrissaud/suivi-bourse/releases/latest)
+   et extrayez-la, par exemple dans `/opt/suivi-bourse`.
+2. Placez-vous dans ce répertoire :
+
+   ```bash
+   cd /opt/suivi-bourse
+   ```
+
+3. Installez le backend depuis le fichier de verrouillage, sans les outils de
+   développement :
+
+   ```bash
+   uv sync --locked --no-dev
+   ```
+
+4. Activez pnpm, dont les sources fixent la version exacte :
+
+   ```bash
+   npm install -g corepack@latest && corepack enable
+   ```
+
+5. Construisez l’interface web :
+
+   ```bash
+   cd src/web
+   pnpm install --frozen-lockfile
+   pnpm build
+   cd ../..
+   ```
+
+Sans cette construction, l’application démarre quand même, mais le navigateur
+affiche `No web UI bundle in this build` au lieu de l’interface.
+
+## Choisir le répertoire de données {#data-directory}
+
+SuiviBourse garde tout dans un répertoire, fixé par `SB_STORE_DIR`. La valeur par
+défaut est `/data`, qui convient au conteneur. Sur un hôte, choisissez le vôtre :
+
+```bash
+sudo mkdir -p /var/lib/suivi-bourse
+sudo chown "$USER" /var/lib/suivi-bourse
+```
+
+L’application y crée ses fichiers : la base `suivi-bourse.duckdb` et son fichier
+`.wal`, un dossier `logs`, et un dossier `agent` dès que vous utilisez l’agent.
+
+:::warning
+Ce répertoire contient votre portefeuille et des secrets : la clé du fournisseur de l’agent et
+les données du code d’accès. Réservez-le à un seul utilisateur, et sauvegardez-le. Voir
+[Sauvegarder et mettre à jour](./backup-and-update.mdx).
+:::
+
+## Lancer {#run}
+
+Depuis le répertoire des sources :
+
+```bash
+SB_STORE_DIR=/var/lib/suivi-bourse uv run --no-dev python -m application.boot
+```
+
+Ouvrez [http://localhost:8080](http://localhost:8080). Le premier lancement pose
+quelques questions. Voir [Premiers pas](./first-steps.mdx).
+
+L’application écoute sur toutes les interfaces réseau de l’hôte. Définissez
+`SB_WEB_PORT` pour utiliser un autre port. Les autres variables sont sur
+[Configuration](./configuration.mdx).
+
+Lancez un seul processus par répertoire de données. Deux processus sur le même
+répertoire collecteraient tous deux les cours et écriraient dans la même base.
+
+## Le garder en marche {#service}
+
+Sur un hôte avec systemd :
+
+1. Trouvez le chemin absolu de uv :
+
+   ```bash
+   which uv
+   ```
+
+2. Créez `/etc/systemd/system/suivi-bourse.service`. Remplacez l’utilisateur et
+   le chemin de uv par les vôtres :
+
+   ```ini title="/etc/systemd/system/suivi-bourse.service"
+   [Unit]
+   Description=SuiviBourse
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   User=suivi
+   WorkingDirectory=/opt/suivi-bourse
+   Environment=SB_STORE_DIR=/var/lib/suivi-bourse
+   Environment=PYTHONUNBUFFERED=1
+   ExecStart=/usr/local/bin/uv run --no-dev python -m application.boot
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+3. Vérifiez que cet utilisateur possède le répertoire de données :
+
+   ```bash
+   sudo chown -R suivi /var/lib/suivi-bourse
+   ```
+
+4. Démarrez le service et activez-le au démarrage :
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now suivi-bourse
+   ```
+
+5. Vérifiez qu’il répond :
+
+   ```bash
+   curl -s http://localhost:8080/health
+   ```
+
+Lisez les journaux avec `journalctl -u suivi-bourse -f`. L’application s’arrête
+proprement sur `SIGTERM`, ce qu’envoie `systemctl stop`.
+
+## Mettre à jour {#update}
+
+1. Arrêtez le service : `sudo systemctl stop suivi-bourse`.
+2. Copiez le répertoire de données en lieu sûr.
+3. Extrayez la nouvelle version par-dessus les anciennes sources, ou dans un
+   nouveau répertoire.
+4. Refaites les étapes d’[Installer](#install) à partir de l’étape 2.
+5. Démarrez le service : `sudo systemctl start suivi-bourse`.
+
+Une construction depuis les sources n’affiche aucun numéro de version dans
+l’application et ne cherche pas les nouvelles versions. Surveillez plutôt la
+[page des versions](https://github.com/pbrissaud/suivi-bourse/releases).
+
+## Plateformes prises en charge {#platforms}
+
+SuiviBourse tourne sur tout système et processeur pour lequel Python 3.15 et
+DuckDB publient des paquets, comme Linux et macOS. Les étapes systemd valent pour
+Linux. Sur un autre système, lancez la même commande avec son propre gestionnaire
+de services.
+
+L’image Docker couvre `linux/amd64` et `linux/arm64`. Voir
+[Installer avec Docker](./get-started.mdx).

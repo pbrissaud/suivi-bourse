@@ -1,161 +1,101 @@
 ---
 title: Your taxation model
-description: How an account is taxed, written down by you — the five shapes, where the form lives, and what the app refuses
+description: Create a taxation model, attach it to an account, and see what you would owe if you sold today
 ---
 
-A **taxation model** is how one account is taxed, written down by you. It exists
-for one figure: [what you would owe if you sold
-today](./read-your-figures.mdx#projected-tax), on the account's own panel.
+A taxation model describes how one account is taxed. With a model attached, the
+account page shows **If I sell today**: the tax you would owe if you sold
+everything today. See [Estimated tax](./read-your-figures.mdx#projected-tax).
 
-Nothing is declared to anybody, nothing is sent anywhere, and this is not a tax
-return. It is your own statement of your own wrapper, applied to today's prices.
+![The Tax models list in Settings, with three models and the accounts that carry them](/img/app/en/settings-taxation.png)
 
-**An account carrying no model is ordinary.** Most installs start that way, the
-seeded `default` account has none, and the app shows no card at all rather than
-guessing a rate — the bell carries one advisory per such account, with a link
-back to it.
+The app ships no tax rates: you import a model published on this site, or you
+write your own.
 
-## Where you write it {#where}
+## Create a model and attach it {#where}
 
-On the **accounts** page, on the account's own panel, in the same form that
-carries the account's name. A model is written where it is attached, and **one
-button writes it all**: *Declare this account* saves the model first, then the
-account. If the account is then refused (an identifier already taken, say), the
-model is already saved, and pressing the button again corrects that same model
-rather than adding a second one.
+One model can serve several accounts.
 
-The field is a list, and it opens on **No model**. Below that sit the models you
-have already written — **a model is reusable across accounts**, so a household
-with two compte-titres writes one model and picks it twice — and last,
-*Write a model…*, which opens the editor. When you correct a model that other
-accounts carry, the panel names them: the correction reaches all of them.
+1. Open **Settings** and go to **Portfolio → Tax models**.
+2. Click **Add a model**.
+3. Under **Source**, choose **Write my own**.
+4. Fill in **What to call this model** and choose a **Shape**.
+5. Fill in the fields of that shape. See [The shapes](#shapes).
+6. Click **Save**.
 
-Under the list, a link takes you to the import in **Settings › Taxation**.
+To attach the model to an account:
 
-**Removing a model an account still carries is refused**, and the message names
-the accounts. Detach it there first. Removing it from an account is a separate
-gesture on that account's panel, and it leaves the model itself alone.
+1. Open **Accounts** and select the account.
+2. Click **Edit this account**.
+3. In **Taxation model**, choose the model.
+4. If the model counts the age from the opening day, enter the **Opened on**
+   date.
+5. Click **Save**.
 
-## Importing a model {#import}
+To change a model, click **Edit** on its row. The change applies to every
+account listed under **Accounts that carry it**. To remove a model, open it and
+click **Delete this model**. The app refuses while an account carries it.
 
-**Settings › Taxation** lists every model you have written, and above them an
-**Import for my country** field. Reaching for it reads, once, the list of
-wrappers this documentation publishes ([Taxation models in
-Europe](./taxation-models-in-europe.mdx) is the same data, as a page), and
-nothing is read before that. The list is searchable and grouped by country, your
-own first; a wrapper keeps its native name.
+## Import a model for your country {#import}
 
-Picking one **copies it into a model of yours**, named as the wrapper is, and
-opens it so you can check it and change anything. The copy keeps no link to the
-documentation: nothing records where it came from or as of when, and it is never
-updated by itself.
+1. In **Tax models**, click **Add a model**.
+2. Under **Source**, choose **Import for my country**.
+3. The list opens on your country. Use **Search for a wrapper** for another.
+4. Click **Import** on the wrapper you want.
 
-Importing a wrapper whose name matches a model you already have **replaces that
-model's rates**, after a confirmation that names the accounts carrying it. That
-is the one way to take up a correction, and it is always your decision.
+The model appears in **Tax models** under the wrapper's name. Open it with
+**Edit** to check the values. The copy never updates by itself.
 
-If the list cannot be read (you are offline, or the documentation site is down),
-the field says why, offers *Try again*, and *Write a model…* on the account's
-panel works as ever.
+A wrapper whose name you already use shows **already imported**. If the list
+cannot be read, the sheet offers **Try again**.
+[Taxation models in Europe](./taxation-models-in-europe.mdx) describes the same
+wrappers.
 
-## The app ships no rates {#no-rates}
+## The shapes {#shapes}
 
-You type the money. Every rate on this page is one you looked up and entered,
-and none of them is in the image.
+A model has one of five shapes. You type rates as percentages: `12.8`, not
+`0.128`. Bracket ceilings are amounts in your base currency.
 
-That is deliberate. A rate schedule changes, differs by country, and inside one
-country differs by the situation of the person reading it; a rate shipped in a
-container is a tax fact that goes stale the first January nobody pulls a new
-image, and it would go stale *silently*, under a figure that still looks
-computed. The app would be asserting something about your taxes that it has no
-way to keep true.
+| Shape | What it taxes | Fields | Example |
+|---|---|---|---|
+| **Not taxed** | Nothing | None | A tax-exempt account |
+| **One rate on the gain** | The gain, when you sell | **Rate**, optional **Social charges** | Rate 25, social charges 5: a gain of 1 000 owes 300 |
+| **A rate that changes with the wrapper's age** | The gain, at one rate before a threshold and another after | **Rate before the threshold**, **Rate after the threshold**, **Threshold, in years**, **Counted from**, optional **Social charges** | 20 before, 0 after 5 years, social charges 10: a gain of 1 000 owes 300 in year 3 and 100 in year 6 |
+| **Brackets on the gain** | The gain, slice by slice | **Brackets**: each row has **Up to** and **Rate for this bracket**; the last row is **And above**. Optional **Social charges** | Up to 6 000 at 19, up to 50 000 at 21, above at 23: a gain of 10 000 owes 1 980 |
+| **A withholding on income** | What you receive, such as a dividend | **Rate** | Rate 30 on dividends; no tax is estimated on a sale |
 
-What does ship is **structure**, because structure is what does not move. For the
-values themselves, [Taxation models in Europe](./taxation-models-in-europe.mdx)
-lists a common wrapper per country with the shape that fits it, its parameters
-as of a stated date, and the official source to check them against. [Importing
-one of those models](#import) copies it into a model of yours, and the rates
-come from this site rather than from the app, so a correction reaches you with
-the documentation and never with an upgrade. *Write a model…* stays the path for
-every other wrapper.
-
-**A rate is typed as a percentage.** `12,8` is what a tax schedule says, so
-`12,8` is what the form takes.
-
-## The five shapes {#shapes}
-
-The shape is the first thing the editor asks, and it decides which fields
-follow. There are five, and the list is closed.
-
-| Shape | What it charges | What you type |
-|---|---|---|
-| **Not taxed** | nothing — an exempt holding, or an account you would rather the app said nothing about | nothing |
-| **One rate on the gain** | the gain, when you sell, at one rate | a rate, and social charges if your wrapper has them |
-| **A rate that changes with the wrapper's age** | the gain, at one rate before the wrapper reaches a certain age and another after it | both rates, the threshold in years, what the age is counted from, and social charges if any |
-| **Brackets on the gain** | the gain by tranche, each bracket taxing only the part that falls inside it | the ladder, bottom to top |
-| **A withholding on income** | what you receive — a dividend, a coupon — never a gain | a rate |
-
-**Social charges are folded into the rate the card names.** Where your model
-carries them, the figure and the rate shown under it both include the levy —
-naming the income rate alone would contradict the figure directly above it. On
-a shape that changes with age, the levy applies on **both** sides of the
-threshold: a mature PEA is exempt of income tax and still owes its levy.
-
-**The ladder's top rung has no ceiling.** *And above* is the last row and it
-carries a rate only, which is what makes the ladder total: a set of bounded
-brackets says nothing about a gain larger than the highest of them, and the app
-would have to invent a rate for it.
-
-**Two shapes state no figure, and they say so in words.** *Not taxed* shows
-`0.00`, and that zero is the model saying so rather than something the app
-computed. *A withholding on income* shows no figure at all: it is charged on
-what you receive, so there is nothing about a gain for it to project.
+Social charges are added to the rate, before and after an age threshold. Edit a
+ladder with **Add a bracket** and **Remove this bracket**.
 
 ## What the age is counted from {#age-basis}
 
-Only the aged shape asks, and **the two answers are not the same date**. A PEA's
-five years run from its first payment; an assurance-vie's eight run from the day
-the contract was opened. The two coincide often enough to hide the mistake and
-not often enough to make guessing safe, which is why the form asks rather than
-derives.
+The shape **A rate that changes with the wrapper's age** asks **Counted from**:
 
-**The day the wrapper was opened.** The form then asks for an **Opened on**
-date, and that declared date is the only one used. Declare no date and there is
-no figure — your first payment is not an opening, and the app will not
-substitute one for the other. The field is offered pre-filled with the date of
-the first payment on record; correct it if the wrapper is older than this
-ledger, which is what a transfer from another broker looks like.
+| Choice | Date used |
+|---|---|
+| **The day the wrapper was opened** | The **Opened on** date of the account. Without that date, the account shows no estimate. |
+| **The first payment into it** | The date of the account's first deposit. If the account has no deposit yet, the **Opened on** date. |
 
-**The first payment into it.** The form does not ask for a date at all: the
-ledger already holds one, and the earliest payment on record is what the
-threshold runs from. This is what lets a PEA work end to end without a single
-date being typed.
+The rate changes on the anniversary itself.
 
-**The rate changes on the anniversary**, not the day after, and the card names
-that day for as long as the threshold is still ahead. A wrapper opened on 29
-February reaches its threshold on the 28th in a year that has no 29th.
+Until you save a date, **Opened on** shows the account's first deposit as a
+suggestion. A model counted from the opening day needs a date you saved.
 
 ## What the app refuses {#refusals}
 
-A model is checked **when it is written**, once, so what comes back out of the
-store is what went in. Each refusal below leaves the editor open with the
-message, and nothing is written.
+If a value is refused when you save, the sheet stays open with the message and
+nothing is saved.
 
-| What you wrote | Why it comes back |
+| What you entered | The rule |
 |---|---|
-| a required field left empty | the shape needs it; the optional one is social charges, and only on the two shapes that list it |
-| a rate outside **0 – 100 %** | a rate is a fraction of something, in both directions |
-| a rate and social charges **summing past 100 %** | `90 %` beside `90 %` is two ordinary-looking entries that project 180 % of a gain, and a gain cannot owe more than itself |
-| a threshold that is not a whole number of years, or is negative | an age threshold is counted in years |
-| a threshold **above 200 years** | no schedule surveyed goes past thirty; the bound is what keeps a typo out of date arithmetic, where an anniversary a hundred thousand years out overflows the calendar rather than producing a wrong answer |
-| a ladder with **no bracket at all** | there is nothing to walk |
-| a **first ceiling at or below zero** | the slice under it would be negative, and a negative slice is a *negative* tax on a real gain |
-| ceilings that do not climb | the ladder is read bottom to top, and each rung taxes what falls between it and the one below |
-| an upper bound on the **top** bracket, or a missing one on any other | only the top rung is open, and it is what every gain above the one below it is taxed at |
-| something that is not a number where a number goes | `Infinity` and `NaN` included — Python's own JSON reader accepts both, and no tax schedule contains either |
+| A required field left empty | Only **Social charges** is optional |
+| A rate below 0 % or above 100 % | A rate is between 0 and 100 |
+| A rate plus social charges above 100 % | A gain cannot owe more than itself |
+| A threshold that is negative, not a whole number, or above 200 | A whole number of years, 200 at most |
+| No bracket | At least one bracket |
+| Ceilings at zero or below, or that do not go up | Each ceiling is above zero and above the one before |
+| A ceiling on the last bracket, or a missing ceiling on another one | Only the last bracket is open |
+| Text where a number goes | Numbers only |
 
-**A stored model this version would refuse publishes no figure.** Bounds are
-added over time, and a row written before one existed is read back, checked
-against today's rules, and left without a projection rather than projected from
-a value the app no longer accepts. Reopen the editor on it, correct it, and saving
-tells you which bound it met.
+A model that breaks a rule added by a newer version shows no estimate: edit it
+and save.

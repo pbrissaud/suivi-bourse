@@ -1,0 +1,129 @@
+---
+title: Connecter votre propre agent
+description: Reliez Claude Desktop, Claude Code ou tout client MCP au serveur MCP de SuiviBourse
+---
+
+SuiviBourse fait tourner un serveur [MCP](https://modelcontextprotocol.io).
+Reliez-y Claude Desktop, Claude Code ou tout autre client MCP, et le client peut
+lire les chiffres de votre portefeuille. L’agent intégré utilise les mêmes
+outils.
+
+## L’adresse {#address}
+
+Le serveur tourne dans l’app, sur le même port :
+
+```
+http://<your-host>:8080/mcp
+```
+
+Il utilise le transport Streamable HTTP. Si vous publiez l’app sur un autre
+port ou derrière un reverse proxy, utilisez cette adresse suivie de `/mcp`.
+
+## Qui peut y accéder {#who-can-reach-it}
+
+| Code d’accès | Ce que `/mcp` demande |
+|---|---|
+| Désactivé | Rien. Toute personne qui atteint le port peut lire votre portefeuille. |
+| Activé | Un jeton d’accès avec la portée **/mcp, pour Claude Desktop**, envoyé sous la forme `Authorization: Bearer <token>`. Sans lui, le serveur répond `401`. |
+
+Les jetons d’accès n’existent que tant qu’un code d’accès est défini. Créez-en
+un dans **Réglages → Sécurité**, sous **Jetons d’accès**. Le jeton n’est
+affiché qu’une fois. Désactiver le code d’accès supprime tous les jetons. Voir
+[Sécuriser l’accès](./secure-access.mdx).
+
+:::warning
+En HTTP simple, le jeton circule en clair. Pour joindre l’app depuis
+l’extérieur de votre réseau, placez-la derrière un VPN ou un reverse proxy avec
+TLS. Voir [Configuration](./configuration.mdx#reverse-proxy).
+:::
+
+## Configurer votre client {#configure}
+
+### Claude Desktop {#claude-desktop}
+
+1. Créez un jeton d’accès avec la portée **/mcp, pour Claude Desktop**.
+2. Copiez la configuration affichée sous le jeton. Elle ressemble à ceci :
+
+   ```json
+   {
+     "mcpServers": {
+       "suivi-bourse": {
+         "command": "npx",
+         "args": [
+           "mcp-remote",
+           "http://localhost:8080/mcp",
+           "--header",
+           "Authorization: Bearer sb_1a2b3c4d_xxxxxxxxxxxx"
+         ]
+       }
+     }
+   }
+   ```
+
+3. Collez-la dans `claude_desktop_config.json`, en la fusionnant avec les
+   serveurs qui y figurent déjà.
+4. Redémarrez Claude Desktop.
+
+Cette configuration demande Node.js sur l’ordinateur où tourne Claude Desktop.
+Sans code d’accès, retirez la ligne `--header`, la ligne qui la suit et la
+virgule après l’adresse.
+
+### Claude Code {#claude-code}
+
+```bash
+claude mcp add --transport http suivi-bourse http://localhost:8080/mcp \
+  --header "Authorization: Bearer sb_1a2b3c4d_xxxxxxxxxxxx"
+```
+
+Tapez `/mcp` dans Claude Code pour vérifier que le serveur est connecté.
+
+### Un autre client {#other-client}
+
+Donnez au client l’adresse et, si le code d’accès est activé, l’en-tête
+`Authorization: Bearer <token>`. Choisissez le transport HTTP ou Streamable
+HTTP.
+
+## Outils {#tools}
+
+Le client choisit seul parmi ces outils.
+
+| Outil | Ce qu’il répond |
+|---|---|
+| `list_positions` | Ce que vous détenez, par compte et par titre : quantité, coût, cours, plus-value latente |
+| `get_portfolio_totals` | Le portefeuille à son dernier jour : valeur, liquidités, versé net, TRI et rendement pondéré par le temps |
+| `get_portfolio_history` | Valeur et rendement jour par jour sur une période (un an par défaut) |
+| `list_accounts` | Chaque compte avec ses derniers chiffres, pour comparer les comptes et voir votre répartition |
+| `list_events` | Votre grand livre, du plus récent au plus ancien, éventuellement pour un seul titre |
+| `get_investment_rhythm` | Combien vous achetez par mois et à quelle fréquence, sur les 12 derniers mois |
+| `get_benchmark_comparison` | Le même argent, les mêmes jours, placé dans votre fonds de référence, face à ce que vous avez fait |
+| `simulate_sale` | Ce que rapporterait la vente d’un nombre de parts d’une ligne, net de l’impôt projeté par votre modèle fiscal |
+| `get_profile` | Les faits vous concernant que vous avez confirmés dans l’app, et vos projets |
+| `propose_profile_fact` | Propose un fait que vous avez énoncé, comme votre taux d’imposition ; vous le confirmez dans l’app |
+| `propose_events` | Propose les événements que vous avez énoncés, sur des comptes existants ; vous les examinez dans l’aperçu de l’import |
+
+Les montants sont dans votre devise de base, sauf le cours que `list_positions`
+donne aussi dans la devise du titre. Un chiffre manquant revient vide, jamais à
+zéro.
+
+## Ce qu’il ne peut pas faire {#limits}
+
+- Aucun outil n’écrit d’événement, de compte ou de réglage. Une vente simulée
+  n’enregistre rien.
+- Aucun outil ne confirme une proposition. Les faits et événements proposés
+  vous attendent dans l’app, et expirent au bout de 7 jours. Si un client dit
+  avoir enregistré un achat, il ne l’a pas fait.
+- Aucun outil ne consulte un titre hors de votre portefeuille : le serveur ne
+  peut donc pas répondre à une demande de conseil boursier.
+
+Vos chiffres quittent votre machine dès qu’un client les lit. Si le client
+fonctionne avec un modèle hébergé, vos lignes et votre grand livre partent chez
+le fournisseur de ce modèle.
+
+## Dépannage {#troubleshooting}
+
+| Symptôme | Ce qu’il faut vérifier |
+|---|---|
+| `401 Unauthorized` | Le code d’accès est activé et le jeton manque, est erroné, révoqué, expiré, ou n’a pas la portée `/mcp`. Créez ou régénérez un jeton. |
+| Le client ne se connecte pas | Ouvrez `http://<your-host>:8080/health` depuis le même ordinateur. S’il ne répond pas, le port n’est pas joignable depuis là. |
+| Claude Desktop n’affiche aucun serveur | Vérifiez que `npx` fonctionne sur cet ordinateur et que le JSON est valide. Redémarrez Claude Desktop. |
+| Les chiffres sont vides | L’app n’a pas encore de chiffre : la devise de base n’est pas définie, ou l’historique est encore en cours de reconstitution. Voir [Reconstruction et résolution](./rebuild-and-resolution.mdx). |

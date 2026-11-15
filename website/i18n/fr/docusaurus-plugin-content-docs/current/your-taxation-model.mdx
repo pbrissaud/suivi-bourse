@@ -1,0 +1,108 @@
+---
+title: Votre modèle d’imposition
+description: Créer un modèle d’imposition, l’attacher à un compte et voir ce que vous devriez si vous vendiez aujourd’hui
+---
+
+Un modèle d’imposition décrit comment un compte est imposé. Quand un modèle est
+attaché, la page du compte affiche **Si je sors aujourd’hui** : l’impôt que vous
+devriez si vous vendiez tout aujourd’hui. Voir
+[Impôt estimé](./read-your-figures.mdx#projected-tax).
+
+![La liste Modèles d’imposition dans Réglages, avec trois modèles et les comptes qui les portent](/img/app/fr/settings-taxation.png)
+
+L’application ne fournit aucun taux d’imposition : vous importez un modèle
+publié sur ce site, ou vous écrivez le vôtre.
+
+## Créer un modèle et l’attacher {#where}
+
+Un même modèle peut servir à plusieurs comptes.
+
+1. Ouvrez **Réglages** et allez à **Portefeuille → Modèles d’imposition**.
+2. Cliquez sur **Ajouter un modèle**.
+3. Sous **Source**, choisissez **Écrire le mien**.
+4. Remplissez **Le nom de ce modèle** et choisissez une **Forme**.
+5. Remplissez les champs de cette forme. Voir [Les formes](#shapes).
+6. Cliquez sur **Enregistrer**.
+
+Pour attacher le modèle à un compte :
+
+1. Ouvrez **Comptes** et sélectionnez le compte.
+2. Cliquez sur **Modifier le compte**.
+3. Dans **Modèle d’imposition**, choisissez le modèle.
+4. Si le modèle compte l’âge depuis l’ouverture, saisissez la date
+   **Ouvert le**.
+5. Cliquez sur **Enregistrer**.
+
+Pour changer un modèle, cliquez sur **Modifier** sur sa ligne. La modification
+s’applique à tous les comptes listés sous **Comptes qui le portent**. Pour
+retirer un modèle, ouvrez-le et cliquez sur **Supprimer ce modèle**.
+L’application refuse tant qu’un compte le porte.
+
+## Importer un modèle pour votre pays {#import}
+
+1. Dans **Modèles d’imposition**, cliquez sur **Ajouter un modèle**.
+2. Sous **Source**, choisissez **Importer pour mon pays**.
+3. La liste s’ouvre sur votre pays. Utilisez **Chercher une enveloppe** pour en
+   trouver une autre.
+4. Cliquez sur **Importer** sur l’enveloppe voulue.
+
+Le modèle apparaît dans **Modèles d’imposition** sous le nom de l’enveloppe.
+Ouvrez-le avec **Modifier** pour vérifier les valeurs. La copie ne se met jamais
+à jour d’elle-même.
+
+Une enveloppe dont vous utilisez déjà le nom affiche **déjà importé**. Si la
+liste ne peut pas être lue, le panneau propose **Réessayer**.
+[Modèles d’imposition en Europe](./taxation-models-in-europe.mdx) décrit les
+mêmes enveloppes.
+
+## Les formes {#shapes}
+
+Un modèle a l’une de cinq formes. Saisissez les taux en pourcentage : `12,8`,
+pas `0,128`. Les plafonds de tranche sont des montants dans votre devise de
+base.
+
+| Forme | Ce qu’elle impose | Champs | Exemple |
+|---|---|---|---|
+| **Non imposé** | Rien | Aucun | Un compte exonéré |
+| **Un taux unique sur la plus-value** | La plus-value, à la vente | **Taux**, **Prélèvements sociaux** facultatifs | Taux 25, prélèvements sociaux 5 : une plus-value de 1 000 doit 300 |
+| **Un taux qui change avec l’âge de l’enveloppe** | La plus-value, à un taux avant un seuil et à un autre après | **Taux avant le seuil**, **Taux après le seuil**, **Seuil, en années**, **Compté depuis**, **Prélèvements sociaux** facultatifs | 20 avant, 0 après 5 ans, prélèvements sociaux 10 : une plus-value de 1 000 doit 300 la 3ᵉ année et 100 la 6ᵉ |
+| **Un barème sur la plus-value** | La plus-value, tranche par tranche | **Tranches** : chaque ligne a **Jusqu’à** et **Taux de cette tranche** ; la dernière ligne est **Au-delà**. **Prélèvements sociaux** facultatifs | Jusqu’à 6 000 à 19, jusqu’à 50 000 à 21, au-delà à 23 : une plus-value de 10 000 doit 1 980 |
+| **Un prélèvement sur les revenus** | Ce que vous recevez, un dividende par exemple | **Taux** | Taux 30 sur les dividendes ; aucun impôt n’est estimé sur une vente |
+
+Les prélèvements sociaux s’ajoutent au taux, avant comme après un seuil d’âge.
+Modifiez un barème avec **Ajouter une tranche** et **Supprimer cette tranche**.
+
+## À partir de quand l’âge est compté {#age-basis}
+
+La forme **Un taux qui change avec l’âge de l’enveloppe** demande **Compté
+depuis** :
+
+| Choix | Date utilisée |
+|---|---|
+| **L’ouverture de l’enveloppe** | La date **Ouvert le** du compte. Sans cette date, le compte n’affiche pas d’estimation. |
+| **Le premier versement** | La date du premier versement sur le compte. Si le compte n’a encore aucun versement, la date **Ouvert le**. |
+
+Le taux change le jour anniversaire lui-même.
+
+Tant que vous n’avez pas enregistré de date, **Ouvert le** propose la date du
+premier versement du compte. Un modèle compté depuis l’ouverture a besoin d’une
+date que vous avez enregistrée.
+
+## Ce que l’application refuse {#refusals}
+
+Si une valeur est refusée à l’enregistrement, le panneau reste ouvert avec le
+message et rien n’est enregistré.
+
+| Ce que vous avez saisi | La règle |
+|---|---|
+| Un champ obligatoire laissé vide | Seuls les **Prélèvements sociaux** sont facultatifs |
+| Un taux inférieur à 0 % ou supérieur à 100 % | Un taux est compris entre 0 et 100 |
+| Un taux et des prélèvements sociaux dont la somme dépasse 100 % | Une plus-value ne peut pas devoir plus qu’elle-même |
+| Un seuil négatif, non entier ou supérieur à 200 | Un nombre entier d’années, 200 au plus |
+| Aucune tranche | Au moins une tranche |
+| Des plafonds nuls ou négatifs, ou qui ne montent pas | Chaque plafond est supérieur à zéro et au précédent |
+| Un plafond sur la dernière tranche, ou un plafond manquant sur une autre | Seule la dernière tranche est ouverte |
+| Du texte à la place d’un nombre | Des nombres uniquement |
+
+Un modèle qui enfreint une règle ajoutée par une version plus récente n’affiche
+pas d’estimation : modifiez-le et enregistrez.

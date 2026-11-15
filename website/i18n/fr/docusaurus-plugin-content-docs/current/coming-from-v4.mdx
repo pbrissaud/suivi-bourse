@@ -1,0 +1,178 @@
+---
+title: Venir de la v4
+description: Faites passer une installation SuiviBourse 4 à la version 5, vérifiez le résultat et revenez en arrière si besoin
+---
+
+Cette page fait passer une installation SuiviBourse 4 à la version 5. Vous
+installez la version 5 à côté de la version 4, vous lui donnez vos fichiers
+d’événements, puis vous comparez les deux avant de retirer la version 4.
+
+:::warning La version 5.3 est la dernière à reconnaître les fichiers de la version 4
+À partir de la version 5.4, l’application ne cherche plus les fichiers ni les
+variables de la version 4 : elle ne signale plus un `config.yaml` ou un
+`settings.yaml` monté, et ne les refuse plus à l’import. Les fichiers
+d’événements aux colonnes de la version 4 s’importent toujours. Passez de la
+version 4 avec la 5.3 ou une version antérieure.
+:::
+
+## Ce qui est repris {#what-carries-over}
+
+La version 5 n’a pas de commande de mise à niveau et ne lit jamais les
+répertoires ni les bases de la version 4.
+
+| Version 4 | Dans la version 5 |
+|---|---|
+| Fichiers d’événements (`.csv`, `.xlsx`) dans `events/` | Importés tels quels. Voir [Vos fichiers d’événements](#your-event-files). |
+| Comptes dans `settings.yaml` | Déclarés de nouveau dans l’application. Voir [Vos comptes](#your-accounts). |
+| `config.yaml` (mode manuel, positions sans date) | Non lu. Enregistrez ces positions comme des événements datés. |
+| `settings.yaml` et les variables `SB_*` | Non lus. Les réglages vivent dans l’application, sous **Réglages**. |
+| Historique des cours dans InfluxDB | Téléchargé de nouveau depuis zéro. |
+| Tableaux de bord Grafana | Remplacés par les pages de l’application. |
+
+L’image change de nom. La version 4 est `ghcr.io/pbrissaud/suivi-bourse-app`.
+La version 5 est `ghcr.io/pbrissaud/suivi-bourse`.
+
+## Avant de commencer {#before}
+
+1. Laissez la version 4 tourner, pour comparer les chiffres.
+2. Copiez en lieu sûr le répertoire de configuration de la version 4. Dans
+   l’installation Compose, c’est `data/` à côté de `docker-compose.yaml`, ou ce
+   que nomme `SB_CONFIG_DIR`. Il contient vos fichiers d’événements et
+   `settings.yaml`.
+
+Ne montez jamais ce répertoire dans la version 5, et ne partagez pas de volume
+entre les deux. S’il est monté, la version 5 écrit dans son journal qu’elle
+ignore `settings.yaml` ou `config.yaml`.
+
+## Les étapes {#steps}
+
+1. Lancez la version 5 sur un nouveau volume, comme dans
+   [Installer avec Docker](./get-started.mdx). La version 4 n’utilise pas le
+   port 8080 : les deux peuvent tourner en même temps.
+2. Ouvrez [http://localhost:8080](http://localhost:8080). Sur le premier écran,
+   choisissez la devise dans laquelle vos montants de la version 4 sont écrits.
+   Elle ne se change plus ensuite.
+3. À l’étape du compte, créez votre premier compte. Si la version 4 déclarait des
+   comptes, utilisez le `id` de l’un d’eux comme **Identifiant**.
+4. Déclarez vos autres comptes. Voir [Vos comptes](#your-accounts).
+5. Importez vos fichiers d’événements un par un. Voir
+   [Vos fichiers d’événements](#your-event-files).
+6. Attendez le téléchargement de l’historique des cours. Voir
+   [Reconstruction et résolution](./rebuild-and-resolution.mdx).
+7. Comparez les deux versions. Voir [Le rapprochement](#the-reconciliation).
+8. Quand les chiffres concordent, arrêtez la version 4 et retirez ses volumes.
+   Voir [Retirer la version 4](#remove-v4).
+
+## Vos fichiers d’événements {#your-event-files}
+
+La version 5 lit les colonnes qu’écrivait la version 4 : `date`, `event_type`,
+`symbol`, `name`, `quantity`, `unit_price`, `fee`, `amount`, `notes` et `account`.
+Les six types d’événements sont les mêmes. Les formats `.csv` et `.xlsx`
+fonctionnent, et chaque feuille d’un classeur est lue.
+
+1. Ouvrez **Grand livre** et choisissez **Importer**.
+2. Choisissez un fichier dans votre copie de `events/`.
+3. Sous **Importer dans**, choisissez un compte. Les lignes dont la colonne
+   `account` est vide y vont. Les lignes qui nomment un compte gardent le leur.
+4. Lisez l’aperçu. Chaque ligne est **Nouveau**, **Déjà présent**,
+   **Titre inconnu** ou **Illisible**. Une ligne qui nomme un compte non déclaré
+   est **Illisible** et n’est pas écrite.
+5. Si l’application affiche **Les montants en devise**, indiquez dans quelle
+   devise votre courtier a écrit les montants de ces titres.
+6. Choisissez **Importer _n_ événements** pour écrire les nouvelles lignes.
+
+Recommencez pour chaque fichier. Les lignes déjà importées s’affichent
+**Déjà présent** et sont ignorées. Voir
+[Importer vos événements](./import-your-events.mdx) pour l’aperçu complet.
+
+## Vos comptes {#your-accounts}
+
+Si votre `settings.yaml` de la version 4 n’avait pas de bloc `accounts:`, vos
+fichiers ont une colonne `account` vide. Importez-les dans n’importe quel compte
+créé à l’étape 3.
+
+S’il en avait un, déclarez chaque compte avant d’importer :
+
+1. Ouvrez **Comptes** et choisissez **Ajouter un compte**.
+2. Dans **Identifiant**, tapez exactement le `id` du compte dans
+   `settings.yaml`. Il ne se change plus ensuite.
+3. Dans **Libellé**, tapez son `label`.
+4. Choisissez **Ajouter**.
+
+La version 5 n’a pas de champ pour `type` ni pour `currency`. La devise choisie
+au premier lancement vaut pour tous les comptes. Pour garder le type, mettez-le
+dans le libellé.
+
+## Le rapprochement {#the-reconciliation}
+
+Une fois l’import terminé, comparez ces chiffres, par compte et au total. Ils
+doivent correspondre à la version 4 :
+
+| Chiffre | Où le lire dans la version 5 |
+|---|---|
+| Quantité détenue de chaque titre | **Titres**, colonne **Détenu · prix moyen** |
+| Liquidités de chaque compte | **Comptes**, **Liquidités** |
+| Versé net : versements moins retraits | **Comptes**, **Versé net** |
+
+Si l’un diffère, cherchez un fichier importé dans le mauvais compte, ou une
+ligne marquée **Illisible**.
+
+Attendez-vous à des gains et des rendements différents. La version 5 les calcule
+selon ses propres règles : voir [Lire vos chiffres](./read-your-figures.mdx).
+
+Une action gratuite (`GRANT`) compte au `unit_price` de sa ligne, ou à zéro sans
+prix. Les cours sont téléchargés de nouveau, avec moins de points pour les dates
+anciennes.
+
+## Retirer la version 4 {#remove-v4}
+
+La version 5 ne touche jamais aux volumes InfluxDB et Grafana de la version 4.
+Retirez-les vous-même une fois sûr de vous :
+
+1. Listez-les. Leurs noms finissent par `sb_influxdb_data` et `sb_grafana_data` :
+
+   ```bash
+   docker volume ls | grep sb_
+   ```
+
+2. Depuis le répertoire Compose de la version 4, arrêtez la pile :
+
+   ```bash
+   docker compose down
+   ```
+
+3. Supprimez les deux volumes, avec les noms que la liste a affichés :
+
+   ```bash
+   docker volume rm suivi-bourse_sb_influxdb_data suivi-bourse_sb_grafana_data
+   ```
+
+Gardez votre copie du répertoire de configuration pour pouvoir revenir en
+arrière.
+
+## Revenir à la version 4 {#go-back}
+
+Vos fichiers de la version 4 ne sont jamais modifiés : revenir juste après le
+passage ne coûte rien, relancez la version 4. Pour garder ce que vous avez
+enregistré depuis dans la version 5 :
+
+1. Dans la version 5, ouvrez **Grand livre → Exporter** et enregistrez
+   **Tous vos événements** en CSV.
+2. Placez le fichier dans le répertoire `events/` de la version 4, à la place de
+   vos anciens fichiers.
+3. Dans le `settings.yaml` de la version 4, déclarez chaque compte que nomme la
+   colonne `account` du fichier, `default` compris s’il apparaît. Donnez à
+   chacun une `currency` : la version 4 refuse de démarrer sans elle.
+
+   ```yaml title="settings.yaml"
+   accounts:
+   - id: pea
+     type: PEA
+     currency: EUR
+     label: My PEA
+   ```
+
+4. Lancez la version 4.
+
+La version 4 ignore la colonne supplémentaire `base_currency`. Seuls les
+quantités, les liquidités et le versé net correspondront à la version 5.

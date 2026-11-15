@@ -1,0 +1,97 @@
+---
+title: Comptes
+description: Créer, modifier et supprimer vos comptes, rattacher un modèle d’imposition, et lire chaque compte
+---
+
+La page **Comptes** permet de créer vos comptes et de lire chacun d’eux : sa
+valeur, son gain, l’origine de ce gain et l’impôt si vous vendiez aujourd’hui.
+
+![La page Comptes : les comptes en onglets avec leur valeur, puis le détail du compte ouvert](/img/app/fr/accounts.png)
+
+Vos comptes sont listés en haut, chacun avec sa valeur. Cliquez sur l’un d’eux
+pour ouvrir son détail en dessous. **Modifier le compte** et **Ajouter un
+compte** se trouvent sur la même ligne.
+
+## Ajouter un compte {#add}
+
+![Le panneau Ajouter un compte, avec les champs Identifiant, Libellé, Ouvert le et Modèle d’imposition](/img/app/fr/account-form.png)
+
+1. Cliquez sur **Ajouter un compte**.
+2. Dans **Identifiant**, tapez un identifiant court comme `broker-a`. Utilisez
+   des lettres, des chiffres, `-`, `_` et `.`, sans espace. Vos fichiers
+   d’import nomment le compte par cet identifiant.
+3. Dans **Libellé**, tapez le nom à afficher, par exemple `Courtier A` (facultatif).
+4. Dans **Ouvert le**, saisissez le jour d’ouverture du compte (facultatif).
+5. Dans **Modèle d’imposition**, choisissez un modèle, ou laissez **Aucun modèle**.
+6. Cliquez sur **Ajouter**.
+
+L’identifiant ne peut plus être changé ensuite. Si un autre compte l’utilise
+déjà, le panneau le signale sous le champ.
+
+Si des événements ne nomment encore aucun compte, le panneau propose de les
+affecter au nouveau compte. La case est cochée par défaut.
+
+## Modifier un compte {#edit}
+
+1. Ouvrez le compte.
+2. Cliquez sur **Modifier le compte**.
+3. Changez le **Libellé**, **Ouvert le** ou le **Modèle d’imposition**.
+4. Cliquez sur **Enregistrer**.
+
+Le panneau montre aussi ce que porte le compte : ses événements, ses titres et
+sa valeur.
+
+## Rattacher un modèle d’imposition {#taxation}
+
+Un modèle d’imposition permet au compte d’afficher l’impôt dû si vous vendiez
+aujourd’hui, et alimente **Net d’impôt si tout vendu** sur le **Tableau de bord**.
+
+1. Ouvrez le compte.
+2. Cliquez sur **Modifier le compte**. Sur un compte sans modèle, **Choisir un
+   modèle** sous **Si je sors aujourd’hui** ouvre le même panneau.
+3. Dans **Modèle d’imposition**, choisissez un modèle.
+4. Cliquez sur **Enregistrer**.
+
+La liste montre les modèles que vous avez importés ou écrits. Pour en ajouter
+un, voir [Votre modèle d’imposition](./your-taxation-model.mdx).
+
+## Supprimer un compte {#remove}
+
+1. Ouvrez le compte.
+2. Cliquez sur **Modifier le compte**.
+3. Cliquez sur **Supprimer ce compte** en bas du panneau.
+4. Confirmez avec **Supprimer le compte**.
+
+La suppression est définitive. Elle n’est proposée que si aucun événement ne
+nomme le compte. Sinon, le panneau indique combien d’événements le nomment :
+déplacez-les vers un autre compte ou supprimez-les d’abord. Voir
+[Grand livre](./ledger.mdx).
+
+Le compte **Non affecté**, que toute installation possède, ne peut pas être
+supprimé. Renommez-le plutôt.
+
+## Lire un compte {#read}
+
+| Partie | Ce qu’elle montre |
+|---|---|
+| **Valeur du compte** | La valeur du compte, son gain en montant et en pourcentage, et son **TRI** par an. |
+| Repères à droite | **Ouvert le**, **Liquidités** et la **Part du patrimoine** du compte. |
+| Ligne mensuelle | Combien vous avez versé par mois en moyenne depuis l’ouverture. |
+| **Valeur face à ce que vous avez versé** | Le graphique du compte. Choisissez **Montants** ou **Performance**, et une période : **1 mois**, **Cette année**, **1 an** ou **Tout**. |
+| **D’où vient le gain** | Le gain depuis l’ouverture, réparti en **Plus-value latente**, **Plus-value réalisée**, **Dividendes** et **Frais de versement**. |
+| **Si je sors aujourd’hui** | Le **Gain imposable**, l’**Impôt sur le revenu**, les **Prélèvements sociaux** et ce que vous garderiez, **nets après impôt**, avec le **Modèle** utilisé. |
+| **Titres du compte** | Les titres détenus sur le compte, avec **Investi**, **Valorisation**, **Gain** et **Poids**. Le lien dessous ouvre [Titres](./shares.mdx#account) réduit à ce compte. |
+
+Les chiffres sont définis dans [Lire vos chiffres](./read-your-figures.mdx).
+
+Une alerte sous les repères signale une date d’ouverture douteuse : elle est
+dans le futur, ou postérieure au premier versement. Corrigez-la avec **Modifier
+le compte**.
+
+## Événements sans compte {#unassigned}
+
+Les événements enregistrés avant que vous déclariez un compte sont dans **Non
+affecté**. Sa page affiche **Des événements affectés à aucun compte**.
+
+1. Dans **Les affecter à**, choisissez un compte.
+2. Cliquez sur **Affecter ces événements**.

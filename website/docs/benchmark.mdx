@@ -1,0 +1,112 @@
+---
+title: Comparison
+description: Compare your securities with an index fund bought with the same money on the same days
+---
+
+The **Comparison** page tells you, in euros, whether an index fund would have
+left you with more. It replays your purchases, sales and dividends into the fund,
+on the same days and for the same amounts.
+
+![The Comparison page: the gap against the S&P 500, the key figures and the gap chart](/img/app/en/benchmark.png)
+
+## Follow a comparison fund {#follow}
+
+The page compares you with funds you follow. You choose them in **Settings**.
+
+1. Open **Settings** and go to **Portfolio → Comparison funds**.
+2. Click **Add a fund**. The **Comparison funds** sheet opens.
+3. Turn on the switch next to each fund you want. Each row says since which
+   year the fund is quoted.
+
+| Fund | Symbol | Quoted since |
+|---|---|---|
+| MSCI World | `CW8.PA` | 2009 |
+| S&P 500 | `CSPX.AS` | 2010 |
+| Euro Stoxx 50 | `MSE.PA` | 2008 |
+| CAC 40 | `C40.PA` | 2008 |
+| MSCI Emerging Markets | `AEEM.PA` | 2010 |
+
+The list is fixed: you cannot add another ticker.
+
+The fund's price history then downloads in the background, one fund at a time.
+Its row in **Comparison funds** shows the progress (**downloading 40 %**), then
+**full history**. The Comparison page offers a fund only once its history is
+complete. The download waits until your ledger holds at least one event.
+
+## Stop following a fund {#unfollow}
+
+1. In **Settings → Portfolio → Comparison funds**, click **Stop following** on
+   the fund's row.
+2. Confirm.
+
+The fund leaves the list of the Comparison page, and its downloaded history is
+kept. To delete that history, click **Add a fund**, then **Stop keeping the
+history** under the fund. It goes at the next cleanup, shown on the **System**
+page. **Undo** keeps it.
+
+## Read the comparison {#read}
+
+The first line, **Your securities against the …**, names the fund. Click the fund
+name to switch to another fund you follow. **Add a fund** at the bottom of that
+list opens **Settings**.
+
+Under the heading, the page gives the period: **Compared from … to …**.
+
+The main sentence gives the gap: **1 250 € more than putting the same money in
+the MSCI World**, or **less**. Under it, the gap as a share of the money
+invested.
+
+| Figure | What it is |
+|---|---|
+| **Same money invested** | Your purchases and free shares at their declared value, minus your sales and dividends, each on its own day. A deposit left in cash is not part of it. |
+| **Gain on your securities** | What your securities gained over the period, as a percentage of the same money invested |
+| **Gain on the …** | What the fund would have gained with the same flows, as a percentage of the same money invested |
+
+The two bars, **Your securities** and **In the …**, show both values side by
+side.
+
+The gains cover the period and are not annual rates. The comparison leaves
+your cash out.
+[Comparison with a fund](./read-your-figures.mdx#benchmark) explains the
+computation with an example.
+
+## Read the chart {#chart}
+
+The chart has two views:
+
+- **Gap**: the gap in euros, day by day. Above zero, your securities are ahead.
+- **Amounts**: two curves, **Your portfolio** and the fund, for example
+  **MSCI World, same money invested**.
+
+Pick the period with **1 month**, **This year**, **1 year** or **All**.
+
+## Account by account {#accounts}
+
+The **Account by account** table repeats the comparison for each account, over
+the account's own period. The **Together** row adds them up to the figure at the
+top of the page.
+
+An account that held no securities while the fund was quoted is not in the
+table.
+
+## Why the period is shorter {#period}
+
+The page says when the period does not cover your whole ledger:
+
+| Message | Cause |
+|---|---|
+| **Compared from …, this fund's first close** | Your ledger starts before the fund was quoted. The message says how many of your years are left out. Pick an older fund to cover them. |
+| **The period ends on …: money leaving your securities that day is more than the fund could have funded** | A sale or dividend was larger than the fund holding at that point. |
+| **The period ends on …: the next day's close has no exchange rate** | The fund's price for the next day cannot be converted into your base currency yet. |
+
+## When there is no figure {#empty}
+
+| What the page shows | What to do |
+|---|---|
+| **No comparison fund followed** | Click **Choose the funds** and follow one. |
+| **… is downloading** | Wait for the download to finish. **Manage the funds** opens **Settings**. |
+| **Nothing to compare yet** | Record your first events. |
+| **Being computed** | Wait: the daily values of your accounts are not computed yet. |
+| **Nothing to compare** | None of your accounts held securities since the fund's first quote. |
+| **No price received** | The market sent no price for this fund. Check the **System** page, or follow another fund. |
+| **Total not comparable** | An exchange rate is missing on the first day. |

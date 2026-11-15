@@ -1,0 +1,137 @@
+---
+title: Configurer l’agent
+description: Reliez l’agent intégré à un fournisseur de modèles, choisissez son modèle, activez-le ou désactivez-le
+---
+
+L’agent intégré répond à vos questions sur votre portefeuille, sur la page
+**Agent**. Il est désactivé sur une nouvelle installation. Cette page explique
+comment le relier à un fournisseur de modèles et l’activer.
+
+![La section Agent des Réglages, avec l’interrupteur Agent activé, la liste des fournisseurs et le réglage Réflexion](/img/app/fr/settings-agent.png)
+
+## Avant de commencer {#before}
+
+- Définissez d’abord un code d’accès. Toute personne qui peut ouvrir l’app peut
+  utiliser l’agent, et ses questions sont facturées sur votre compte chez le
+  fournisseur. Voir [Sécuriser l’accès](./secure-access.mdx).
+- Munissez-vous d’une clé API Anthropic ou OpenAI, ou de l’adresse d’une
+  passerelle compatible OpenAI ou d’un serveur Ollama.
+
+## Fournisseurs pris en charge {#providers}
+
+| Fournisseur | Ce que vous donnez | Où partent vos chiffres |
+|---|---|---|
+| **Anthropic** | **Clé API** | `api.anthropic.com` |
+| **OpenAI** | **Clé API** | `api.openai.com` |
+| **Compatible OpenAI** | **Adresse du service**, et une **Clé API** si le service en demande une | L’hôte de l’adresse |
+| **Ollama** | **Adresse du service** (sans clé) | L’hôte de l’adresse |
+
+Pour une passerelle, l’adresse se termine en général par `/v1`, par exemple
+`https://llm.example.com/v1`. Pour Ollama, le formulaire propose
+`http://localhost:11434`.
+
+L’app appelle le fournisseur depuis son propre serveur : l’adresse doit donc
+être joignable depuis le conteneur. Dans Docker, `localhost` désigne le
+conteneur lui-même : indiquez plutôt le nom ou l’adresse IP de l’hôte, par
+exemple `http://192.168.1.20:11434`.
+
+## Ajouter un fournisseur {#add}
+
+1. Ouvrez **Réglages → Agent**.
+2. Cliquez sur **Ajouter un fournisseur**.
+3. Facultatif : saisissez un **Libellé**, par exemple `Serveur maison`.
+4. Choisissez le type de fournisseur : **Anthropic**, **OpenAI**,
+   **Compatible OpenAI** ou **Ollama**.
+5. Renseignez la **Clé API** ou l’**Adresse du service**.
+6. Cliquez sur **Tester**. L’app demande ses modèles au fournisseur, puis
+   affiche son temps de réponse et le nombre de modèles proposés.
+7. Choisissez un modèle dans **Modèle**.
+8. Cliquez sur **Enregistrer**.
+
+Le premier fournisseur ajouté devient le fournisseur par défaut. Le test est
+facultatif, mais c’est le seul moyen de remplir la liste **Modèle**. Un
+fournisseur enregistré sans modèle ne peut pas faire tourner l’agent.
+
+Si le test échoue, le formulaire en donne la raison, par exemple une clé
+refusée, un crédit épuisé ou une adresse erronée. Il affiche aussi le message
+du fournisseur.
+
+## Activer l’agent {#switch-on}
+
+1. Dans **Réglages → Agent**, activez **Agent activé**.
+
+L’interrupteur reste grisé tant qu’aucun fournisseur n’est ajouté. L’app refuse
+d’activer l’agent tant que le fournisseur par défaut n’a pas de modèle :
+modifiez-le, cliquez sur **Tester**, choisissez un modèle et enregistrez.
+
+Pour désactiver l’agent, désactivez **Agent activé**. Vos fournisseurs et vos
+clés restent enregistrés.
+
+## Choisir la durée de réflexion {#thinking}
+
+**Réflexion** règle combien le modèle raisonne avant de répondre : **Courte**
+(par défaut), **Normale** ou **Longue**. Le changement est enregistré
+aussitôt.
+
+**Courte** est la moins chère. Une réflexion plus longue consomme plus de
+jetons et allonge chaque réponse.
+
+## Changer de modèle ou de fournisseur {#change}
+
+1. Dans **Réglages → Agent**, cliquez sur **Modifier** à côté du fournisseur.
+2. Cliquez sur **Tester** pour charger la liste des modèles.
+3. Choisissez un autre **Modèle** et cliquez sur **Enregistrer**.
+
+Pour garder la clé enregistrée, laissez **Clé API** vide. Si vous changez le
+type de fournisseur ou l’adresse, l’app oublie la clé et le modèle enregistrés.
+S’il s’agit du fournisseur par défaut, l’agent se désactive jusqu’à ce que vous
+lui redonniez un modèle.
+
+Avec plusieurs fournisseurs, activez **Fournisseur par défaut** dans celui que
+l’agent doit utiliser. Sur la page **Agent**, vous pouvez aussi choisir un
+autre modèle pour un fil. Voir [Utiliser l’agent](./agent.mdx).
+
+Pour retirer un fournisseur, cliquez sur **Modifier**, puis sur **Supprimer ce
+fournisseur**. La clé enregistrée est effacée. Si vous supprimez le dernier
+fournisseur, l’agent se désactive.
+
+## Où la clé est stockée {#key}
+
+:::warning
+La clé est stockée en clair dans la base de données de l’app, dans votre volume
+`/data`. Toute personne qui peut copier ce volume, ou une sauvegarde de
+celui-ci, peut lire la clé.
+:::
+
+La clé ne revient jamais au navigateur. Le formulaire n’en affiche que les
+quatre derniers caractères, et les messages d’erreur la masquent de la même
+façon. Aucune variable d’environnement ne la fournit : elle se règle dans
+**Réglages** uniquement.
+
+## Ce que cela coûte et ce qui quitte la machine {#privacy}
+
+Chaque question est facturée par votre fournisseur, sur votre clé, à ses
+tarifs. Le lien **Statistiques** de la page **Agent** compte les jetons
+échangés par modèle et par fil.
+
+Quand l’agent répond, voici ce qui part chez le fournisseur :
+
+- vos lignes, vos comptes et votre grand livre, tels que les outils de l’agent
+  les lisent ;
+- les faits de profil que vous avez confirmés ;
+- la conversation ;
+- un relevé de courtier, quand vous en envoyez un à l’agent.
+
+Le montant de vos revenus n’est jamais envoyé. La clé sert à signer la requête
+et ne fait jamais partie de la conversation.
+
+Le formulaire du fournisseur indique où partent vos chiffres. Avec Ollama, ou
+une passerelle sur votre propre réseau, il affiche **Tout reste sur votre
+réseau.**
+
+## Et ensuite {#next}
+
+- [Utiliser l’agent](./agent.mdx) : posez des questions et examinez ce qu’il
+  propose.
+- [Connecter votre propre agent](./connect-your-own-agent.mdx) : utilisez
+  plutôt Claude Desktop ou un autre client MCP.

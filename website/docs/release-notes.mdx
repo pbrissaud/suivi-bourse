@@ -156,7 +156,7 @@ and rhythm.
 
 It reads only. No tool writes, and none deletes.
 
-→ [Connect your own agent](./connect-your-own-agent.mdx)
+→ [Connect your own agent](./connect-your-own-agent)
 
 ### Sector, industry and country
 
@@ -216,8 +216,8 @@ the series is written as one block rather than one statement a row. See
 :::warning Breaking release
 Version 5 changes where your data lives, and **there is no upgrade path from
 version 4**. Crossing is a deliberate move you make once, described end to end in
-[Coming from version 4](./coming-from-v4.mdx) — including
-[the reconciliation](./coming-from-v4.mdx#the-reconciliation) of the figures you
+[Coming from version 4](./coming-from-v4) — including
+[the reconciliation](./coming-from-v4#the-reconciliation) of the figures you
 were reading, and how to go back.
 :::
 
@@ -233,7 +233,7 @@ or by `curl`, read once, and never looked at again: the file is a **gesture, not
 a mount**, so a row that came out of a spreadsheet is corrected and deleted like
 any other, and nothing anywhere asks a row where it came from.
 
-→ [Import your events](./import-your-events.mdx)
+→ [Import your events](./import-your-events)
 
 ### One embedded store replaces InfluxDB and Grafana
 
@@ -257,7 +257,7 @@ There is **one interface and one socket**. The Prometheus exporter and its port
 are gone: `/api` is the front's interface rather than a contract held for anybody
 else.
 
-→ [Read your figures](./read-your-figures.mdx)
+→ [Read your figures](./read-your-figures)
 
 ### Settings live in the store, and are answered in the app
 
@@ -266,7 +266,7 @@ variable declares a portfolio. Accounts are created in the app, the reporting
 currency is asked once, and the answers are stored beside the events they apply
 to.
 
-→ [Settings](./settings.mdx)
+→ [Settings](./settings)
 
 ### It runs without Docker
 
@@ -275,7 +275,7 @@ that is started directly. That is what makes `uv run python -m application.boot`
 a supported way to run it — on Linux and on macOS alike, where the previous
 architecture segfaulted the moment a price was fetched.
 
-→ [Install without Docker](./install-without-docker.mdx)
+→ [Install without Docker](./install-without-docker)
 
 ### Heads-up when upgrading
 
@@ -283,14 +283,14 @@ architecture segfaulted the moment a price was fetched.
 stays in InfluxDB; version 5 starts from an empty store and rebuilds the price
 history from Yahoo! Finance back to your first purchase. What you carry across is
 your **events**, and the [reconciliation
-table](./coming-from-v4.mdx#the-reconciliation) says which figures are expected
+table](./coming-from-v4#the-reconciliation) says which figures are expected
 to coincide afterwards and which are not.
 
 **Both containers keep running until you stop them.** Version 5 is a different
 image with different mounts and a different port; it does not touch version 4's
 volumes, and version 4 goes on working while you look around. Removing the old
 volumes is a separate, deliberate step, and
-[Coming from version 4](./coming-from-v4.mdx#the-influxdb-and-grafana-volumes)
+[Coming from version 4](./coming-from-v4#remove-v4)
 holds the commands.
 
 **There is one mount, and it is `/data`.** The config directory, the events

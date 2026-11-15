@@ -1,0 +1,123 @@
+---
+title: Grand livre
+description: Enregistrer, retrouver, corriger, supprimer et exporter les événements de votre portefeuille
+---
+
+Le **Grand livre** contient chaque événement de votre portefeuille : achats,
+ventes, actions gratuites, dividendes, et argent versé ou retiré. Chaque chiffre
+de SuiviBourse est calculé à partir de ces événements.
+
+![Le grand livre : la recherche et les filtres à gauche, Importer, Exporter et Saisir un événement à droite, les événements en dessous](/img/app/fr/ledger.png)
+
+Les événements les plus récents viennent en premier. D’autres rangées
+apparaissent quand vous faites défiler. Sur téléphone, le tableau devient une liste.
+
+## Les six types d’événement {#kinds}
+
+| Type | Code dans un fichier | Ce qu’il enregistre | Champs |
+|---|---|---|---|
+| **Achat** | `BUY` | Des titres achetés. | **Titre**, **Quantité**, **Prix unitaire**, **Frais** |
+| **Vente** | `SELL` | Des titres vendus. | **Titre**, **Quantité**, **Prix unitaire**, **Frais** |
+| **Attribution** | `GRANT` | Des titres reçus, comme une action gratuite ou une attribution salariée. | **Titre**, **Quantité**, **Prix unitaire** (facultatif) |
+| **Dividende** | `DIVIDEND` | Un dividende versé. | **Titre**, **Montant**, **Frais** |
+| **Versement** | `DEPOSIT` | De l’argent versé sur le compte. | **Montant**, **Frais** |
+| **Retrait** | `WITHDRAWAL` | De l’argent retiré du compte. | **Montant**, **Frais** |
+
+Chaque événement prend aussi une **Date**, un **Compte** et un **Libellé** facultatif.
+
+- Saisissez les montants et les prix dans votre devise de base, en nombres
+  positifs. Le type d’événement donne le sens.
+- Sur une **Attribution**, le formulaire propose le cours de clôture du jour
+  comme **Prix unitaire**, et ce prix compte dans votre prix de revient.
+  Effacez-le pour enregistrer des titres qui ne vous ont rien coûté, comme une
+  action gratuite.
+- Sur un **Dividende**, le **Montant** est la somme brute et les **Frais** sont
+  ce qui en a été retenu. Les frais ne peuvent pas dépasser le montant.
+- Les **Frais** d’un **Versement** ou d’un **Retrait** sont des frais de virement.
+
+## Saisir un événement {#record}
+
+![Le panneau Saisir un événement, avec les onglets de type, les champs d’un achat et la ligne de trésorerie en bas](/img/app/fr/event-form.png)
+
+1. Cliquez sur **Saisir un événement**.
+2. Sous **Ce qui s’est passé**, choisissez le type d’événement. Le formulaire
+   n’affiche que ses champs.
+3. Renseignez la **Date** et choisissez le **Compte**.
+4. Dans **Titre**, tapez un nom ou un symbole.
+5. Choisissez une ligne dans la liste.
+6. Remplissez les autres champs.
+7. Vérifiez la ligne de trésorerie en bas du panneau.
+8. Cliquez sur **Enregistrer**.
+
+La liste de **Titre** montre d’abord les titres de votre grand livre, puis les
+résultats de Yahoo! Finance. Si vous tapez un symbole que ni l’un ni l’autre ne
+connaît, le formulaire le signale. Choisissez une ligne dans la liste, ou
+cliquez sur **Enregistrer … sans cours connu** pour garder le symbole tel quel.
+
+La ligne du bas indique combien d’argent quitte le compte ou y arrive, et quelle
+part en est des frais. Sur une vente, elle donne aussi la plus-value ou la
+moins-value.
+
+Le formulaire vous avertit quand la date est dans le futur ou antérieure à
+l’ouverture du compte. Il refuse la vente de plus de titres que le compte n’en
+détient à cette date.
+
+## Retrouver des événements {#filter}
+
+- **Rechercher** : tapez une partie d’un symbole, d’un nom de titre ou d’un libellé.
+- **Type** : affichez un seul type d’événement. **Tous les types** retire le filtre.
+- **Compte** : affichez un seul compte. Ce filtre apparaît quand vos événements
+  nomment plus d’un compte.
+- **Période** : affichez une seule année. **Depuis le début** retire le filtre.
+
+**Retirer les filtres** les retire tous.
+
+## Corriger un événement {#correct}
+
+1. Cliquez sur l’événement.
+2. Corrigez ce qui est faux dans le panneau **Modifier l’événement**.
+3. Cliquez sur **Enregistrer**.
+
+Les chiffres sont recalculés après chaque modification.
+
+## Supprimer des événements {#delete}
+
+Pour supprimer un événement :
+
+1. Cliquez sur l’événement.
+2. Cliquez sur **Supprimer cet événement** en bas du panneau.
+3. Confirmez avec **Supprimer**.
+
+Pour supprimer plusieurs événements, par exemple tout un import :
+
+1. Filtrez le grand livre jusqu’à eux, par exemple par **Période** et **Compte**.
+2. Cochez leurs cases, ou cochez la case de l’en-tête pour sélectionner tous les
+   événements filtrés.
+3. Cliquez sur **Supprimer**.
+4. Confirmez la suppression.
+
+:::warning
+Une suppression est définitive. Exportez d’abord votre grand livre si vous
+risquez d’avoir de nouveau besoin de ces événements.
+:::
+
+Une suppression est refusée quand une vente postérieure repose sur les titres
+qu’elle retire. Le message nomme le titre.
+
+## Exporter {#export}
+
+Cliquez sur **Exporter** et choisissez un fichier :
+
+| Entrée | Ce que vous obtenez |
+|---|---|
+| **Tous vos événements** (`.csv`) | Tous les événements, au format d’import. |
+| **Tous vos événements** (`.xlsx`) | Les mêmes événements dans un classeur, un onglet par année. |
+| **La sélection filtrée** | Les événements affichés par les filtres, au format d’import. |
+| **Comptes et lignes** | Chaque compte avec ses liquidités, ses positions, son prix moyen et sa valorisation. |
+
+Les fichiers d’événements peuvent être réimportés. Voir
+[Importer vos événements](./import-your-events.mdx). Un export ne contient que
+vos événements : les réglages, les modèles d’imposition et les jetons n’y sont
+pas. Pour tout garder, voir [Sauvegarder et mettre à jour](./backup-and-update.mdx).
+
+Pour importer un fichier d’événements, cliquez sur **Importer**.

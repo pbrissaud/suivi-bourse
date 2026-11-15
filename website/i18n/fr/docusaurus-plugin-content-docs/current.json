@@ -1,0 +1,14 @@
+{
+  "version.label": {
+    "message": "v5",
+    "description": "The label for version current"
+  },
+  "sidebar.tutorialSidebar.category.usage": {
+    "message": "Utiliser SuiviBourse",
+    "description": "The label for category 'Using SuiviBourse' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.administration": {
+    "message": "Installation et administration",
+    "description": "The label for category 'Installation and administration' in sidebar 'tutorialSidebar'"
+  }
+}
