@@ -165,13 +165,15 @@ export function AccountForm({
       })
       return
     }
-    // Sent when the reader moved it, `null` included: detaching is a gesture.
+    // Sent when it differs from what is saved, `null` included: detaching is a
+    // gesture. The opening date is compared with the saved one, not the
+    // pre-fill, so the first payment it shows is stored on Save (#1576).
     write.mutate({
       label,
       ...(draft.model === (account.taxation_model_id ?? '')
         ? {}
         : { taxation_model_id: draft.model === '' ? null : draft.model }),
-      ...(draft.openedOn === (account.opened_on ?? account.first_payment ?? '')
+      ...(draft.openedOn === (account.opened_on ?? '')
         ? {}
         : { opened_on: draft.openedOn === '' ? null : draft.openedOn }),
     })
