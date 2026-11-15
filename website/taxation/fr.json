@@ -106,15 +106,9 @@
       "name": "Plan d’épargne retraite (PER)",
       "tax_year": 2026,
       "model": {
-        "kind": "bracketed_realised",
+        "kind": "flat_realised",
         "parameters": {
-          "brackets": [
-            { "upper_bound": 11600, "rate": 0 },
-            { "upper_bound": 29579, "rate": 0.11 },
-            { "upper_bound": 84577, "rate": 0.3 },
-            { "upper_bound": 181917, "rate": 0.41 },
-            { "upper_bound": null, "rate": 0.45 }
-          ],
+          "rate": 0.128,
           "social_rate": 0.186
         }
       },
