@@ -143,6 +143,19 @@ def test_a_rate_and_its_levy_coming_to_exactly_the_gain_still_stands():
         'rate': 0.5, 'social_rate': 0.5}
 
 
+def test_a_bracket_rate_and_its_levy_may_not_come_to_more_than_the_gain():
+    """A rung is a rate like any other (#1582): a top rung at 90 % beside a
+    20 % levy projects 110 % of a gain. Exactly 100 % still stands."""
+    def ladder(top):
+        return {'brackets': [{'upper_bound': 10_000, 'rate': 0.1},
+                             {'upper_bound': None, 'rate': top}],
+                'social_rate': 0.2}
+
+    with pytest.raises(taxation.ModelRejected):
+        taxation.validate(taxation.BRACKETED_REALISED, ladder(0.9))
+    assert taxation.validate(taxation.BRACKETED_REALISED, ladder(0.8))
+
+
 def test_a_threshold_longer_than_a_lifetime_is_refused_and_the_bound_stands():
     """A typo in a year count is not a schedule, and it reaches date arithmetic
     that has no answer for it (#919). The bound itself is a legal declaration —

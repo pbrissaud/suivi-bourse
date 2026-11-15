@@ -158,8 +158,11 @@ def _refuse_more_than_everything(checked: Dict[str, Any]) -> None:
     entries that project **180 %** of a gain and print it as a fact.
     """
     levy = checked.get('social_rate', 0.0)
-    for name in ('rate', 'rate_before', 'rate_after'):
-        rate = checked.get(name)
+    rates = [(name, checked.get(name))
+             for name in ('rate', 'rate_before', 'rate_after')]
+    rates += [('a bracket rate', rung['rate'])
+              for rung in checked.get('brackets', ())]
+    for name, rate in rates:
         if rate is not None and rate + levy > 1.0:
             raise ModelRejected(
                 f"{name} and social_rate come to {(rate + levy) * 100:.1f}% "
