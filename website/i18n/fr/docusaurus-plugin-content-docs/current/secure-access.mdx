@@ -129,12 +129,17 @@ sauf la liste des jetons et les réglages du code d’accès. Un jeton `/mcp` ou
      --restart unless-stopped \
      -v suivi-bourse:/data \
      -e SB_RESET_AUTH=1 \
-     -p 8080:8080 \
+     -p 127.0.0.1:8080:8080 \
      ghcr.io/pbrissaud/suivi-bourse:5
    ```
 
+   Le port n’est ouvert qu’à cette machine tant que le code est désactivé. Avec
+   Docker Compose, ajoutez `SB_RESET_AUTH: "1"` sous `environment` et lancez
+   `docker compose up -d`.
+
 3. Ouvrez l’application. Le code est désactivé et votre portefeuille est intact.
-4. Retirez la variable : relancez la même commande sans la ligne `-e`.
+4. Retirez la variable : recréez le conteneur avec votre commande habituelle,
+   sans `SB_RESET_AUTH`.
 5. Définissez un nouveau code dans **Réglages → Sécurité**.
 
 La réinitialisation supprime aussi tous les jetons d’accès. Tant que la variable

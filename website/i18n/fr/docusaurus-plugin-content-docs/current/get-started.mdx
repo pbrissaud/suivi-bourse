@@ -76,8 +76,10 @@ Faites l’une de ces choses avant d’ouvrir l’application au-delà de votre 
 
 - Définissez un code d’accès dans l’application. Voir [Sécuriser l’accès](./secure-access.mdx).
 - Publiez le port sur l’interface locale seulement : `-p 127.0.0.1:8080:8080`.
-- Placez l’application derrière un proxy inverse ou un VPN. Voir
-  [Configuration](./configuration.mdx#reverse-proxy).
+- N’y accédez qu’à travers un VPN.
+
+Un proxy inverse ajoute le HTTPS, pas d’identification : derrière un proxy,
+définissez aussi un code d’accès. Voir [Configuration](./configuration.mdx#reverse-proxy).
 
 ## Vérifier qu’elle tourne {#health}
 

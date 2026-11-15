@@ -43,7 +43,7 @@ temporary directory (store with its journal under `store/logs/`, raw captures) i
 
 ## Needs
 
-- Node ≥ 22 (global `fetch` and `WebSocket`), `pnpm`, `uv` — the repo's usual
+- Node ≥ 22.18 (`import.meta.main`, global `fetch` and `WebSocket`), `pnpm`, `uv` — the repo's usual
   tooling. No dependency is installed for the script.
 - Google Chrome at its macOS path, or `CHROME=/path/to/chrome`.
 - `sips` (macOS) for the downscale; `oxipng` if present (`mise use -g oxipng`)

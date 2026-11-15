@@ -9,7 +9,7 @@ const FeatureList = [
     description: (
       <Translate id="home.feature.ledger.body">
         Record your purchases, sales, dividends and deposits in the app, or import
-        the CSV or Excel file your broker gives you.
+        them from a CSV or Excel file.
       </Translate>
     ),
   },

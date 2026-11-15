@@ -154,6 +154,10 @@ async function launchChrome(profile) {
     return list.find((entry) => entry.type === 'page')
   })
   const socket = new WebSocket(target.webSocketDebuggerUrl)
+  socket.addEventListener('close', () => {
+    for (const waiter of pending.values()) waiter.reject(new Error(`${waiter.method}: Chrome closed`))
+    pending.clear()
+  })
   await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject })
   let next = 0
   const pending = new Map()

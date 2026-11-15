@@ -72,7 +72,7 @@
     "message": "Vos opérations en entrée"
   },
   "home.feature.ledger.body": {
-    "message": "Saisissez vos achats, ventes, dividendes et versements dans l’application, ou importez le fichier CSV ou Excel de votre courtier."
+    "message": "Saisissez vos achats, ventes, dividendes et versements dans l’application, ou importez-les depuis un fichier CSV ou Excel."
   },
   "home.feature.figures.title": {
     "message": "Vos chiffres en sortie"

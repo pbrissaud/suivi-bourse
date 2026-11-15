@@ -123,12 +123,17 @@ the token list and the access-code settings. A `/mcp` token opens `/mcp`. To con
      --restart unless-stopped \
      -v suivi-bourse:/data \
      -e SB_RESET_AUTH=1 \
-     -p 8080:8080 \
+     -p 127.0.0.1:8080:8080 \
      ghcr.io/pbrissaud/suivi-bourse:5
    ```
 
+   The port is open to this machine only while the code is off. With Docker
+   Compose, add `SB_RESET_AUTH: "1"` under `environment` and run
+   `docker compose up -d`.
+
 3. Open the app. The code is off, and your portfolio is intact.
-4. Remove the variable: run the same command again without the `-e` line.
+4. Remove the variable: recreate the container with your usual command, without
+   `SB_RESET_AUTH`.
 5. Set a new code in **Settings → Security**.
 
 The reset also deletes every access token. While the variable is set, it

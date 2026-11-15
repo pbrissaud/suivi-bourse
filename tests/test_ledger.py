@@ -2049,8 +2049,8 @@ def test_the_docs_example_header_is_the_one_the_app_reads():
     page = (Path(__file__).parent.parent / 'website' / 'docs'
             / 'import-your-events.mdx').read_text(encoding='utf-8')
 
-    assert '## The format {#format}' in page
-    section = page.split('## The format {#format}', 1)[1]
+    assert '{#format}' in page
+    section = page.split('{#format}', 1)[1]
     header = section.split('```csv\n', 1)[1].split('\n', 1)[0]
     assert header.split(',') == [
         column for column in export.EVENT_COLUMNS if column != 'base_currency']

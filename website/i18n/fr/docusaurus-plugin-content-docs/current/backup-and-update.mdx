@@ -87,8 +87,12 @@ là où vous seul pouvez la lire.
    docker run --rm \
      -v suivi-bourse:/data \
      -v "$PWD":/backup \
-     alpine sh -c "rm -rf /data/* && tar xzf /backup/suivi-bourse-2026-11-14.tar.gz -C /data"
+     alpine sh -c "mkdir /restore && tar xzf /backup/suivi-bourse-2026-11-14.tar.gz -C /restore && rm -rf /data/* && cp -a /restore/. /data/"
    ```
+
+   Remplacez le nom par celui de votre archive. Les données actuelles ne sont
+   supprimées qu’une fois l’archive lue. Avec Docker Compose, utilisez le nom
+   du volume qu’affiche `docker volume ls`.
 
 3. Relancez l’application :
 

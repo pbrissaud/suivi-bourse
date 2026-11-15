@@ -76,8 +76,10 @@ Do one of these before you expose the app beyond your own machine:
 
 - Set an access code in the app. See [Secure access](./secure-access.mdx).
 - Publish the port on the local interface only: `-p 127.0.0.1:8080:8080`.
-- Put the app behind a reverse proxy or a VPN. See
-  [Configuration](./configuration.mdx#reverse-proxy).
+- Reach it only through a VPN.
+
+A reverse proxy adds HTTPS, not a login: behind one, set an access code too.
+See [Configuration](./configuration.mdx#reverse-proxy).
 
 ## Check that it runs {#health}
 

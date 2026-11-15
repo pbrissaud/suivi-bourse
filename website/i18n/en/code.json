@@ -399,7 +399,7 @@
     "message": "Your trades in"
   },
   "home.feature.ledger.body": {
-    "message": "Record your purchases, sales, dividends and deposits in the app, or import the CSV or Excel file your broker gives you."
+    "message": "Record your purchases, sales, dividends and deposits in the app, or import them from a CSV or Excel file."
   },
   "home.feature.figures.title": {
     "message": "Your figures out"
