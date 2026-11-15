@@ -134,7 +134,7 @@
   "dashboard.variation.exclDeposits": "hors versements",
   "dashboard.bar": "Versé net {contributed}, gain {gain} de la valeur",
   "dashboard.xirr.line": "TRI {value} par an",
-  "dashboard.chart.performanceLegend": "Performance des titres",
+  "dashboard.chart.performanceLegend": "Performance du portefeuille",
   "dashboard.securities.title": "Valeur des titres",
   "dashboard.securities.by": "Par titre",
   "dashboard.securities.caption": "sur {count, plural, one {# ligne} other {# lignes}}, hors liquidités",

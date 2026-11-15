@@ -134,7 +134,7 @@
   "dashboard.variation.exclDeposits": "excluding deposits",
   "dashboard.bar": "Net contributed {contributed}, gain {gain} of the value",
   "dashboard.xirr.line": "Money-weighted return {value} a year",
-  "dashboard.chart.performanceLegend": "Performance of the securities",
+  "dashboard.chart.performanceLegend": "Performance of the portfolio",
   "dashboard.securities.title": "Securities value",
   "dashboard.securities.by": "By security",
   "dashboard.securities.caption": "across {count, plural, one {# holding} other {# holdings}}, cash excluded",
