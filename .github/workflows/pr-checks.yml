@@ -52,7 +52,7 @@ jobs:
       # fixture or a module's global state is never split across two processes.
       # The nightly `timing` lane stays serial on purpose. `--durations` keeps
       # the slowest tests in the log, so the next slow one is seen, not guessed.
-      - run: uv run pytest tests/ -m "not network and not timing" -n auto --dist loadfile --durations=15
+      - run: uv run pytest tests/ -m "not network and not timing and not eval" -n auto --dist loadfile --durations=15
 
   web:
     name: "Front"

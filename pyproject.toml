@@ -54,7 +54,13 @@ testpaths = ["tests"]
 # clock shared with three other branches' builds is not a clock a review
 # comment can be written from, and because the ceilings exist to catch a
 # pathology coming back, not to be a budget anyone tunes per pull request.
+#
+# `eval`: asks a real model, the agent's acceptance scenarios of #1118 under
+# `tests/evals/`. Off the gate because a run costs money, needs keys and
+# answers differently each time; `.github/workflows/agent-evals.yml` runs it by
+# hand before a release, and a provider whose variables are unset is skipped.
 markers = [
     "network: talks to the live market; skipped everywhere but the nightly job",
     "timing: asserts an operation's seconds; skipped everywhere but the nightly job",
+    "eval: asks a real model; skipped everywhere but the agent-evals workflow",
 ]
