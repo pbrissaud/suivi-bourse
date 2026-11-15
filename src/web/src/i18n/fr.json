@@ -1281,7 +1281,7 @@
   "settings.provider.test.passed": "Répond en {seconds, number, ::.#} s · {count, plural, one {# modèle disponible} other {# modèles disponibles}}",
   "settings.refs.add": "Ajouter un fonds",
   "settings.refs.unfollow.title": "Ne plus suivre {name} ?",
-  "settings.refs.unfollow.line": "Immédiat. La Comparaison n’offre plus ce fonds ; son historique reste jusqu’au prochain nettoyage.",
+  "settings.refs.unfollow.line": "Immédiat. La Comparaison n’offre plus ce fonds ; son historique reste conservé jusqu’à ce que vous choisissiez Ne plus conserver l’historique.",
   "settings.refs.unfollow": "Ne plus suivre",
   "settings.refs.state.ready": "historique complet",
   "settings.refs.state.neverPriced": "aucun cours",
