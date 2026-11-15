@@ -7,6 +7,14 @@ Cette page fait passer une installation SuiviBourse 4 à la version 5. Vous
 installez la version 5 à côté de la version 4, vous lui donnez vos fichiers
 d’événements, puis vous comparez les deux avant de retirer la version 4.
 
+:::warning La version 5.3 est la dernière à reconnaître les fichiers de la version 4
+À partir de la version 5.4, l’application ne cherche plus les fichiers ni les
+variables de la version 4 : elle ne signale plus un `config.yaml` ou un
+`settings.yaml` monté, et ne les refuse plus à l’import. Les fichiers
+d’événements aux colonnes de la version 4 s’importent toujours. Passez de la
+version 4 avec la 5.3 ou une version antérieure.
+:::
+
 ## Ce qui est repris {#what-carries-over}
 
 La version 5 n’a pas de commande de mise à niveau et ne lit jamais les

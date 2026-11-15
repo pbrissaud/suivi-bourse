@@ -7,6 +7,13 @@ This page moves a SuiviBourse 4 installation to version 5. You install version
 5 next to version 4, hand it your event files, and compare the two before you
 remove version 4.
 
+:::warning Version 5.3 is the last to recognise version 4 files
+From version 5.4, the app stops checking for version 4 files and variables:
+it no longer warns about a mounted `config.yaml` or `settings.yaml`, and no
+longer refuses them at import. Event files in the version 4 columns still
+import. Move from version 4 with 5.3 or earlier.
+:::
+
 ## What carries over {#what-carries-over}
 
 Version 5 has no upgrade command and never reads version 4's directories or
