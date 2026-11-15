@@ -211,6 +211,7 @@ const config = {
         logo: {
           alt: 'Suivi Bourse Logo',
           src: 'img/logo.svg',
+          srcDark: 'img/brand/mark-dark.svg',
         },
         items: [
           {

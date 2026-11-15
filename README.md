@@ -1,16 +1,45 @@
-# SuiviBourse
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="website/static/img/brand/logo-dark.png">
+    <img alt="SuiviBourse" src="website/static/img/brand/logo-light.png" width="400">
+  </picture>
+</p>
 
-Track your portfolio: your events in, your figures out, in one container.
+<p align="center">Track your portfolio: your events in, your figures out, in one container.</p>
+
+<p align="center">
+  <a href="https://github.com/pbrissaud/suivi-bourse/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/pbrissaud/suivi-bourse"></a>
+  <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/github/license/pbrissaud/suivi-bourse"></a>
+  <a href="https://hub.docker.com/r/paulbrissaud/suivi-bourse"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/paulbrissaud/suivi-bourse"></a>
+</p>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="website/static/img/app-dashboard-dark.png">
-  <img alt="The SuiviBourse dashboard: the total gain, the value of the portfolio drawn against what was paid into it, the day's movers and the accounts" src="website/static/img/app-dashboard-light.png">
+  <img alt="The SuiviBourse dashboard: the portfolio value, its chart against the net contributions over one year, the investment rhythm by month and the value of each security" src="website/static/img/app-dashboard-light.png">
 </picture>
 
-<sub>Every figure on this page comes from a portfolio that does not exist. The
-prices behind it are real.</sub>
+SuiviBourse is a self-hosted tracker for your stock portfolio. You record what
+you buy, sell, receive and pay in. It fetches the prices, values your positions
+and computes your returns.
 
-## Run it
+## What it does
+
+- **A ledger of events**: buys, sells, free shares, dividends, cash in and cash
+  out. Record them one by one, or import a `.csv` or `.xlsx` file.
+- **Prices fetched for you**: current prices, and the price history back to your
+  first purchase, rebuilt whenever the ledger changes.
+- **One base currency**: every figure is converted into the currency you choose.
+- **Returns**: a time-weighted performance curve and a money-weighted return
+  (XIRR).
+- **Tax per account**: give each account a tax model and see your gain after
+  tax if you sold everything.
+- **Comparison**: replay the money you put in securities into an index fund of
+  your choice.
+- **An optional agent**: ask questions about your portfolio with your own
+  provider key (Anthropic, OpenAI, an OpenAI-compatible endpoint or Ollama). An
+  MCP server lets your own agent read the portfolio too.
+
+## Quick start
 
 ```bash
 docker run -d \
@@ -21,64 +50,31 @@ docker run -d \
   ghcr.io/pbrissaud/suivi-bourse:5
 ```
 
-Then open [http://localhost:8080](http://localhost:8080). The app asks one
-question — the currency you want your figures in — and from there you either
-type your first event or hand it a `.csv`/`.xlsx` of your history.
+Open [http://localhost:8080](http://localhost:8080) and answer the first
+questions. [Install with Docker](https://pbrissaud.github.io/suivi-bourse/docs/v5/get-started)
+covers Compose, updates and health checks.
 
-Your portfolio lives in the `suivi-bourse` volume — that is the one argument to
-keep if you adapt the command. There is no second mount: a file you import is
-read once and never kept.
-
-**Nothing is published.** SuiviBourse has no accounts and no login: whoever
-reaches the socket reaches the whole app. Keep it on a private network, or put
-your own reverse proxy or VPN in front of it — see [SECURITY.md](SECURITY.md).
-
-## What it does
-
-A portfolio is a dated ledger of what you bought, sold, received and paid in,
-and only that. Everything else — your positions, the prices, the return series —
-is derived from it and rebuilt whenever the ledger moves.
-
-<details>
-<summary><b>The other three pages</b></summary>
-
-**Shares** — every open line, what it cost, what it is worth, and how the whole
-is allocated.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="website/static/img/app-shares-dark.png">
-  <img alt="The Shares page: the allocation ring over eight held lines, and the table of positions with their average cost, value, unrealised and realised gain and dividends" src="website/static/img/app-shares-light.png">
-</picture>
-
-**Accounts** — each account weighed against the others, with its own curve, its
-composition, its annualised return and the dividends it paid.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="website/static/img/app-accounts-dark.png">
-  <img alt="The Accounts page: the weight of the three accounts, and the selected one with its value curve, its composition, its annualised IRR and the dividends received" src="website/static/img/app-accounts-light.png">
-</picture>
-
-**Ledger** — the events themselves: filter them, correct one, delete a whole
-import, export what you are looking at.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="website/static/img/app-ledger-dark.png">
-  <img alt="The Ledger page: the import band, the filters by type, account and year, and the table of recorded events" src="website/static/img/app-ledger-light.png">
-</picture>
-
-</details>
+> [!WARNING]
+> A new installation has no access code. Anyone who can reach port 8080 can read
+> and change your portfolio. Set a code in **Settings → Security**, or keep the
+> app on a private network. See
+> [Secure access](https://pbrissaud.github.io/suivi-bourse/docs/v5/secure-access)
+> and [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
-Everything else — importing your events, reading your figures, the settings,
-running without Docker, coming from v4 — is on
-[the documentation website](https://pbrissaud.github.io/suivi-bourse/docs/v5/).
+The documentation is in [English](https://pbrissaud.github.io/suivi-bourse/docs/v5/)
+and [French](https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/).
+
+- [Using SuiviBourse](https://pbrissaud.github.io/suivi-bourse/docs/v5/first-steps):
+  the first launch, the pages, import, the agent.
+- [Installation and administration](https://pbrissaud.github.io/suivi-bourse/docs/v5/get-started):
+  Docker, configuration, access code, backups.
 
 ## Contributing
 
-Bug reports and pull requests are welcome; please read
-[CONTRIBUTING.md](CONTRIBUTING.md) first. A vulnerability goes through
-[SECURITY.md](SECURITY.md) instead, privately.
+Bug reports and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md)
+first. Report a vulnerability privately, as [SECURITY.md](SECURITY.md) describes.
 
 ## Licence
 

@@ -1,0 +1,177 @@
+---
+title: Sauvegarder et mettre à jour
+description: Sauvegardez vos données SuiviBourse, restaurez-les et passez à une nouvelle version
+---
+
+Cette page montre comment sauvegarder SuiviBourse, restaurer une sauvegarde et
+passer à une nouvelle version sans perdre de données.
+
+## Choisir quoi sauvegarder {#what}
+
+Il y a deux façons de garder une copie. Elles ne contiennent pas les mêmes
+choses.
+
+| | Exporter les événements | Copier le répertoire de données |
+|---|---|---|
+| Vos événements, avec leur compte et leur devise | Oui | Oui |
+| Comptes : libellés, modèles d’imposition | Identifiants seulement | Oui |
+| Réglages, thème, modèles d’imposition, canaux de notification | Non | Oui |
+| Code d’accès et jetons d’accès | Non | Oui |
+| Configuration et conversations de l’agent | Non | Oui |
+| Historique des cours | Non, il est téléchargé de nouveau | Oui |
+| Journaux | Non | Oui |
+| Demande d’arrêter l’application | Non | Oui |
+
+Exportez souvent vos événements : cela prend un clic. Copiez le répertoire de
+données avant une mise à jour et à intervalles réguliers.
+
+## Exporter les événements {#export}
+
+1. Ouvrez **Grand livre**.
+2. Ouvrez **Exporter**.
+3. Choisissez **Tous vos événements** : CSV pour un seul fichier, ou XLSX pour
+   un classeur avec une feuille par année.
+
+Le navigateur enregistre `suivi-bourse-events.csv` ou `suivi-bourse-events.xlsx`.
+Vous pouvez importer ce fichier dans n’importe quel SuiviBourse. Voir
+[Importer vos événements](./import-your-events.mdx).
+
+## Copier le répertoire de données {#copy}
+
+Le répertoire de données contient la base `suivi-bourse.duckdb`, son fichier
+`.wal`, les journaux et les conversations de l’agent. Arrêtez d’abord
+l’application : une copie prise pendant qu’elle écrit peut être illisible.
+
+Avec Docker, cette commande arrête le conteneur, archive le volume
+`suivi-bourse` dans le répertoire courant, puis relance le conteneur :
+
+```bash
+docker stop suivi-bourse
+docker run --rm \
+  -v suivi-bourse:/data \
+  -v "$PWD":/backup \
+  alpine tar czf /backup/suivi-bourse-$(date +%F).tar.gz -C /data .
+docker start suivi-bourse
+```
+
+Avec Docker Compose, lancez `docker compose stop` avant et `docker compose start`
+après. Le nom du volume est préfixé par le nom du projet : trouvez-le avec
+`docker volume ls`.
+
+Sans Docker, arrêtez le service et copiez le répertoire fixé par `SB_STORE_DIR` :
+
+```bash
+sudo systemctl stop suivi-bourse
+sudo tar czf suivi-bourse-$(date +%F).tar.gz -C /var/lib/suivi-bourse .
+sudo systemctl start suivi-bourse
+```
+
+:::warning
+L’archive contient la clé du fournisseur de l’agent et votre portefeuille. Rangez-la
+là où vous seul pouvez la lire.
+:::
+
+## Restaurer {#restore}
+
+### Depuis une copie du répertoire de données {#restore-copy}
+
+1. Arrêtez l’application :
+
+   ```bash
+   docker stop suivi-bourse
+   ```
+
+2. Remplacez le contenu du volume par l’archive :
+
+   ```bash
+   docker run --rm \
+     -v suivi-bourse:/data \
+     -v "$PWD":/backup \
+     alpine sh -c "rm -rf /data/* && tar xzf /backup/suivi-bourse-2026-11-14.tar.gz -C /data"
+   ```
+
+3. Relancez l’application :
+
+   ```bash
+   docker start suivi-bourse
+   ```
+
+Tout revient tel quel au jour de la copie.
+
+### Depuis un export {#restore-export}
+
+1. Lancez une nouvelle installation. Voir [Installer avec Docker](./get-started.mdx).
+2. Au premier lancement, choisissez la devise de la colonne `base_currency` du
+   fichier.
+3. Sur **Comptes**, ajoutez chaque compte nommé dans la colonne `account` du
+   fichier, avec exactement cet **Identifiant**. Le compte **Non affecté**
+   (identifiant `default`) existe déjà.
+4. Importez le fichier depuis **Grand livre**. Voir
+   [Importer vos événements](./import-your-events.mdx).
+5. Refaites ce que l’export ne contient pas : réglages, modèles d’imposition,
+   code d’accès, agent.
+
+L’historique des cours se télécharge de nouveau en arrière-plan. Voir
+[Reconstruction et résolution](./rebuild-and-resolution.mdx).
+
+## Passer à une nouvelle version {#update}
+
+1. Lisez les [notes de version](./release-notes) de chaque version entre la
+   vôtre et la nouvelle.
+2. Copiez le répertoire de données. Voir
+   [Copier le répertoire de données](#copy).
+3. Récupérez la nouvelle image et remplacez le conteneur :
+
+   ```bash
+   docker pull ghcr.io/pbrissaud/suivi-bourse:5
+   docker rm -f suivi-bourse
+   ```
+
+4. Relancez la commande `docker run` de
+   [Installer avec Docker](./get-started.mdx#run).
+
+Avec Docker Compose :
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Vos données restent dans le volume. La nouvelle version met la base à niveau à
+son démarrage.
+
+Pour rester sur une version précise, utilisez une étiquette complète comme
+`5.3.0` au lieu de `5`. Pour revenir à une version antérieure, restaurez la copie
+prise avant la mise à jour, puis lancez l’ancienne étiquette.
+
+## Savoir qu’une nouvelle version est sortie {#release-check}
+
+Tant que l’application est ouverte dans un navigateur, elle demande à GitHub
+s’il existe une version plus récente, au plus toutes les six heures. Quand c’est
+le cas :
+
+- Le pied de la barre latérale affiche **Version 5.3.1 disponible**, avec un lien
+  vers ses notes de version.
+- **Système → Installation** affiche cette version à côté de la vôtre. Sinon, il
+  affiche **à jour**.
+- Les canaux de notification qui incluent **Nouvelles versions** reçoivent un
+  message. Réglez-les dans **Réglages → Notifications**.
+
+Pour arrêter la vérification, désactivez **Signaler les nouvelles versions**
+sous **Système → Installation**. L’application n’envoie alors plus de requête à
+GitHub pour cela.
+
+La vérification ne tourne que sur l’image publiée. Une construction depuis les
+sources n’affiche aucune version et ne vérifie rien.
+
+## Avant une mise à jour majeure {#major}
+
+Une mise à jour majeure change le premier chiffre, par exemple de 5 à 6.
+L’étiquette `5` ne passe jamais à la version 6 : vous choisissez quand passer.
+
+1. Lisez les notes de version de la nouvelle version majeure pour les étapes
+   qu’elle demande.
+2. Exportez vos événements et copiez le répertoire de données.
+3. Notez l’étiquette exacte que vous utilisez, par exemple `5.3.0`, pour pouvoir
+   revenir en arrière.
+4. Changez l’étiquette dans votre commande `docker run` ou votre fichier
+   Compose, puis mettez à jour.

@@ -379,5 +379,38 @@
   },
   "taxationRegime.asOf": {
     "message": "As of {date}"
+  },
+  "home.tagline": {
+    "message": "Track your portfolio: your events in, your figures out, in one container"
+  },
+  "home.cta.install": {
+    "message": "Install"
+  },
+  "home.cta.use": {
+    "message": "First steps"
+  },
+  "home.screenshot.alt": {
+    "message": "The SuiviBourse dashboard: the portfolio value, its chart against the money paid in, the investment rhythm and the value of each security"
+  },
+  "home.title": {
+    "message": "Track your portfolio"
+  },
+  "home.feature.ledger.title": {
+    "message": "Your trades in"
+  },
+  "home.feature.ledger.body": {
+    "message": "Record your purchases, sales, dividends and deposits in the app, or import the CSV or Excel file your broker gives you."
+  },
+  "home.feature.figures.title": {
+    "message": "Your figures out"
+  },
+  "home.feature.figures.body": {
+    "message": "Prices are fetched and the history is rebuilt for you. You get your gains, returns and projected tax, in one currency."
+  },
+  "home.feature.container.title": {
+    "message": "One container"
+  },
+  "home.feature.container.body": {
+    "message": "One Docker image with its own store and interface. Nothing else to install, and your data stays on your machine."
   }
 }

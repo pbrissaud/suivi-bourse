@@ -1,254 +1,137 @@
 ---
 title: Settings
-description: The dials that live in the store, the base currency, and the boot variables
+description: What each section of the Settings page sets, from the access code to the theme
 ---
 
-Two halves, one page. The line between them is not *infrastructure on one side,
-preferences on the other* — that is an intention, and it decides nothing about a
-port number. The line is a test you can apply name by name:
+The **Settings** page holds what you can change from the app. Its sections
+appear below in the order the page shows them.
 
-> What stays in the environment is what the process must know **before** it can
-> open the store. Everything else lives in the store.
+![The Settings page with its Security, Portfolio and Agent sections](/img/app/en/settings.png)
 
-## What you set in the app
+Most rows save as soon as you change them and say **✓ Saved**. If a value is
+refused, the row says **Not saved:** and the reason. Settings that are fixed when
+the container starts are environment variables. See
+[Configuration](./configuration.mdx).
 
-The dials live in the store and **nowhere else**. There is no environment form
-for them, no precedence rule, no seed on first boot, no settings file: exactly
-one place says what a setting is worth, and that place is the one the app shows
-you. A key that has never been written is not a hole — it reads as the default
-written in the code, which is what lets a later version add a dial without
-migrating anything.
+## Security {#security}
 
-**None of them requires a restart.** A dial that would have needed one was
-deleted rather than moved, so the settings form has a single class of field.
+This section holds the **Access code**, the **Auto-lock** delay and the
+**Access tokens**. [Secure access](./secure-access.mdx) covers each of them
+step by step.
 
-| Dial | Default | What it decides |
-|---|---|---|
-| `base_currency` | *none* | the currency every figure is reported in |
-| `regular_interval` | `120` | seconds between two polls of a symbol whose market is open |
-| `backfill_interval` | `60` | seconds between two runs of the rebuild job |
-| `backfill_delay` | `10` | seconds of politeness between two requests to Yahoo! Finance |
-| `backfill_chunk_days` | `365` | days of history fetched per request |
-| `staleness_horizon` | `900` | seconds before a frozen price is reported as stale; `0` disables the check |
-| `update_check` | `true` | whether the footer says when a newer release is out; `false` sends no request at all |
+## Portfolio {#portfolio}
 
-That is the whole list. You turn them on the **Settings** page of the app, or
-with one call on the write API, which is always served on the same port as the
-page.
+### Currency {#base-currency}
 
-### The release check
+The base currency is the currency every figure is reported in. You choose it at
+the first launch. Once it is set, the row shows the code with **set at first
+run** and cannot be changed: your amounts are recorded in that currency.
 
-On a published release, the server asks GitHub whether a newer one is out, and
-the foot of the navigation says so with a link to its notes:
+### Comparison funds {#funds}
 
-- **To** `api.github.com`, `GET /repos/pbrissaud/suivi-bourse/releases/latest`,
-  unauthenticated.
-- **What leaves the box**: the container's IP address and a `User-Agent`. Never
-  the install's hostname, nothing about the portfolio.
-- **How often**: at most once every 6 hours, on the first page load after that,
-  whatever the outcome. A failure (offline, rate-limited) is a single warning in
-  the log and nothing on screen until the next attempt.
-- **Never** on an image built from a commit or a local checkout: there is no
-  version to compare.
+The index funds the **Comparison** page can compare you with. **Add a fund**
+opens the list of five funds, each with a switch to follow it. **Stop following**
+removes a fund from the page. See [Comparison](./benchmark.mdx#follow).
 
-Turn it off with the **Show new releases** switch on the Settings page, or
-`PUT /api/settings` with `{"update_check": false}`.
+### Tax models {#taxation}
 
-### The base currency
+Your taxation models, each with a summary of its rates and the accounts that
+carry it. **Add a model** imports a published model or lets you write your own.
+**Edit** opens a model. See [Your taxation model](./your-taxation-model.mdx).
 
-It is the one setting with **no default**, and the only thing the app ever asks
-you. It has no default on purpose: a default would silently interpret every
-amount you have already recorded, so *not answered yet* and *answered* have to
-stay two different states.
+## Agent {#agent}
 
-It is **changeable while your ledger is empty and fixed from your first event**.
-With no event there is no held symbol and therefore no stored price, so nothing
-has been interpreted and nothing can be reinterpreted; what is unrecoverable is
-reinterpreting amounts, never answering late or thinking again beforehand.
+This section turns the **Agent** page on, lists the **Providers** that run the
+model and sets its **Thinking** time. [Set up the agent](./set-up-the-agent.mdx)
+explains each row, and [Agent](./agent.mdx) explains how to use it.
 
-Until it is answered, nothing refuses: prices are still fetched in their native
-currency, nothing is converted, and no performance figure is written at all —
-not zeros, not blanks. The app says so on screen rather than showing you a
-number it cannot justify. An import that declares its own currency **sets** it,
-which is what lets an install answer the question without a single call.
+## Notifications {#notifications}
 
-### The comparison references
+A channel sends you a message outside the app when something needs your
+attention.
 
-Under **Portfolio**, *Comparison references* lists the five index funds the
-Reference page can compare you against. You **follow** the ones you want with a
-switch, and there is no Save button: the switch saves when you press it.
+1. Click **Add a channel**.
+2. Choose the **Channel kind**: **Webhook**, **ntfy**, **Apprise** or
+   **Email**.
+3. Fill in the address. For example, an ntfy **Topic address** looks like
+   `https://ntfy.sh/my-topic`. An email channel also asks for the **SMTP
+   server**, **Port**, **Username**, **Password**, **Sender** and **STARTTLS**.
+4. Under **Send**, pick at least one kind of message: **Late prices**, **New
+   versions**, **Errors**.
+5. Click **Save**.
 
-Following a fund starts downloading its history in the background. It is a job
-of the app and not of the page, so closing the window stops nothing, and the
-funds download **one at a time, in the order you turned them on**. The Reference
-page only offers a fund whose history is complete, and says under its picker
-which ones are still on their way.
+**Test** on the channel's row sends a test message. In the channel's sheet,
+**Channel on** pauses it and **Delete this channel** removes it.
 
-Turning a fund off keeps its history, so turning it back on is instant.
-*Stop keeping the history* is the way to give the room back: the history goes at
-the next cleanup on the System page, and *Undo* until then.
-
-With no event recorded there is no first day to download toward, so a followed
-fund waits and the row says *No period yet*.
-
-### Two of these are not decorative
-
-**Changing `regular_interval` reaches only the symbols whose market is open
-right now.** Each symbol schedules its own next poll; a symbol whose market is
-closed is asleep until it reopens and reads the new value when it wakes. So the
-change is not portfolio-wide the instant you save it, and nothing is broken when
-it is not.
-
-**It also rescales, retroactively, the back-off of a symbol that is already
-failing.** When a symbol stops returning a usable price, the wait between
-attempts grows as a *multiple of this interval* — `regular_interval × 2^(n−3)`
-after the third consecutive failure, capped at 24 hours — rather than as an
-absolute delay stored somewhere. Lowering the interval therefore shortens the
-wait of a symbol that has been silent since this morning, and raising it
-lengthens it. No interface can hide that, because the number in the form is the
-number in the formula. [How prices are collected](./how-prices-are-collected.mdx)
-has the rest of the back-off.
-
-## The theme
-
-The **Thème** card replaces the bundled theme (Atelier) with your own: colours,
-fonts, radius and shadows. *Modifier* opens a form: pick the light or the dark
-palette, change a colour, a slider or a font, and the whole app previews it
-right away. Nothing is saved until you press *Appliquer*; *Annuler* drops the
-edits, and leaving the page with edits asks first. Or fill it from
-[tweakcn](https://tweakcn.com), in two ways:
-
-- **Import** a theme by its id or the address of its page. This is the only
-  moment the app contacts tweakcn.com, and only when you press the button.
-- **Paste** the JSON served at `https://tweakcn.com/r/themes/<id>` under
-  *Modifier le JSON*, for an installation that cannot reach the internet. It
-  stores the same theme an import would.
-
-A key you leave out keeps Atelier's value; a key the app does not take is
-dropped from a pasted tweakcn entry and refused by name in JSON you wrote
-yourself. *Revenir à Atelier* forgets the stored theme. The page repaints on
-every change, without a reload.
-
-## The agent {#agent}
-
-The agent is off until you turn it on. Pick a provider, give it a key (or
-Ollama's address), test the connection, then flip the switch at the top of the
-section. The key stays on this server, in the `/data` volume, and is never sent
-back to the browser: the page only shows its last four characters.
-
-Once a model is chosen, *Thinking* sets how hard the agent reasons before it
-answers: light (the default), medium or deep. A change is saved at once, with no
-new connection test. More thinking costs more output tokens and more time per
-answer, so raise it for comparing options or running simulations; a model that
-does not reason ignores it.
-
-**What goes to the provider:**
-
-- the results of the agent's tools — your figures, as the app computes them;
-- the profile facts you have confirmed;
-- the conversation;
-- a statement, only once you confirm it, one statement at a time.
-
-**What never does:**
-
-- the key: it authenticates the request and never enters the conversation;
-- your income, unless you tick the box that shares it;
-- this installation's paths and variables.
-
-With Ollama on your own machine, nothing leaves it.
-
-## What the container imposes
-
-Six names. This is the complete list of what the app reads from its
-environment; nothing else in it is consulted.
-
-| Variable | Default | What it decides |
-|---|---|---|
-| `SB_STORE_DIR` | `/data` | the directory the store lives in |
-| `SB_WEB_PORT` | `8080` | the socket the app is bound to |
-| `LOG_LEVEL` | `INFO` | how loudly the app logs: `CRITICAL`, `ERROR`, `WARNING`, `INFO` or `DEBUG`, in any case; anything else logs at `INFO` and says so at start-up |
-| `SB_RESET_AUTH` | unset | `1` clears the access code, its sessions and the access token at start-up, and says so in the log at every start while it is set — remove it once you are back in |
-| `SB_FORWARDED_ALLOW_IPS` | unset | the reverse proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` are believed, comma-separated; none by default |
-| `SB_DOCUMENTATION_URL` | `https://pbrissaud.github.io/suivi-bourse` | the root of the documentation site: the tax registry the app imports from, the migration page it quotes and every ⓘ link are built from it. Change it for a staging docs build, a self-hosted mirror, or a network without GitHub Pages; an absolute `http(s)://` address (a trailing `/` is ignored; no credentials, query or fragment), and anything else stops the start-up |
-
-- **The path is a directory, never a file.** The app names its own store file
-  inside it. That removes the entire class of mistake where you point at a file
-  whose parent directory is not mounted.
-- **A variable that is set and no longer read is named at start-up**, in one
-  grouped line, and obeyed by nothing. `SB_IMPORT_DIR` is one of those: the
-  folder it named is gone, and a file is handed to the app instead.
-- **The defaults describe the container**, and it is the deployment *without*
-  Docker that overrides them — see
-  [Install without Docker](./install-without-docker.mdx). A plain `docker run`
-  sets none of these.
-- **A blank value counts as unset.** An undefined substitution renders as an
-  empty string, and an empty string is not an answer.
-- **The port passes the test twice.** It is read in the server's master process
-  before the app is even imported, so it cannot come from the store; and a port
-  changed from the interface would cut the connection the interface arrived by.
-  That is a nature, not only a sequence.
-- **There is one socket, and everything is behind it.** The page, the reads and
-  the writes — `POST /api/events`, `PUT /api/settings`,
-  `DELETE /api/store/orphans` included — and `/health` all answer on
-  `SB_WEB_PORT`. There is no second port to publish and no port that serves a
-  filtered view of the app.
-- **`LOG_LEVEL` is here because the most likely failure of this app is the store
-  failing to open**, and a log level kept inside the store cannot report that.
-- **No secret lives in the environment any more.** There was exactly one, the
-  database token, and it has no subject left.
-
-## There is no switch that turns a half of the app off
-
-There is no variable that disables the interface, and there will not be one.
-There used to be a second one — `/metrics`, on a socket of its own — and it is
-gone: one owner, one browser and one container paid for a second interface
-twice, once to build it and once in the shape it forced on the model. What is
-left is not a smaller version of it; it is the app's own pages, and they are
-where an installation now reports on itself.
-
-**So publishing the port publishes everything.** Whoever reaches it reaches the
-page, the reads *and* the writes — `POST /api/events` and `PUT /api/settings`
-included. There is no port that is a filtered view of another, because there is
-no other port. If the app must not be reachable from a network, that is a
-decision for the network: bind the container to `127.0.0.1`, or put it behind
-something that authenticates. The app itself has no half to serve.
-
-## What version 4 said, and is no longer read
-
-Every `SB_*` or `INFLUXDB_*` variable that is present in the environment and is
-not one of those above is **named at start-up and never obeyed**. It produces
-**one grouped notice**, not one line per variable, saying which names were found
-and that these settings now live in the app. The list is computed — what is
-present, minus the boot variables, minus the dials — so it cannot drift out
-of date the way a hard-coded list of names would.
-
-| No longer read | Where it lives now |
+| Kind of message | When it is sent |
 |---|---|
-| `SB_REGULAR_INTERVAL` | the `regular_interval` dial |
-| `SB_BACKFILL_INTERVAL` | the `backfill_interval` dial |
-| `SB_BACKFILL_DELAY` | the `backfill_delay` dial |
-| `SB_BACKFILL_CHUNK_DAYS` | the `backfill_chunk_days` dial |
-| `SB_STALENESS_HORIZON` | the `staleness_horizon` dial |
-| `SB_INGESTION_INTERVAL` | nowhere — there is no polling left: a replay follows the write that changed the ledger |
-| `SB_SCRAPING_INTERVAL` | nowhere — already deprecated in version 4, and its heir is a dial |
-| `SB_PERF_INTERVAL` | nowhere — the performance series is a cache, rebuilt in full every two minutes; there is nothing left to trade off |
-| `SB_DYNAMIC_EXECUTOR_POOL` | nowhere — sizing is always automatic |
-| `SB_EXECUTOR_POOL` | nowhere — same reason; it was the one dial that needed a restart, so it was deleted rather than moved |
-| `SB_CONFIG_MODE` | nowhere — there is one mode, and files are no longer the truth |
-| `INFLUXDB_HOST` | nowhere — the store is embedded |
-| `INFLUXDB_TOKEN` | nowhere — the app has no secret to be given |
-| `INFLUXDB_DATABASE` | nowhere — same reason |
+| **Late prices** | A security you hold has a market open, but its price has not changed for longer than the **Frozen-quote threshold** of [Advanced](#advanced). Sent again only after the price recovers and stops again. |
+| **New versions** | A newer release of SuiviBourse is out. The check runs only while **Report new versions** is on, on the **System** page. |
+| **Errors** | A background job fails: price updates, history rebuild or performance calculation. At most once every 6 hours per job. |
 
-`SB_VERSION`, `SB_CONFIG_DIR`, `SB_UID` and `SB_GID` are a different case
-again: they carry the prefix but were **never read by the app**. They belonged
-to the Compose file, and the Compose file is gone. They are not in the notice,
-because naming them there would suggest the app once obeyed them.
+## Display {#display}
 
-:::note There is no `.env.example`
-This inventory has two readers — this page and the app — and one source. A file
-of example variables would be a third writer of the same list, and the one
-nobody re-reads at release time.
-:::
+These rows apply to the browser you are using. Another browser keeps its own
+choice.
 
-Coming from a version 4 install? [Coming from v4](./coming-from-v4.mdx) covers
-what to do with the rest of it.
+| Row | Choices |
+|---|---|
+| **Appearance** | **Automatic** (follows your system), **Light**, **Dark** |
+| **Language** | **Français**, **English** |
+| **Table density** | **Comfortable**, **Compact** |
+| **Theme** | Says **Atelier** (the built-in theme) or **Custom**. **Customise** opens the theme editor. |
+
+### Edit the theme {#theme}
+
+The theme editor, at `/settings/theme`, changes the colours, shape and fonts of
+the app. The theme is saved on the server, so every browser gets it.
+
+![The theme editor: the colour list on the left and a preview of a page on the right](/img/app/en/settings-theme.png)
+
+1. On **Display → Theme**, click **Customise**.
+2. Under **Palette to edit**, choose **Light** or **Dark**.
+3. Change the colours in **Grounds and text**, **Ink and signs** and **Charts**.
+   A dot marks a changed colour, and **Reset** on its row brings it back.
+4. Adjust **Shape** (**Corner radius**, **Shadows**, **Letter spacing**) and
+   **Fonts** (**Text**, **Figures and identifiers**).
+5. Check the preview on the right. You can switch the page it shows.
+6. Click **Apply** to save.
+
+If you leave with unapplied changes, the app asks: **Stay** or **Discard**.
+
+At the top of the editor:
+
+- **Import from tweakcn** loads a theme from tweakcn.com. Enter its id or the
+  address of its page, for example `tweakcn.com/themes/…`, then click
+  **Import**. The server contacts tweakcn.com once, on that click.
+- **Edit the JSON** opens the theme as JSON. **Apply** in that window saves it
+  at once.
+- **Export** downloads the current theme as `theme.json`.
+
+**Restore Atelier**, at the bottom of the editor, brings back the built-in
+theme.
+
+## Advanced {#advanced}
+
+These rows control how often the app collects prices and recomputes your
+figures. Each row shows its default and a **Reset** link when you changed it.
+
+| Row | What it sets | Default |
+|---|---|---|
+| **Quote frequency** | How often prices refresh while markets are open | 2 min |
+| **Recalculation frequency** | How often the history rebuild runs. The performance calculation runs every 2 minutes, whatever this value. | 1 min |
+| **Pause between requests** | The wait between two calls to the price source | 10 sec |
+| **History depth** | Days of prices loaded per request when history is fetched | 365 d |
+| **Frozen-quote threshold** | How long an unchanged price can last before the **System** page flags it. 0 turns the check off. | 15 min |
+
+[How prices are collected](./how-prices-are-collected.mdx) explains what these
+jobs do.
+
+## Search with ⌘K {#palette}
+
+Press ⌘K, or Ctrl+K on Windows and Linux, to open the search palette from any
+page. Type to reach a security, an account, an event, an agent thread or a page,
+or to run an action: **Record an event**, **Import a statement**, **Add an
+account**, **New thread with the agent** or **Lock**.
+
+![The search palette open over the dashboard, listing securities, accounts and actions](/img/app/en/palette.png)

@@ -2,5 +2,13 @@
   "version.label": {
     "message": "v5",
     "description": "The label for version current"
+  },
+  "sidebar.tutorialSidebar.category.usage": {
+    "message": "Using SuiviBourse",
+    "description": "The label for category 'Using SuiviBourse' in sidebar 'tutorialSidebar'"
+  },
+  "sidebar.tutorialSidebar.category.administration": {
+    "message": "Installation and administration",
+    "description": "The label for category 'Installation and administration' in sidebar 'tutorialSidebar'"
   }
 }

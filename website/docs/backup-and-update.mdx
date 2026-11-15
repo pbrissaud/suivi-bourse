@@ -1,0 +1,170 @@
+---
+title: Back up and update
+description: Back up your SuiviBourse data, restore it, and update to a new version
+---
+
+This page shows how to back up SuiviBourse, restore a backup, and update to a
+new version without losing data.
+
+## Choose what to back up {#what}
+
+There are two ways to keep a copy. They do not hold the same things.
+
+| | Export the events | Copy the data directory |
+|---|---|---|
+| Your events, with their account and currency | Yes | Yes |
+| Accounts: labels, tax models | Identifiers only | Yes |
+| Settings, theme, tax models, notification channels | No | Yes |
+| Access code and access tokens | No | Yes |
+| Agent set-up and conversations | No | Yes |
+| Price history | No, it is downloaded again | Yes |
+| Logs | No | Yes |
+| Needs the app stopped | No | Yes |
+
+Export your events often: it takes a click. Copy the data directory before an
+update and on a regular schedule.
+
+## Export the events {#export}
+
+1. Open **Ledger**.
+2. Open **Export**.
+3. Select **All your events**: CSV for one file, or XLSX for a workbook with
+   one sheet per year.
+
+The browser saves `suivi-bourse-events.csv` or `suivi-bourse-events.xlsx`. You
+can import this file into any SuiviBourse. See
+[Import your events](./import-your-events.mdx).
+
+## Copy the data directory {#copy}
+
+The data directory holds the database `suivi-bourse.duckdb`, its `.wal` file,
+the logs and the agent's conversations. Stop the app first: a copy taken while
+it writes can be unreadable.
+
+With Docker, this command stops the container, archives the `suivi-bourse`
+volume into the current directory, and starts the container again:
+
+```bash
+docker stop suivi-bourse
+docker run --rm \
+  -v suivi-bourse:/data \
+  -v "$PWD":/backup \
+  alpine tar czf /backup/suivi-bourse-$(date +%F).tar.gz -C /data .
+docker start suivi-bourse
+```
+
+With Docker Compose, run `docker compose stop` first and `docker compose start`
+after. The volume name is prefixed with the project name: find it with
+`docker volume ls`.
+
+Without Docker, stop the service and copy the directory set in `SB_STORE_DIR`:
+
+```bash
+sudo systemctl stop suivi-bourse
+sudo tar czf suivi-bourse-$(date +%F).tar.gz -C /var/lib/suivi-bourse .
+sudo systemctl start suivi-bourse
+```
+
+:::warning
+The archive contains the agent's provider key and your portfolio. Store it
+where only you can read it.
+:::
+
+## Restore {#restore}
+
+### From a copy of the data directory {#restore-copy}
+
+1. Stop the app:
+
+   ```bash
+   docker stop suivi-bourse
+   ```
+
+2. Replace the volume's content with the archive:
+
+   ```bash
+   docker run --rm \
+     -v suivi-bourse:/data \
+     -v "$PWD":/backup \
+     alpine sh -c "rm -rf /data/* && tar xzf /backup/suivi-bourse-2026-11-14.tar.gz -C /data"
+   ```
+
+3. Start the app:
+
+   ```bash
+   docker start suivi-bourse
+   ```
+
+Everything comes back as it was on the day of the copy.
+
+### From an export {#restore-export}
+
+1. Start a new installation. See [Install with Docker](./get-started.mdx).
+2. On the first launch, choose the currency in the file's `base_currency`
+   column.
+3. On **Accounts**, add each account named in the file's `account` column, with
+   that exact **Identifier**. The account **Unassigned** (identifier `default`)
+   exists already.
+4. Import the file from **Ledger**. See
+   [Import your events](./import-your-events.mdx).
+5. Set up again what the export does not hold: settings, tax models, access
+   code, agent.
+
+The price history downloads again in the background. See
+[Rebuild and resolution](./rebuild-and-resolution.mdx).
+
+## Update to a new version {#update}
+
+1. Read the [release notes](./release-notes.mdx) of every version between yours
+   and the new one.
+2. Copy the data directory. See [Copy the data directory](#copy).
+3. Pull the new image and replace the container:
+
+   ```bash
+   docker pull ghcr.io/pbrissaud/suivi-bourse:5
+   docker rm -f suivi-bourse
+   ```
+
+4. Run the `docker run` command from
+   [Install with Docker](./get-started.mdx#run) again.
+
+With Docker Compose:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Your data stays in the volume. The new version upgrades the database when it
+starts.
+
+To stay on a precise version, use a full tag such as `5.3.0` instead of `5`.
+To go back to an older version, restore the copy you took before the update,
+then run the older tag.
+
+## Know when a new version is out {#release-check}
+
+While the app is open in a browser, it asks GitHub whether a newer release
+exists, at most every six hours. When one does:
+
+- The foot of the sidebar shows **Version 5.3.1 available**, with a link to its
+  release notes.
+- **System → Installation** shows the version next to yours. Otherwise it shows
+  **up to date**.
+- Notification channels that include **New versions** get a message. Set them
+  up in **Settings → Notifications**.
+
+To stop the check, turn off **Report new versions** under
+**System → Installation**. The app then sends no request to GitHub for it.
+
+The check runs on the published image only. A build from source shows no
+version and does not check.
+
+## Before a major update {#major}
+
+A major update changes the first number, such as 5 to 6. The `5` tag never moves
+to version 6, so you choose when to move.
+
+1. Read the release notes of the new major version for the steps it needs.
+2. Export your events and copy the data directory.
+3. Write down the exact tag you run now, such as `5.3.0`, so you can go back.
+4. Change the tag in your `docker run` command or Compose file, then update.

@@ -1,0 +1,130 @@
+---
+title: Configuration
+description: Les variables d’environnement que SuiviBourse lit au démarrage, et comment le faire tourner derrière un proxy inverse
+---
+
+Cette page liste les variables d’environnement que SuiviBourse lit au démarrage,
+et montre comment le faire tourner derrière un proxy inverse. Tout le reste se
+règle dans l’application.
+
+## Variables d’environnement {#variables}
+
+Un simple `docker run` n’en demande aucune. Une valeur vide compte comme non
+définie.
+
+| Variable | Par défaut | Ce qu’elle règle | Valeurs acceptées |
+|---|---|---|---|
+| `SB_STORE_DIR` | `/data` | Le répertoire qui contient la base de données et les journaux. Gardez la valeur par défaut dans le conteneur. | Un chemin de répertoire. `~` est développé. L’application crée le répertoire s’il manque. |
+| `SB_WEB_PORT` | `8080` | Le port sur lequel l’application écoute. | Un entier. Toute autre valeur arrête le démarrage avec une erreur qui nomme la variable. |
+| `LOG_LEVEL` | `INFO` | La quantité de journaux. | `CRITICAL`, `ERROR`, `WARNING`, `INFO` ou `DEBUG`, en majuscules ou en minuscules. Une autre valeur journalise au niveau `INFO`, avec un avertissement. |
+| `SB_FORWARDED_ALLOW_IPS` | non définie | Les proxys inverses auxquels l’application fait confiance. Voir [Derrière un proxy inverse](#reverse-proxy). | Des adresses IP ou des réseaux séparés par des virgules, comme `172.30.0.0/24`. `*` fait confiance à tout le monde. |
+| `SB_RESET_AUTH` | non définie | Supprime le code d’accès, les sessions et les jetons d’accès au démarrage. Voir [Sécuriser l’accès](./secure-access.mdx#forgotten-code). | `1`. Toute autre valeur ne fait rien. |
+| `SB_DOCUMENTATION_URL` | `https://pbrissaud.github.io/suivi-bourse` | Le site de documentation vers lequel l’application renvoie et d’où elle télécharge les préréglages de modèles d’imposition. Changez-le pour un miroir. | Une adresse absolue `http://` ou `https://`, sans identifiants, requête ni fragment. Toute autre valeur arrête le démarrage. |
+
+Quand vous changez `SB_WEB_PORT` sous Docker, publiez le même port :
+
+```bash
+docker run -d \
+  --name suivi-bourse \
+  --restart unless-stopped \
+  -v suivi-bourse:/data \
+  -e SB_WEB_PORT=9000 \
+  -e LOG_LEVEL=DEBUG \
+  -p 9000:9000 \
+  ghcr.io/pbrissaud/suivi-bourse:5
+```
+
+L’application ignore toute autre variable qui commence par `SB_` ou `INFLUXDB_`.
+Quand une telle variable est définie et non vide, l’application la nomme dans un
+seul avertissement au démarrage. `SB_VERSION`, `SB_CONFIG_DIR`, `SB_UID`,
+`SB_GID` et `INFLUXDB_PORT` sont ignorées sans avertissement.
+
+La plupart de ces noms viennent de la version 4. Voir
+[Venir de la v4](./coming-from-v4.mdx).
+
+## Réglages dans l’application {#in-app-settings}
+
+Tout le reste vit dans la base de données et se change dans l’application, sous
+**Réglages** : le thème, l’affichage, les modèles d’imposition, l’agent, les
+notifications, le code d’accès et les délais de collecte des cours. Voir
+[Réglages](./settings.mdx).
+
+## Derrière un proxy inverse {#reverse-proxy}
+
+Un proxy inverse permet d’atteindre SuiviBourse en HTTPS sous votre propre
+domaine. Faites ces trois choses :
+
+1. Ne publiez pas le port de l’application sur l’hôte. Seul le proxy l’atteint.
+2. Faites envoyer par le proxy `X-Forwarded-For` et `X-Forwarded-Proto`.
+3. Mettez dans `SB_FORWARDED_ALLOW_IPS` l’adresse depuis laquelle le proxy se
+   connecte, telle que l’application la voit.
+
+### Exemple avec Caddy {#caddy}
+
+Caddy obtient le certificat HTTPS et envoie les deux en-têtes par défaut. Ce
+fichier Compose place le proxy et l’application sur un réseau à plage fixe, et
+fait confiance à cette plage :
+
+```yaml title="compose.yaml"
+services:
+  suivi-bourse:
+    image: ghcr.io/pbrissaud/suivi-bourse:5
+    restart: unless-stopped
+    environment:
+      SB_FORWARDED_ALLOW_IPS: 172.30.0.0/24
+    volumes:
+      - suivi-bourse:/data
+    networks:
+      - proxy
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  suivi-bourse:
+  caddy-data:
+```
+
+```text title="Caddyfile"
+portfolio.example.com {
+    reverse_proxy suivi-bourse:8080
+}
+```
+
+Remplacez `portfolio.example.com` par votre domaine, puis lancez
+`docker compose up -d`.
+
+Avec un proxy installé directement sur l’hôte, faites confiance à l’adresse
+depuis laquelle il se connecte : `127.0.0.1` pour une application sans Docker,
+ou la passerelle du pont Docker (souvent `172.17.0.1`) pour un conteneur.
+
+### Si vous ne la définissez pas {#if-unset}
+
+L’application voit alors chaque visiteur avec l’adresse du proxy. Deux choses
+ne fonctionnent plus :
+
+- Les essais de code faux sont comptés pour le proxy dans son ensemble. Quelques
+  essais faux de n’importe qui font attendre tout le monde avant de réessayer.
+- Le cookie de session n’est pas marqué `Secure`, alors que les visiteurs
+  passent par HTTPS.
+
+Ne faites confiance qu’à votre proxy. Avec `*`, ou une plage qui inclut des
+visiteurs, n’importe qui peut envoyer un faux en-tête `X-Forwarded-For` et
+échapper à la limite des essais faux.
+
+Gardez aussi le code d’accès actif. Voir [Sécuriser l’accès](./secure-access.mdx).

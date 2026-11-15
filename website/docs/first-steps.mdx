@@ -1,0 +1,109 @@
+---
+title: First steps
+description: Answer the four questions of the first launch and record your first events
+---
+
+The first time you open SuiviBourse, it asks four questions in a row. This page
+walks you through them, then shows what happens once your first events are in.
+
+Only the first question is required. You can skip the other three and come back
+to them later.
+
+## Choose your base currency {#currency}
+
+![Step 1 of 4, asking which currency you keep your accounts in](/img/app/en/first-run-currency.png)
+
+SuiviBourse reports every figure in one currency, the base currency. Prices
+quoted in another currency are converted into it.
+
+1. In **Currency**, pick the currency your accounts are kept in. The field
+   suggests one from your browser's language.
+2. Click **Continue**.
+
+Once saved, the base currency cannot be changed in the app. Every amount you
+record is read in that currency, so pick it with care.
+
+The app shows only this screen until you answer.
+
+## Pick your taxation models {#taxation}
+
+![Step 2 of 4, listing the taxation models published for one country](/img/app/en/first-run-taxation.png)
+
+A taxation model tells SuiviBourse how a gain is taxed when you sell, so it can
+show what you would keep after tax.
+
+1. In **Country**, pick your country. The list shows the models published for it.
+2. Tick the models that match your accounts. Each line shows its rate.
+3. Click **Continue**.
+
+To go on without a model, click **Continue** with nothing ticked. To write your
+own, click **Write my own model**: it closes the walk and opens **Settings**.
+See [Your taxation model](./your-taxation-model.mdx).
+
+## Create your first account {#account}
+
+![Step 3 of 4, with the Identifier, Label and Taxation model fields](/img/app/en/first-run-accounts.png)
+
+An account is where your events are recorded, for example a brokerage account
+or a tax-sheltered savings plan.
+
+1. In **Identifier**, type a short id such as `broker-a`. Use letters, digits,
+   `-`, `_` and `.`, with no space. You cannot change it afterwards.
+2. In **Label**, type the name to show on screen (optional).
+3. In **Taxation model**, pick one of the models you ticked, or **No model**.
+4. Click **Continue**.
+
+To go on without an account, click **Skip this step**. Your events then go into
+the **Unassigned** account, and you can move them later. See
+[Accounts](./accounts.mdx).
+
+## Add your first events {#events}
+
+![Step 4 of 4, offering to import a statement, enter by hand or do it later](/img/app/en/first-run-events.png)
+
+Choose where your first events come from:
+
+| Choice | What it opens |
+|---|---|
+| **Import a statement** | The import page, for a `.csv` or Excel file. See [Import your events](./import-your-events.mdx). |
+| **Enter by hand** | The event form on the **Ledger**, for a deposit or a purchase. See [Ledger](./ledger.mdx). |
+| **Later** | The **Dashboard**. You can add events from the **Ledger** at any time. |
+
+Start with a **Cash in** event for the money you paid into the account, then
+your purchases. Without deposits, the app cannot compute your net contributed
+amount or your returns.
+
+If you leave the walk early, the empty **Dashboard** offers **Resume the set-up**.
+
+## What happens next {#next}
+
+Once you have recorded events:
+
+1. SuiviBourse fetches the current price of each security you hold.
+2. It rebuilds the price history back to your first purchase. This runs in the
+   background. Until it ends, the **Dashboard** says how many series are
+   complete. See
+   [Rebuild and resolution](./rebuild-and-resolution.mdx).
+3. The **Dashboard** shows your portfolio value, its chart and your gain.
+
+A line with no price yet is counted at its purchase price. If it stays without
+a price, check its symbol in the **Ledger**.
+
+## Find your way around {#navigate}
+
+The sidebar leads to **Dashboard**, **Shares**, **Accounts**, **Ledger**,
+**Comparison**, **Agent**, **Settings** and **System**.
+
+![The search palette listing securities, accounts, pages and actions](/img/app/en/palette.png)
+
+Press ⌘K (Ctrl+K on Windows and Linux) to open **Search**. Type the name of a security, an account, an event or a page, or
+pick an action such as **Record an event** or **Add an account**.
+
+To change the language or the theme, go to **Settings → Display**. See
+[Settings](./settings.mdx).
+
+## Where to go from here {#more}
+
+- [Dashboard](./dashboard.mdx): read your portfolio at a glance.
+- [Read your figures](./read-your-figures.mdx): what each figure means.
+- [Secure access](./secure-access.mdx): set an access code before you expose the app.

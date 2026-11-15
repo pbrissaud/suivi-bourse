@@ -1,0 +1,123 @@
+---
+title: Configuration
+description: The environment variables SuiviBourse reads at start-up, and how to run it behind a reverse proxy
+---
+
+This page lists the environment variables SuiviBourse reads when it starts, and
+shows how to run it behind a reverse proxy. Everything else is set in the app.
+
+## Environment variables {#variables}
+
+A plain `docker run` needs none of them. A blank value counts as unset.
+
+| Variable | Default | What it sets | Accepted values |
+|---|---|---|---|
+| `SB_STORE_DIR` | `/data` | The directory that holds the database and the logs. Keep the default in the container. | A directory path. `~` is expanded. The app creates the directory if it is missing. |
+| `SB_WEB_PORT` | `8080` | The port the app listens on. | An integer. Anything else stops the start-up with an error that names the variable. |
+| `LOG_LEVEL` | `INFO` | How much the app logs. | `CRITICAL`, `ERROR`, `WARNING`, `INFO` or `DEBUG`, in any case. Another value logs at `INFO`, with a warning. |
+| `SB_FORWARDED_ALLOW_IPS` | unset | The reverse proxies the app trusts. See [Behind a reverse proxy](#reverse-proxy). | Comma-separated IP addresses or networks, such as `172.30.0.0/24`. `*` trusts everyone. |
+| `SB_RESET_AUTH` | unset | Removes the access code, the sessions and the access tokens at start-up. See [Secure access](./secure-access.mdx#forgotten-code). | `1`. Any other value does nothing. |
+| `SB_DOCUMENTATION_URL` | `https://pbrissaud.github.io/suivi-bourse` | The documentation site the app links to and downloads tax-model presets from. Change it for a mirror. | An absolute `http://` or `https://` address, with no credentials, query or fragment. Anything else stops the start-up. |
+
+When you change `SB_WEB_PORT` in Docker, publish the same port:
+
+```bash
+docker run -d \
+  --name suivi-bourse \
+  --restart unless-stopped \
+  -v suivi-bourse:/data \
+  -e SB_WEB_PORT=9000 \
+  -e LOG_LEVEL=DEBUG \
+  -p 9000:9000 \
+  ghcr.io/pbrissaud/suivi-bourse:5
+```
+
+The app ignores any other variable that starts with `SB_` or `INFLUXDB_`. When
+such a variable is set and not blank, the app names it in one warning at
+start-up. `SB_VERSION`, `SB_CONFIG_DIR`, `SB_UID`, `SB_GID` and `INFLUXDB_PORT`
+are ignored without a warning.
+
+Most of these names come from version 4. See [Coming from v4](./coming-from-v4.mdx).
+
+## Settings in the app {#in-app-settings}
+
+Everything else lives in the database and is changed in the app, under
+**Settings**: the theme, the display, the tax models, the agent, notifications,
+the access code and the price-collection timings. See
+[Settings](./settings.mdx).
+
+## Behind a reverse proxy {#reverse-proxy}
+
+Use a reverse proxy to reach SuiviBourse over HTTPS under your own domain. Do
+these three things:
+
+1. Do not publish the app's port on the host. Only the proxy reaches it.
+2. Have the proxy send `X-Forwarded-For` and `X-Forwarded-Proto`.
+3. Set `SB_FORWARDED_ALLOW_IPS` to the address the proxy connects from, as the
+   app sees it.
+
+### Example with Caddy {#caddy}
+
+Caddy obtains the HTTPS certificate and sends both headers by default. This
+Compose file puts the proxy and the app on a network with a fixed range, and
+trusts that range:
+
+```yaml title="compose.yaml"
+services:
+  suivi-bourse:
+    image: ghcr.io/pbrissaud/suivi-bourse:5
+    restart: unless-stopped
+    environment:
+      SB_FORWARDED_ALLOW_IPS: 172.30.0.0/24
+    volumes:
+      - suivi-bourse:/data
+    networks:
+      - proxy
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  suivi-bourse:
+  caddy-data:
+```
+
+```text title="Caddyfile"
+portfolio.example.com {
+    reverse_proxy suivi-bourse:8080
+}
+```
+
+Replace `portfolio.example.com` with your domain, then run `docker compose up -d`.
+
+With a proxy installed on the host instead, trust the address it connects from:
+`127.0.0.1` for an app without Docker, or the Docker bridge gateway (often
+`172.17.0.1`) for a container.
+
+### If you do not set it {#if-unset}
+
+The app then sees every visitor as the proxy's address. Two things break:
+
+- Wrong access-code attempts are counted for the proxy as a whole. A few wrong
+  tries from anyone make everyone wait before they can try again.
+- The session cookie is not marked `Secure`, even though visitors use HTTPS.
+
+Trust only your proxy. With `*`, or a range that includes visitors, anyone can
+send a false `X-Forwarded-For` header and escape the limit on wrong attempts.
+
+Keep the access code on as well. See [Secure access](./secure-access.mdx).

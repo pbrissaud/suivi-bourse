@@ -1,0 +1,147 @@
+---
+title: Système
+description: Surveillez les tâches de fond de l’app, lisez son journal et suivez-la par /health
+---
+
+La page **Système** montre ce que font les tâches de fond de l’app, ce que
+contient la base de données et quelle version tourne.
+
+![La page Système avec les blocs Tâches, Données et Installation](/img/app/fr/system.png)
+
+## Tâches {#tasks}
+
+| Tâche | Ce qu’elle fait | Quand elle tourne |
+|---|---|---|
+| **Mise à jour des cours** | Récupère le cours actuel de chaque titre détenu | Toutes les 2 minutes tant que son marché est ouvert (**Fréquence des cours**) |
+| **Reconstruction de l’historique** | Récupère les cours passés et allège les plus anciens | Toutes les minutes (**Fréquence de recalcul**) |
+| **Relecture du grand livre** | Rejoue vos événements pour en tirer les positions | Après chaque modification du grand livre, et à minuit UTC |
+| **Calcul de la performance** | Calcule les valeurs et les rendements | Toutes les 2 minutes, et après chaque modification du grand livre |
+
+Chaque ligne affiche :
+
+- son état : **À jour**, **À surveiller**, **En erreur**, **En veille** ou
+  **Jamais lancé** ;
+- une barre par heure sur 24 heures, haute quand un passage est à surveiller ;
+- son dernier et son prochain passage ;
+- **Lancer**, qui la démarre tout de suite.
+
+L’historique des passages survit à un redémarrage.
+
+Sous les lignes, chaque titre suivi indique **à jour** ou **figé depuis** une
+heure. La liste s’ouvre d’elle-même quand un titre est figé.
+
+Réglez les cadences dans **Réglages → Avancé**. Voir
+[Comment les cours sont collectés](./how-prices-are-collected.mdx#settings).
+
+### Reconstruction en cours {#rebuild}
+
+Pendant la récupération des cours passés, un bandeau **Reconstruction en
+cours** au-dessus des tâches nomme le compte le plus en retard et la part de la
+période couverte. Voir [Reconstruction et résolution](./rebuild-and-resolution.mdx).
+
+## Données {#data}
+
+- **Événements** : le nombre d’événements de votre grand livre.
+- **Base de données** : la taille du fichier de la base.
+- **Historiques orphelins** : les cours de titres qu’aucun événement ne nomme.
+  **Purger** les supprime ; ils sont récupérés à nouveau si le titre revient.
+
+**Exporter**, dans le grand livre, n’enregistre que vos événements. Pour une
+sauvegarde complète, voir [Sauvegarder et mettre à jour](./backup-and-update.mdx).
+
+## Installation {#installation}
+
+| Ligne | Ce qu’elle affiche |
+|---|---|
+| **Version** | La version en service, et **`x.y.z` disponible** quand une version plus récente est publiée. Une image construite depuis un commit affiche **Build** à la place. |
+| **Signaler les nouvelles versions** | Active ou désactive la vérification des versions. |
+| **En marche depuis** | Le dernier démarrage du conteneur. |
+| **Source des cours** | D’où viennent les cours, et son temps de réponse. |
+| **Journal** | **Ouvrir** mène au journal. |
+
+## Journal {#journal}
+
+Le journal, à l’adresse `/system/logs`, liste ce que l’app a consigné.
+
+![Le journal avec les onglets de niveau, les filtres de tâche et de période, et les lignes regroupées par jour](/img/app/fr/system-logs.png)
+
+Affinez-le avec les onglets **Tout**, **Avertissements** et **Erreurs**, les
+filtres **Tâche** et **Période** et **Rechercher**. **détail** sur une ligne
+affiche l’erreur complète.
+
+La page montre les 5 000 dernières lignes gardées en mémoire. **En direct**
+ajoute les nouvelles lignes à leur arrivée ; cliquez dessus pour le mettre en
+pause. **Télécharger** enregistre les 7 derniers jours de journal.
+
+## La cloche des notifications {#bell}
+
+La cloche en haut à droite prend la couleur de l’état de l’app. Elle est neutre
+quand tout tourne, et rouge quand l’app ne répond pas. Elle prend la couleur
+d’attention quand une tâche est à surveiller ou que l’historique est en cours
+de reconstitution.
+
+![Le panneau des notifications listant un cours qui n’a pas bougé, avec un lien vers Système en pied de panneau](/img/app/fr/notifications.png)
+
+Sa liste rassemble ce qui concerne vos chiffres, comme un cours qui n’a pas
+bougé ou un titre sans cours. Quand la liste est vide mais qu’une tâche est à
+surveiller, le panneau renvoie à la page **Système** par **Voir dans Système**.
+
+## Surveiller avec /health {#health}
+
+Trois points d’accès répondent sans code d’accès ni jeton.
+
+| Point d’accès | Répond `200` quand | À utiliser pour |
+|---|---|---|
+| `/healthz` | Le processus répond | Une sonde de vivacité |
+| `/readyz` | La base répond et l’ordonnanceur tourne | Une sonde de disponibilité |
+| `/health` | La base répond ; le corps décrit chaque tâche | Le contrôle de santé du conteneur, et vous |
+
+Sinon, ils répondent `503`. Une tâche en difficulté ne change jamais le code
+de `/health` : lisez son corps.
+
+Pour recevoir un message quand une tâche échoue, ajoutez un canal avec la
+portée **Erreurs** dans **Réglages → Notifications**. Voir
+[Réglages](./settings.mdx).
+
+```bash
+curl -s http://localhost:8080/health
+```
+
+```json
+{
+  "status": "attention",
+  "now": "2026-11-14T15:00:00+00:00",
+  "scheduler_running": true,
+  "jobs": {
+    "scrape": {"status": "attention", "at": "2026-11-14T14:59:12+00:00",
+               "verdict": "frozen", "held": 12, "closed": 0, "attention": ["ABCD.PA"]},
+    "backfill": {"status": "ok", "at": "2026-11-14T14:58:40+00:00",
+                 "verdict": "running", "complete": 7, "in_scope": 12, "attention": []},
+    "performance": {"status": "ok", "at": "2026-11-14T14:58:41+00:00",
+                    "verdict": "ran", "error": null}
+  }
+}
+```
+
+`status` vaut `attention` si une tâche est en `attention` ou si l’ordonnanceur
+s’est arrêté, `unknown` si aucune tâche n’a encore tourné, et `ok` sinon. `at`
+est le dernier passage d’une tâche ; `attention` liste les titres concernés.
+
+### Verdicts {#verdicts}
+
+| Tâche | `verdict` | `status` | Que faire |
+|---|---|---|---|
+| `scrape` | `open`, `closed` | `ok` | Rien. Le titre dans le pire état fixe le verdict. |
+| `scrape` | `failing` | `attention` | Une récupération a échoué. Attendez : elle réessaie trois fois à la cadence normale. |
+| `scrape` | `backoff` | `attention` | Plus de trois échecs. [Vérifiez le symbole](./how-prices-are-collected.mdx#failing). |
+| `scrape` | `frozen` | `attention` | Le cours stocké ne bouge plus. Voir [cours figés](./how-prices-are-collected.mdx#frozen). |
+| `scrape` | `write_failed` | `attention` | Le cours n’a pas pu être enregistré. Lisez le **Journal**. |
+| `backfill` | `running` | `ok` | Attendez. |
+| `backfill` | `complete` | `ok` | Rien. |
+| `backfill` | `failing` | `attention` | Vérifiez les symboles listés et le **Journal**. |
+| `backfill` | `unconvertible` | `attention` | Aucun taux de change n’existe pour la devise d’un titre listé. |
+| `performance` | `ran` | `ok` | Rien. |
+| `performance` | `failed` | `attention` | Lisez `error` et le **Journal**, puis cliquez sur **Lancer**. |
+| toutes | `unknown` | `unknown` | Pas de passage depuis le démarrage, ou rien à traiter pour l’instant. |
+
+**Relecture du grand livre** n’apparaît que sur la page **Système**.

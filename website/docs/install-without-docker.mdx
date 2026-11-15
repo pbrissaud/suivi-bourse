@@ -1,127 +1,164 @@
 ---
 title: Install without Docker
-description: uv sync and a directory — the simplest form of the product, not the most advanced
+description: Build and run SuiviBourse from its source on a host that has no Docker
 ---
 
-This is the **simplest** form of the product, not the most advanced one. There
-is no stack to assemble either way: the app is one process, and what it keeps it
-keeps in one file it names itself. Without Docker, that means `uv sync`, a
-directory, and — if you want it to come back after a reboot — a service unit.
+This page installs SuiviBourse from its source and runs it as a service. You get
+the same app as the Docker image: one process, one data directory.
 
-It is the whole product either way. A machine that does not run Docker serves
-the same five pages, the same API and the same `/health` as the image does: no
-container runtime, no daemon, one Python process.
+## What you need {#prerequisites}
 
-## What you need
-
-- **Python 3.14 or later.** The same floor the published image ships, and the
-  same one `pyproject.toml` declares — there is one answer to this question,
-  not a lenient one for the source and a strict one for the image.
-- **[uv](https://docs.astral.sh/uv/)**, which creates the virtual environment
-  from the lockfile.
-- **A directory to keep the store in.** Anything you back up and do not delete.
-
-That is the whole list. There is no database to reach, no dashboard tool to
-provision and no token to mint.
-
-## Install
-
-Download the source of the
-[latest release](https://github.com/pbrissaud/suivi-bourse/releases/latest),
-extract it, and install the dependencies from its root:
-
-```bash
-uv sync
-```
-
-`uv sync` reads the lockfile, so the versions you get are the versions the
-release was built and tested against.
-
-## The one directory
-
-The app reads one path from the environment, and it is **a directory, never a
-file** — the app names the store file and its write-ahead log itself. Pointing at
-a directory is what removes the whole class of mistake where the path exists but
-its parent does not.
-
-| Variable | Container default | What it holds |
+| Tool | Version | Used for |
 |---|---|---|
-| `SB_STORE_DIR` | `/data` | the store — everything the app writes, the agent's key included |
+| [uv](https://docs.astral.sh/uv/) | recent | Installs Python and the backend dependencies from the lockfile |
+| Python | 3.15 or later | Runs the app. uv downloads it if your system does not have it. |
+| Node.js | 26 | Builds the web interface, once per install or update |
+| pnpm | the version the source names | Installs the web interface's dependencies |
 
-**The default describes the container**, which is the deployment that has no
-choice; a Docker-less install is the one that overrides it. Give `SB_STORE_DIR` a
-directory of your own.
+Node.js and pnpm are only needed to build. The running app does not use them.
 
-That directory holds **the agent's provider key**, in clear, once you switch
-the agent on — there is no environment variable for it. Give it the
-permissions you would give the key itself, and read
-[Switch on the agent](./get-started.mdx#switch-on-the-agent-optional)
-before you do it on a machine others can reach.
+## Install {#install}
 
-There is nowhere to put a file for the app to find: you hand it one from the
-app, and it reads it once. See [Import your events](./import-your-events.mdx).
+1. Download the source archive of the
+   [latest release](https://github.com/pbrissaud/suivi-bourse/releases/latest)
+   and extract it, for example into `/opt/suivi-bourse`.
+2. Go to that directory:
 
-The other boot variables — the web port and the log level — are the same here as
-anywhere, and they are listed once, on [Settings](./settings.mdx). Everything
-that is not in that list lives in the store and is set in the app.
+   ```bash
+   cd /opt/suivi-bourse
+   ```
 
-## Run it
+3. Install the backend from the lockfile, without the development tools:
 
-From the root of the extracted source:
+   ```bash
+   uv sync --locked --no-dev
+   ```
+
+4. Enable pnpm, which the source pins to an exact version:
+
+   ```bash
+   npm install -g corepack@latest && corepack enable
+   ```
+
+5. Build the web interface:
+
+   ```bash
+   cd src/web
+   pnpm install --frozen-lockfile
+   pnpm build
+   cd ../..
+   ```
+
+If you skip the build, the app still starts, but the browser shows
+`No web UI bundle in this build` instead of the interface.
+
+## Choose the data directory {#data-directory}
+
+SuiviBourse keeps everything in one directory, set by `SB_STORE_DIR`. The
+default is `/data`, which suits the container. On a host, choose your own:
 
 ```bash
-SB_STORE_DIR=/var/lib/suivi-bourse \
-uv run python -m application.boot
+sudo mkdir -p /var/lib/suivi-bourse
+sudo chown "$USER" /var/lib/suivi-bourse
 ```
 
-`boot.py` is not a server launcher, it is the boot sequence: it reads the
-environment, opens the store, builds the application, arms the scheduled jobs and
-binds the one socket the app has — in that order, in one process. There is no
-worker count to set anywhere, and that is deliberate: the scheduler lives in this
-process and all of its state is in memory, so a second one would scrape every
-symbol twice. Concurrency comes from a thread pool inside the process.
+The app creates its files inside: the database `suivi-bourse.duckdb` and its
+`.wal` file, a `logs` folder, and an `agent` folder once you use the agent.
 
-Then open the app and answer the one question it asks: that half is
-[Get started](./get-started.mdx), and it is the same on every install.
+:::warning
+This directory holds your portfolio and secrets: the agent's provider key and
+the access-code data. Give it to one user only, and back it up. See
+[Back up and update](./backup-and-update.mdx).
+:::
 
-## Keeping it running
+## Run {#run}
 
-Any supervisor will do; the app is a single foreground process that exits on
-`SIGTERM`. A systemd unit is the shortest one:
+From the source directory:
 
-```ini title="/etc/systemd/system/suivi-bourse.service"
-[Unit]
-Description=SuiviBourse
-After=network-online.target
-
-[Service]
-Type=simple
-Restart=always
-WorkingDirectory=<installation_path>
-ExecStart=/usr/local/bin/uv run python -m application.boot
-User=<user>
-Group=<group>
-Environment=PYTHONUNBUFFERED=1
-Environment=SB_STORE_DIR=/var/lib/suivi-bourse
-SyslogIdentifier=suivi-bourse
-
-[Install]
-WantedBy=default.target
+```bash
+SB_STORE_DIR=/var/lib/suivi-bourse uv run --no-dev python -m application.boot
 ```
 
-`ExecStart` needs an absolute path to `uv` — `which uv` gives you yours. Then
-`systemctl daemon-reload`, `systemctl enable --now suivi-bourse`, and
-`journalctl -u suivi-bourse` for the logs.
+Open [http://localhost:8080](http://localhost:8080). The first launch asks a few
+questions. See [First steps](./first-steps.mdx).
 
-The user you run it as must own `SB_STORE_DIR`. That is the entire permission
-story here, and it is the reason this page has no section about uids: the
-container has one because a volume and a human used to share a directory, and
-this deployment never did.
+The app listens on every network interface of the host. Set `SB_WEB_PORT` to use
+another port. The other variables are on [Configuration](./configuration.mdx).
 
-## Supported architectures
+Run one process per data directory. Two processes on the same directory would
+both collect prices and write to the same database.
 
-The published image is built for `linux/amd64` and `linux/arm64`. Installed this
-way there is no image, so the answer is Python's: anything your platform has a
-Python 3.14+ and a DuckDB wheel for. If you need an architecture the image does
-not cover,
-[open an issue](https://github.com/pbrissaud/suivi-bourse/issues/new/choose).
+## Keep it running {#service}
+
+On a host with systemd:
+
+1. Find the absolute path of uv:
+
+   ```bash
+   which uv
+   ```
+
+2. Create `/etc/systemd/system/suivi-bourse.service`. Replace the user and the
+   path to uv with yours:
+
+   ```ini title="/etc/systemd/system/suivi-bourse.service"
+   [Unit]
+   Description=SuiviBourse
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   User=suivi
+   WorkingDirectory=/opt/suivi-bourse
+   Environment=SB_STORE_DIR=/var/lib/suivi-bourse
+   Environment=PYTHONUNBUFFERED=1
+   ExecStart=/usr/local/bin/uv run --no-dev python -m application.boot
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+3. Make sure that user owns the data directory:
+
+   ```bash
+   sudo chown -R suivi /var/lib/suivi-bourse
+   ```
+
+4. Start the service and enable it at boot:
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now suivi-bourse
+   ```
+
+5. Check that it answers:
+
+   ```bash
+   curl -s http://localhost:8080/health
+   ```
+
+Read the logs with `journalctl -u suivi-bourse -f`. The app stops cleanly on
+`SIGTERM`, which is what `systemctl stop` sends.
+
+## Update {#update}
+
+1. Stop the service: `sudo systemctl stop suivi-bourse`.
+2. Copy the data directory somewhere safe.
+3. Extract the new release over the old source, or into a new directory.
+4. Run the steps of [Install](#install) again from step 2.
+5. Start the service: `sudo systemctl start suivi-bourse`.
+
+A build from source shows no version number in the app, and it does not check
+for new releases. Watch the
+[releases page](https://github.com/pbrissaud/suivi-bourse/releases) instead.
+
+## Supported platforms {#platforms}
+
+SuiviBourse runs on any system and processor for which Python 3.15 and DuckDB
+publish packages, such as Linux and macOS. The systemd steps apply to Linux. On
+another system, run the same command with its own service manager.
+
+The Docker image covers `linux/amd64` and `linux/arm64`. See
+[Install with Docker](./get-started.mdx).

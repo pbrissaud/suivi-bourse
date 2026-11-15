@@ -1,143 +1,112 @@
 ---
 title: How prices are collected
-description: Market-aware cadence, the back-off of a silent symbol, and currency conversion
+description: Where prices come from, how often they are fetched, how they are converted, and what to do when one stops
 ---
 
-Every symbol you hold has **its own job**. Not one scrape loop over a list — one
-self-rescheduling job per symbol, which decides its own next run each time it
-finishes. That is what lets a Paris listing and a New York one be on entirely
-different clocks without either of them knowing about the other.
+This page explains where SuiviBourse gets its prices, how often it fetches
+them, and what to do when a price stops updating.
 
-## The cadence follows the market
+## Where prices come from {#source}
 
-Each pass fetches the symbol, writes a point, and then asks what the market is
-doing:
+Prices and exchange rates come from Yahoo Finance. The app fetches a price for
+each security you hold, using the symbol written in your events, for example
+`ABCD.PA` or `XYZ`. A symbol Yahoo does not know gets no price.
 
-- **Market open** — poll again in a couple of minutes. The interval is a setting;
-  see [Settings](./settings.mdx).
-- **Market closed** — sleep until it reopens, capped at 24 hours. There is no
-  point asking a closed exchange the same question every two minutes, and the
-  cap is there so a listing whose next open is never announced still wakes up.
+The app only polls securities you currently hold. When you sell a position
+completely, its polling stops. Its past prices stay stored, because your
+returns still need them.
 
-Every re-arming is offset by a few seconds of jitter. Without it, thirty symbols
-on the same exchange would share one next-open instant and hit Yahoo in
-lockstep — at the reopening of every session, forever.
+## How often {#cadence}
 
-**Fetching and writing are the same gesture.** There is no cadence for one and a
-cadence for the other; a point is written because a quote was fetched, and the
-quote was fetched because the point was due.
+Each security follows its own market's hours.
 
-When a position closes, its job leaves. Nothing keeps polling a symbol you no
-longer hold, and it stops appearing among the scrapes the app reports on —
-a symbol that is *absent* is readable, where one whose price never moves again
-is not. Its *history* stays: the rebuild still needs it, and it is still part of
-your returns. That is the subject of
+| Market state | What the app does |
+|---|---|
+| Open | Fetches the price every 2 minutes (**Quote frequency**). |
+| After the close | Fetches again every 5 minutes for up to 30 minutes, to record the official closing price. |
+| Closed | Waits until the market opens again, at most 24 hours. If the next opening is unknown, it tries again after 1 minute. |
+
+Past prices are fetched by a separate task, the history rebuild. See
 [Rebuild and resolution](./rebuild-and-resolution.mdx).
 
-## A symbol that stops answering backs off
+### Adjust the cadence {#settings}
 
-A ticker can be misspelled, delisted, or replaced overnight. The job does not
-retry it every two minutes forever:
+The dials are in **Settings → Advanced**.
 
-- the first three unsuccessful cycles re-arm at the normal interval — a hiccup
-  should cost nothing;
-- from the fourth, the delay doubles each time, capped at 24 hours;
-- the counter resets to zero on the first successful write.
+| Setting | Default | What it changes |
+|---|---|---|
+| **Quote frequency** | 2 min | How often prices refresh while a market is open. Also the base of the retry delay below. |
+| **Recalculation frequency** | 1 min | How often the history rebuild runs. |
+| **Pause between requests** | 10 sec | The wait between two requests of the history rebuild. |
+| **History depth** | 365 d | Days of past prices fetched per request. |
+| **Frozen-quote threshold** | 15 min | How long a price may stay unchanged, market open, before the app flags it. `0` turns the check off. |
 
-A cycle that failed **because the market was closed** never counts. Closing is
-the normal state of an exchange, not a failure of a symbol.
+A change takes effect without a restart.
 
-So a dead ticker settles at one request a day, and a symbol that was merely
-unreachable for ten minutes is back on its normal cadence as soon as it answers.
+## A symbol that stops answering {#failing}
 
-## Terminal is not "not yet"
+A symbol can be mistyped, delisted or renamed. When a fetch returns no price:
 
-This is the distinction the whole page exists for, because the two look identical
-on screen — a figure with no price behind it — and they mean opposite things.
+1. The first three failures retry at the normal cadence.
+2. From the fourth, the delay doubles at each failure, up to 24 hours.
+3. The first price received brings the symbol back to the normal cadence.
 
-**Not yet arrived.** The rebuild has not reached that far back. The price is
-coming; the app says the figure is not computable *yet* rather than guessing a
-value for it. Nothing about the position is wrong, and nothing is asked of you.
+A closed market does not count as a failure.
 
-**Terminal.** The symbol's backward pass has walked, chunk by chunk, all the way
-to its first acquisition and stopped. It is done — including the case where it
-arrived having stored **zero points**, which is exactly what a delisted or
-mistyped symbol looks like. From that moment the missing price is **permanent**,
-not late, and the app stops emitting requests for it.
+While it fails, the **Quote update** row of the [System page](./system.mdx)
+shows a tall bar for that hour. `/health` reports `failing`, then `backoff`,
+and lists the symbol under `attention`. If no price was ever
+received, the **Shares** page says **No price was received for this share**.
 
-The boundary between the two is the **rebuild's own watermark**, never the
-leading edge of the series. It is a real state the app holds, which is why it can
-be told to you rather than inferred from an empty chart.
+Until a price arrives, the holding is counted at its purchase price. See
+[Read your figures](./read-your-figures.mdx).
 
-What changes once a symbol is terminal is that a held position with no price is
-valued at its own unit cost — its **carrying price** — instead of at zero or at
-its last execution price. That convention is stated on the figure that uses it;
-see [Read your figures](./read-your-figures.mdx).
+To fix it:
 
-:::note Three states, not two
-A **failure to fetch** retries forever under the back-off above — it is a
-transport problem, and transport problems end.
-A **terminal rebuild** never retries — there is nothing left to ask for.
-A pair of currencies that **does not resolve** is a third thing: it is an
-*answer*, not a failure, and it is the one that asks you to act.
-:::
+1. Look the symbol up on Yahoo Finance and note the exact spelling, including
+   the exchange suffix.
+2. If it differs, correct the symbol in your events in the
+   [Ledger](./ledger.mdx).
+3. On the **System** page, press **Run** on **Quote update** to fetch at once.
 
-## Conversion happens at write time
+## Currency conversion {#currencies}
 
-Your figures are reported in one base currency; securities are quoted in
-whatever their exchange quotes them in. The conversion happens **when the point
-is written**, and the point stores three things side by side:
+Your figures are in your base currency. Securities are quoted in their own
+currency. Each stored price keeps three values: the price in its own currency,
+the price in your base currency, and the exchange rate used. A figure from
+years ago is converted at the rate of its own day.
 
-| Stored on every point | |
+Some exchanges quote in a subunit. The app converts it for you:
+
+| Quoted in | Read as |
 |---|---|
-| the **native** price | as quoted, in the security's own currency |
-| the **converted** price | the same price, in your base currency |
-| the **rate used** | the one that turned the first into the second |
+| `GBp` (pence) | 1/100 of `GBP` |
+| `ILA` (agorot) | 1/100 of `ILS` |
+| `ZAc` (cents) | 1/100 of `ZAR` |
 
-Storing the rate rather than joining a rate table at read time is deliberate: the
-join is unaffordable at the volume of a price series, and eighteen bytes a row is
-cheaper than the query it removes. It also means a figure from three years ago
-can always be explained — the rate that produced it is still there.
+When a rate is missing, the price is still stored, and the figure says
+**waiting for a rate**. The history rebuild fills in the rate later. If no rate
+exists at all for a currency, the **History rebuild** task shows **Needs a
+look** and `/health` reports `unconvertible`.
 
-Two consequences worth knowing:
+Until you choose a base currency, prices are stored in their own currency only
+and no performance is computed. Once you choose it, every stored price is
+converted.
 
-- **A missing rate writes a `NULL` converted price rather than losing the quote.**
-  The lateral pass repairs it later. That is only viable because the pass exists;
-  it is not a hole you have to work around.
-- **A currency pair that never resolves is terminal too**, and distinct from a
-  fetch failure. It says so, with its reason, because a blank line with no
-  explanation asks the reader to guess.
+## What a frozen price looks like {#frozen}
 
-While your base currency is still unanswered, nothing is converted: prices are
-fetched and stored natively, the converted column stays empty, and no
-performance series is written at all — not zeros, not blanks. Answering the
-question **triggers the repair over everything already collected**, so nothing
-scraped in the meantime is lost.
+The **Frozen-quote threshold** drives two signals.
 
-:::warning London pence
-Some London listings quote in `GBp` — pence, not pounds. They are normalised as
-`GBP ÷ 100`. A tracker that got this wrong would report those positions at a
-hundred times their value, and it would look plausible on the way past.
-:::
+| Where | What it says | What it means |
+|---|---|---|
+| Bell | **The price of** a security **has not moved since** a time | Market open, but no new price was stored within the threshold. The value shown may be slightly behind. |
+| **System** page, followed securities | **frozen since** a time, with a number of passes | The stored price has stayed the same for longer than the threshold while the live price moves. `/health` reports `frozen`. |
 
-Your *events*, by contrast, record the debit **in your base currency**. That is
-what keeps the cost basis exact instead of re-estimated from a historical rate,
-and it removes historical exchange rates from the past entirely: only prices are
-ever converted.
+The first usually clears at the next pass. The second means prices are fetched
+but the stored one does not change. It does not stop polling.
 
-## A price that stops moving
+If a signal stays:
 
-A writer can fetch happily and still persist a value that never changes. Nothing
-fails, no counter rises, and the chart looks like a flat market.
-
-A freshness sonde rides the live write path for that case: when a stored price
-stays frozen across consecutive open-market cycles while the live quote moves, it
-logs a warning and marks that symbol's scrape as frozen where the app reports on
-its own jobs — on the **System** page, and in the body of `/health`, which is
-where a `curl` finds it without opening the app at all
-([Is it working?](./get-started.mdx#is-it-working)). It watches the **native**
-price, never a converted one — a conversion that is waiting on a rate must not
-read as a stale quote.
-
-It is purely diagnostic. It never changes the cadence, the writing, or the
-back-off above.
+1. Open the **Journal** from the **System** page, and choose **Warnings**.
+2. Search for the symbol.
+3. Press **Run** on **Quote update**.

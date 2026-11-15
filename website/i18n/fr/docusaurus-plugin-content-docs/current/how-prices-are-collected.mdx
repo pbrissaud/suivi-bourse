@@ -1,0 +1,120 @@
+---
+title: Comment les cours sont collectés
+description: D’où viennent les cours, à quelle fréquence ils sont récupérés, comment ils sont convertis, et que faire quand l’un s’arrête
+---
+
+Cette page explique d’où SuiviBourse tire ses cours, à quelle fréquence il les
+récupère, et que faire quand un cours ne se met plus à jour.
+
+## D’où viennent les cours {#source}
+
+Les cours et les taux de change viennent de Yahoo Finance. L’app récupère un
+cours pour chaque titre détenu, à partir du symbole écrit dans vos événements,
+par exemple `ABCD.PA` ou `XYZ`. Un symbole que Yahoo ne connaît pas n’obtient
+aucun cours.
+
+L’app n’interroge que les titres que vous détenez. Quand vous soldez une
+position, son interrogation s’arrête. Ses cours passés restent stockés, car vos
+rendements en ont encore besoin.
+
+## À quelle fréquence {#cadence}
+
+Chaque titre suit les horaires de son propre marché.
+
+| État du marché | Ce que fait l’app |
+|---|---|
+| Ouvert | Récupère le cours toutes les 2 minutes (**Fréquence des cours**). |
+| Après la clôture | Récupère à nouveau toutes les 5 minutes pendant 30 minutes au plus, pour enregistrer le cours de clôture officiel. |
+| Fermé | Attend la réouverture du marché, 24 heures au plus. Si la prochaine ouverture est inconnue, réessaie au bout d’une minute. |
+
+Les cours passés sont récupérés par une tâche distincte, la reconstruction de
+l’historique. Voir [Reconstruction et résolution](./rebuild-and-resolution.mdx).
+
+### Régler la cadence {#settings}
+
+Les réglages se trouvent dans **Réglages → Avancé**.
+
+| Réglage | Par défaut | Ce qu’il change |
+|---|---|---|
+| **Fréquence des cours** | 2 min | La fréquence de rafraîchissement des cours, marché ouvert. C’est aussi la base du délai de nouvelle tentative ci-dessous. |
+| **Fréquence de recalcul** | 1 min | La fréquence de la reconstruction de l’historique. |
+| **Pause entre deux requêtes** | 10 sec | L’attente entre deux requêtes de la reconstruction de l’historique. |
+| **Profondeur d’historique** | 365 j | Les jours de cours passés récupérés par requête. |
+| **Seuil de cours figé** | 15 min | La durée pendant laquelle un cours peut rester inchangé, marché ouvert, avant que l’app le signale. `0` désactive la vérification. |
+
+Un changement prend effet sans redémarrage.
+
+## Un symbole qui ne répond plus {#failing}
+
+Un symbole peut être mal saisi, radié de la cote ou renommé. Quand une
+récupération ne renvoie aucun cours :
+
+1. Les trois premiers échecs réessaient à la cadence normale.
+2. À partir du quatrième, le délai double à chaque échec, jusqu’à 24 heures.
+3. Le premier cours reçu ramène le symbole à la cadence normale.
+
+Un marché fermé ne compte pas comme un échec.
+
+Pendant les échecs, la ligne **Mise à jour des cours** de la
+[page Système](./system.mdx) affiche une barre haute pour l’heure concernée.
+`/health` indique `failing`, puis `backoff`, et liste le symbole sous
+`attention`. Si aucun cours n’a jamais été reçu, la page **Titres** indique
+**Aucun cours n’a été reçu pour ce titre**.
+
+Tant qu’aucun cours n’arrive, la ligne est comptée à son prix d’achat. Voir
+[Lire vos chiffres](./read-your-figures.mdx).
+
+Pour corriger :
+
+1. Cherchez le symbole sur Yahoo Finance et notez son orthographe exacte,
+   suffixe de la place compris.
+2. S’il diffère, corrigez le symbole dans vos événements, dans le
+   [Grand livre](./ledger.mdx).
+3. Sur la page **Système**, cliquez sur **Lancer** sur **Mise à jour des
+   cours** pour récupérer le cours tout de suite.
+
+## Conversion des devises {#currencies}
+
+Vos chiffres sont exprimés dans votre devise de base. Les titres sont cotés
+dans leur propre devise. Chaque cours stocké garde trois valeurs : le cours
+dans sa devise, le cours dans votre devise de base, et le taux de change
+utilisé. Un chiffre d’il y a plusieurs années est converti au taux de son
+propre jour.
+
+Certaines places cotent dans une subdivision de la devise. L’app la convertit
+pour vous :
+
+| Coté en | Lu comme |
+|---|---|
+| `GBp` (pence) | 1/100 de `GBP` |
+| `ILA` (agorot) | 1/100 de `ILS` |
+| `ZAc` (cents) | 1/100 de `ZAR` |
+
+Quand un taux manque, le cours est quand même stocké, et le chiffre indique
+**en attente du taux**. La reconstruction de l’historique complète le taux plus
+tard. Si aucun taux n’existe pour une devise, la tâche **Reconstruction de
+l’historique** passe **À surveiller** et `/health` indique `unconvertible`.
+
+Tant que vous n’avez pas choisi de devise de base, les cours ne sont stockés
+que dans leur devise et aucune performance n’est calculée. Dès que vous la
+choisissez, tous les cours stockés sont convertis.
+
+## À quoi ressemble un cours figé {#frozen}
+
+Le **Seuil de cours figé** commande deux signaux.
+
+| Où | Ce qui est affiché | Ce que cela signifie |
+|---|---|---|
+| Cloche | **Le cours de** tel titre **n’a pas bougé depuis** telle heure | Marché ouvert, mais aucun nouveau cours stocké dans le délai du seuil. La valeur affichée peut être légèrement en retard. |
+| Page **Système**, titres suivis | **figé depuis** telle heure, avec un nombre de passages | Le cours stocké est resté le même plus longtemps que le seuil alors que le cours en direct bouge. `/health` indique `frozen`. |
+
+Le premier disparaît en général au passage suivant. Le second signifie que les
+cours sont récupérés mais que le cours stocké ne change pas. Il n’arrête pas
+l’interrogation.
+
+Si un signal persiste :
+
+1. Ouvrez le **Journal** depuis la page **Système**, puis choisissez
+   **Avertissements**.
+2. Recherchez le symbole.
+3. Cliquez sur **Lancer** sur **Mise à jour des cours**.

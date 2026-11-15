@@ -1,0 +1,149 @@
+---
+title: Secure access
+description: Protect SuiviBourse with an access code, control sessions, create tokens for scripts, and limit who can reach it on the network
+---
+
+This page protects SuiviBourse with an access code, sets how long a session
+lasts, gives scripts and agents a token, and limits who reaches the app.
+
+:::warning
+A new installation has no access code. Anyone who can reach the app's port can
+read and change your portfolio. Turn the code on, keep the port on your own
+machine, or both.
+:::
+
+## Turn on the access code {#turn-on}
+
+The access code is six digits. It protects the pages, `/api` and `/mcp`.
+
+![The Security section of Settings, with the access code on, the auto-lock durations and the list of access tokens](/img/app/en/settings-security.png)
+
+1. Open **Settings → Security**.
+2. Next to **Access code**, select **Turn the code on**.
+3. Type six digits in **New code**.
+4. Type them again in **Confirm the code**.
+5. Select **Turn the code on**.
+
+The row now reads **On since** and the date. Other devices see the lock screen.
+
+## Sign in {#sign-in}
+
+![The lock screen titled Access code, with six empty digit slots](/img/app/en/lock.png)
+
+Type the six digits. The app opens at the sixth digit.
+
+After a wrong code, the slots turn red and the screen says **Wrong code**. Before
+your last free try it says **Wrong code · last try**. You get five free tries,
+then the screen says **Too many tries · try again in** and a countdown. The wait
+starts at 30 seconds and doubles after each new mistake, up to 15 minutes.
+
+During the countdown, the screen shows how to [reset a forgotten code](#forgotten-code).
+
+To lock the app yourself, select **Lock** at the foot of the sidebar, or search
+for **Lock** in the search palette (⌘K).
+
+## Change or remove the code {#change}
+
+To change it:
+
+1. Open **Settings → Security**.
+2. Select **Change the code**.
+3. Type the **Current code**, then the **New code** twice.
+4. Select **Change**.
+
+Every other device is signed out.
+
+To remove it:
+
+1. Open **Settings → Security**.
+2. Select **Turn off**.
+3. Type the **Current code** and select **Turn off**.
+
+The app is then open to anyone who reaches it. Other devices are signed out, and
+every access token is deleted.
+
+## Auto-lock and sessions {#auto-lock}
+
+A session ends after a period without activity. Choose it under
+**Settings → Security → Auto-lock**: **15 min**, **1 h**, **1 day**,
+**7 days** or **30 days**. The default is 30 days.
+
+Using the app keeps the session alive; an untouched open tab does not. When a
+session ends, the app shows **Your session ended.** and asks for the code.
+
+A shorter duration applies at once to other devices. Your own device stays
+signed in.
+
+## Access tokens for scripts and agents {#tokens}
+
+A token lets a script or an MCP client in without the code. The **Access
+tokens** list appears under **Settings → Security** once the code is on.
+
+### Create a token {#create-token}
+
+1. Under **Access tokens**, select **Create a token**.
+2. Give it a **Label**, such as `Backup script`.
+3. Under **What this token opens**, tick **/api, for a script**,
+   **/mcp, for Claude Desktop**, or both.
+4. Choose an **Expiry**: **90 days**, **1 year** or **Never**.
+5. Select **Create the token**.
+6. Select **Copy**, store the token somewhere safe, then select
+   **I have copied the token**.
+
+The app shows the token once. It starts with `sb_`.
+
+### Use a token {#use-token}
+
+Send it in the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer sb_1a2b3c4d_xxxxxxxx" \
+  http://localhost:8080/api/positions
+```
+
+A `/api` token opens every route under `/api`, for reading and writing, except
+the token list and the access-code settings. A `/mcp` token opens `/mcp`. To connect an agent with it, see
+[Connect your own agent](./connect-your-own-agent.mdx).
+
+### Revoke or regenerate a token {#revoke-token}
+
+- **Revoke** deletes the token. It stops working at once.
+- **Regenerate** gives the token a new secret and restarts its expiry. The old
+  secret stops working at once.
+
+## Forgotten code {#forgotten-code}
+
+1. Stop the app.
+2. Start it once with `SB_RESET_AUTH=1`:
+
+   ```bash
+   docker rm -f suivi-bourse
+   docker run -d \
+     --name suivi-bourse \
+     --restart unless-stopped \
+     -v suivi-bourse:/data \
+     -e SB_RESET_AUTH=1 \
+     -p 8080:8080 \
+     ghcr.io/pbrissaud/suivi-bourse:5
+   ```
+
+3. Open the app. The code is off, and your portfolio is intact.
+4. Remove the variable: run the same command again without the `-e` line.
+5. Set a new code in **Settings → Security**.
+
+The reset also deletes every access token. While the variable is set, it
+resets at each start.
+
+## Limit who can reach the app {#network}
+
+Over plain HTTP, the code, the session cookie and the tokens travel in clear.
+To reach the app from outside your home network, use one of these:
+
+| Option | How |
+|---|---|
+| Keep it on this machine | Publish the port on the local interface only: `-p 127.0.0.1:8080:8080`. Without Docker, the app listens on every interface: block the port with your firewall. |
+| Reverse proxy with HTTPS | Put a proxy in front and set `SB_FORWARDED_ALLOW_IPS`. See [Behind a reverse proxy](./configuration.mdx#reverse-proxy). |
+| VPN | Reach your home network through a VPN such as WireGuard or Tailscale, and keep the port closed to the internet. |
+
+`/health` answers without the code, so a monitoring tool can check that the app
+runs.

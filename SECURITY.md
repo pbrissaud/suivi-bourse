@@ -2,107 +2,118 @@
 
 ## Supported versions
 
-One line is supported, and it is the current one. SuiviBourse ships as a single
-container image, so a fix reaches an install by pulling that image again.
+Only the latest 5.x release receives fixes. To get a fix, pull the image again.
 
-| Version | Supported |
+| Version | Supported          |
 | ------- | ------------------ |
 | 5.x     | :white_check_mark: |
-| 4.x     | :x:                |
-| < 4.0   | :x:                |
+| < 5.0   | :x:                |
 
-v5 is a rewrite rather than a release: a portfolio became a dated event ledger
-in one embedded store, the exporter and its second socket went, and the Grafana
-dashboards left with them. Nothing is backported across that line — the way off
-an older install is
-[Coming from v4](https://pbrissaud.github.io/suivi-bourse/docs/v5/coming-from-v4),
-not a patch release of v4.
+## Where SuiviBourse is meant to run
 
-## What the app assumes about where it runs
+SuiviBourse is meant for your own machine or home network, not the open
+internet. One port serves the pages, `/api` (writes included), `/mcp` and
+`/health`.
 
-**SuiviBourse is not meant to be reachable from the open internet.** It is one
-process bound to one socket, and the page, `/api` — writes included — `/mcp`
-and `/health` all answer on it.
+### The access code
 
-**An optional PIN closes that socket on your local network.** It is off by
-default and turned on in the settings, under *Access*. While it is on, one gate
-in front of the whole socket answers every request first. Without a session,
-only these answer: the PIN screen, its stylesheet, the static assets,
-`/health`, and `/auth` and `/auth/*`. The `/auth` routes are answered by the
-gate itself, and reaching them opens nothing: they say whether a PIN is set,
-take a code to sign in, and refuse every change to the PIN without both a
-session and the current code. Any route added later is closed whatever its
-path. A session is an
-`HttpOnly`, `SameSite=Strict` cookie. It lives 30 days after the last
-activity at most, less if the owner chose a shorter lifetime, and a request the
-page sends on its own (`X-SB-Background: 1`, a poll from a tab nobody touched
-for a minute) never extends it. The access token, a bearer shown once when the
-PIN is set, opens `/mcp` and every method on `/api` instead, never `/auth/*`:
-it cannot change the PIN, the lifetime or itself. Attempts are throttled per
-address and globally.
+The access code is optional and off by default. Turn it on in
+**Settings → Security**. While it is on:
 
-**What the PIN does not protect: the internet without TLS.** The code, the
-cookie and the bearer token cross the network as they are. To reach the app from outside, put a
-reverse proxy with TLS, a VPN or an identity layer in front of it, PIN or not.
-Behind a proxy, name it in `SB_FORWARDED_ALLOW_IPS` so the throttle counts the
-real client address and the cookie is marked `Secure` over https; no proxy is
-trusted by default.
+- A request without a session or token gets the lock screen (pages) or `401`
+  (`/api`, `/mcp`, writes). WebSocket connections are closed.
+- Without a session, only these answer: the lock screen, the static assets and
+  icons, the theme stylesheet, `/health` (and `/healthz`, `/readyz`), and
+  `/auth/*`. Any route added later is closed by default.
+- `/auth/*` reports whether a code is set and takes a code to sign in. Changing
+  or removing the code needs a session and the current code.
+- The code is six digits, stored as a scrypt hash.
+- The session is an `HttpOnly`, `SameSite=Strict` cookie. It ends after a period
+  without activity: 15 minutes to 30 days, 30 days by default. Background polls
+  from an idle tab do not extend it.
+- Wrong codes are throttled per address: five free tries, then a wait that
+  starts at 30 seconds and doubles up to 15 minutes. Past 60 failures in an hour
+  from all addresses, the app accepts one attempt per minute.
 
-**A forgotten PIN** is cleared by starting the app once with
-`SB_RESET_AUTH=1`: the PIN, the session secret and the access token go, the data
-stays. Remove the variable afterwards — while it is set, the reset runs, and is
-logged, at every start. There is no route that does this.
+### Access tokens
 
-**With the PIN off**, whoever reaches the socket reaches the whole app, and
-three residual risks remain: a hostile page can reach a local install through
-DNS rebinding; a write sent without an `Origin` header is not refused; and
-`/mcp` runs with the MCP SDK's DNS-rebinding protection off, so that a LAN
-address, a container name or a proxy's domain can reach it.
+Access tokens let scripts and MCP clients in without the code. Create them in
+**Settings → Security** once the code is on.
 
-A few more properties are worth knowing before you judge an issue:
+- Each token has a label, one or both scopes and an expiry: 90 days, 1 year or
+  never. **/api, for a script** opens every method on `/api`. **/mcp, for Claude
+  Desktop** opens `/mcp`.
+- The app shows the secret once and stores only its SHA-256 hash.
+- A token never opens `/auth/*` or the token routes: it cannot create a token,
+  change the code or change the session length.
+- Turning the code off deletes every token.
 
-- **Everything is local, except what you send to a model.** The store is a
-  DuckDB file under the one mount, `/data`. The app sends the price requests
-  it makes to Yahoo Finance, which name the symbols you hold; and, once you
-  switch the in-app agent on, your questions and the figures its tools read go
-  to the provider you configured. With Ollama on your own machine, nothing
-  leaves it.
-- **The store holds secrets.** The agent's provider key, and the PIN's hash,
-  session secret and token hash. No route, MCP tool or export reads them, and
-  no route serves the store file.
-- **A file is read, never kept.** A `.csv`/`.xlsx` handed to
-  `POST /api/events/import` is read once and dropped; the upload is bounded
-  (`413` past the limit) and every refusal writes nothing at all.
+### Without TLS, everything travels in clear
+
+The code, the session cookie and the tokens cross the network as they are. To
+reach the app from outside, put a reverse proxy with HTTPS, a VPN or an identity
+layer in front of it.
+
+Behind a proxy, set `SB_FORWARDED_ALLOW_IPS` to the proxy's address. The
+throttle then counts the real client address, and the cookie is marked `Secure`
+over HTTPS. No proxy is trusted by default.
+
+### Forgotten code
+
+Start the app once with `SB_RESET_AUTH=1`. It removes the code, the session
+secret and every access token, and keeps your data. Remove the variable
+afterwards: while it is set, the reset runs at every start and logs a warning.
+No route does this.
+
+### With the code off
+
+Anyone who reaches the port reaches the whole app. Three risks remain:
+
+- A hostile web page can reach a local installation through DNS rebinding.
+- A write to `/api` sent without an `Origin` header is accepted. A write with
+  another site's `Origin` is refused.
+- `/mcp` runs with the MCP SDK's DNS-rebinding protection off, so a LAN address,
+  a container name or a proxy's domain can reach it.
+
+### Data and secrets
+
+- **What leaves the machine.** Price requests to Yahoo Finance, which name the
+  securities you follow. A check for new releases on GitHub every six hours
+  (turn off **Report new versions** on the **System** page). A download from the
+  documentation site when you import a tax-model preset. Once you set them up:
+  your questions and the figures the agent reads, sent to your AI provider, and
+  notices sent to your notification channels. With Ollama on your own machine,
+  the agent sends nothing out.
+- **The store holds secrets.** The store is a DuckDB file under `/data`. It
+  holds the AI provider keys and notification-channel secrets in clear, and the
+  hashes of the code and the tokens. No route serves the store file, and a key
+  or channel secret leaves the server as its last four characters only.
+- **Uploaded files are not kept.** A `.csv` or `.xlsx` sent to
+  `POST /api/events/import` is read once and dropped. Uploads over 8 MiB are
+  refused with `413`.
 
 ## Reporting a vulnerability
 
 **Report privately**, through GitHub:
 [open a draft advisory](https://github.com/pbrissaud/suivi-bourse/security/advisories/new).
-Private vulnerability reporting is enabled on this repository, so that gives us
-a place to talk before anything is public. Please do not open a public issue or
-a pull request for a vulnerability — a fix in the open is a disclosure. Without
-a GitHub account, contact@pbrissaud.net reaches the same person.
+Do not open a public issue or pull request for a vulnerability. Without a GitHub
+account, write to contact@pbrissaud.net.
 
-What makes a report actionable:
+Include:
 
-- **the version**, which the app says itself: the settings page ends on a
-  card called *The version*, and `GET /api/runtime` carries the same under
-  `build`;
-- **how it is deployed** — the image, or an install without Docker — and what
-  sits in front of the socket;
+- **the version**: shown on the **System** page under **Installation**, at the
+  foot of the sidebar, and under `build` in `GET /api/runtime`;
+- **how it is deployed**: the image or an install without Docker, and what sits
+  in front of it;
 - **the smallest sequence that reproduces it**, and what you expected instead.
 
 This is a personal project maintained on personal time. You will get an
-acknowledgement rather than a service-level agreement, and a fix ships as an
-ordinary release once there is one.
+acknowledgement, not a service-level agreement. A fix ships as an ordinary
+release.
 
 ## Keeping dependencies current
 
-Renovate watches this repository's dependencies — the Python runtime, the
-front's packages, the base image and the CI actions — and its minor and patch
-updates merge on their own once the checks pass. The Python version is the
-exception: the image, `.python-version` and every `requires-python` move
-together in one pull request that is merged by hand once `uv.lock` has been
-relocked. Secret scanning and push
-protection are on. An update that matters for security is cut as a release
-rather than left waiting for the next feature.
+Renovate watches the Python packages, the front's packages, the base image and
+the CI actions. Minor and patch updates merge on their own once the checks pass.
+A Python version upgrade is merged by hand. Secret scanning and push protection
+are on. A security fix ships as its own release.

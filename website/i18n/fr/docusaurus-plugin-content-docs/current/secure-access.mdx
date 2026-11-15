@@ -1,0 +1,156 @@
+---
+title: Sécuriser l’accès
+description: Protégez SuiviBourse par un code d’accès, réglez les sessions, créez des jetons pour vos scripts et limitez qui peut l’atteindre sur le réseau
+---
+
+Cette page protège SuiviBourse par un code d’accès, règle la durée d’une session,
+donne un jeton aux scripts et aux agents, et limite qui atteint l’application.
+
+:::warning
+Une nouvelle installation n’a pas de code d’accès. Toute personne qui atteint le port de l’application peut
+lire et modifier votre portefeuille. Activez le code, gardez le port sur votre propre
+machine, ou les deux.
+:::
+
+## Activer le code d’accès {#turn-on}
+
+Le code d’accès compte six chiffres. Il protège les pages, `/api` et `/mcp`.
+
+![La section Sécurité des Réglages, avec le code d’accès actif, les durées de verrouillage automatique et la liste des jetons d’accès](/img/app/fr/settings-security.png)
+
+1. Ouvrez **Réglages → Sécurité**.
+2. À côté de **Code d’accès**, choisissez **Activer le code**.
+3. Tapez six chiffres dans **Nouveau code**.
+4. Tapez-les de nouveau dans **Confirmez le code**.
+5. Choisissez **Activer le code**.
+
+La ligne indique alors **Actif depuis le** et la date. Les autres appareils
+affichent l’écran de verrouillage.
+
+## Se connecter {#sign-in}
+
+![L’écran de verrouillage intitulé Code d’accès, avec six cases vides](/img/app/fr/lock.png)
+
+Tapez les six chiffres. L’application s’ouvre au sixième chiffre.
+
+Après un code faux, les cases passent au rouge et l’écran affiche
+**Code incorrect**. Avant votre dernier essai libre, il affiche
+**Code incorrect · dernier essai**. Vous avez cinq essais libres, puis l’écran
+affiche **Trop d’essais · réessayez dans** et un compte à rebours. L’attente
+commence à 30 secondes et double à chaque nouvelle erreur, jusqu’à 15 minutes.
+
+Pendant le compte à rebours, l’écran indique comment
+[réinitialiser un code oublié](#forgotten-code).
+
+Pour verrouiller l’application vous-même, choisissez **Verrouiller** au pied de
+la barre latérale, ou cherchez **Verrouiller** dans la palette de recherche (⌘K).
+
+## Changer ou retirer le code {#change}
+
+Pour le changer :
+
+1. Ouvrez **Réglages → Sécurité**.
+2. Choisissez **Changer le code**.
+3. Tapez le **Code actuel**, puis deux fois le **Nouveau code**.
+4. Choisissez **Changer**.
+
+Tous les autres appareils sont déconnectés.
+
+Pour le retirer :
+
+1. Ouvrez **Réglages → Sécurité**.
+2. Choisissez **Désactiver**.
+3. Tapez le **Code actuel** et choisissez **Désactiver**.
+
+L’application est alors ouverte à quiconque l’atteint. Les autres appareils sont
+déconnectés, et tous les jetons d’accès sont supprimés.
+
+## Verrouillage automatique et sessions {#auto-lock}
+
+Une session prend fin après une période sans activité. Choisissez-la sous
+**Réglages → Sécurité → Verrouillage automatique** : **15 min**, **1 h**,
+**1 jour**, **7 jours** ou **30 jours**. La valeur par défaut est 30 jours.
+
+Utiliser l’application garde la session ouverte ; un onglet ouvert et laissé de
+côté ne la prolonge pas. Quand une session prend fin, l’application affiche
+**Votre session a pris fin.** et redemande le code.
+
+Une durée plus courte s’applique tout de suite aux autres appareils. Votre propre
+appareil reste connecté.
+
+## Jetons d’accès pour les scripts et les agents {#tokens}
+
+Un jeton laisse entrer un script ou un client MCP sans le code. La liste
+**Jetons d’accès** apparaît sous **Réglages → Sécurité** dès que le code est
+actif.
+
+### Créer un jeton {#create-token}
+
+1. Sous **Jetons d’accès**, choisissez **Créer un jeton**.
+2. Donnez-lui un **Libellé**, par exemple `Script de sauvegarde`.
+3. Sous **Ce que ce jeton ouvre**, cochez **/api, pour un script**,
+   **/mcp, pour Claude Desktop**, ou les deux.
+4. Choisissez une **Expiration** : **90 jours**, **1 an** ou **Jamais**.
+5. Choisissez **Créer le jeton**.
+6. Choisissez **Copier**, rangez le jeton en lieu sûr, puis choisissez
+   **J’ai copié le jeton**.
+
+L’application n’affiche le jeton qu’une fois. Il commence par `sb_`.
+
+### Utiliser un jeton {#use-token}
+
+Envoyez-le dans l’en-tête `Authorization` :
+
+```bash
+curl -H "Authorization: Bearer sb_1a2b3c4d_xxxxxxxx" \
+  http://localhost:8080/api/positions
+```
+
+Un jeton `/api` ouvre toutes les routes sous `/api`, en lecture et en écriture,
+sauf la liste des jetons et les réglages du code d’accès. Un jeton `/mcp` ouvre
+`/mcp`. Pour y connecter un agent, voir
+[Connecter votre propre agent](./connect-your-own-agent.mdx).
+
+### Révoquer ou régénérer un jeton {#revoke-token}
+
+- **Révoquer** supprime le jeton. Il cesse de fonctionner tout de suite.
+- **Régénérer** donne au jeton un nouveau secret et relance son expiration.
+  L’ancien secret cesse de fonctionner tout de suite.
+
+## Code oublié {#forgotten-code}
+
+1. Arrêtez l’application.
+2. Lancez-la une fois avec `SB_RESET_AUTH=1` :
+
+   ```bash
+   docker rm -f suivi-bourse
+   docker run -d \
+     --name suivi-bourse \
+     --restart unless-stopped \
+     -v suivi-bourse:/data \
+     -e SB_RESET_AUTH=1 \
+     -p 8080:8080 \
+     ghcr.io/pbrissaud/suivi-bourse:5
+   ```
+
+3. Ouvrez l’application. Le code est désactivé et votre portefeuille est intact.
+4. Retirez la variable : relancez la même commande sans la ligne `-e`.
+5. Définissez un nouveau code dans **Réglages → Sécurité**.
+
+La réinitialisation supprime aussi tous les jetons d’accès. Tant que la variable
+est définie, elle se répète à chaque démarrage.
+
+## Limiter qui atteint l’application {#network}
+
+En HTTP simple, le code, le cookie de session et les jetons circulent en clair.
+Pour atteindre l’application hors de votre réseau domestique, choisissez l’une de
+ces options :
+
+| Option | Comment |
+|---|---|
+| La garder sur cette machine | Publiez le port sur l’interface locale seulement : `-p 127.0.0.1:8080:8080`. Sans Docker, l’application écoute sur toutes les interfaces : bloquez le port avec votre pare-feu. |
+| Proxy inverse avec HTTPS | Placez un proxy devant et définissez `SB_FORWARDED_ALLOW_IPS`. Voir [Derrière un proxy inverse](./configuration.mdx#reverse-proxy). |
+| VPN | Rejoignez votre réseau domestique par un VPN comme WireGuard ou Tailscale, et gardez le port fermé à Internet. |
+
+`/health` répond sans le code, pour qu’un outil de supervision vérifie que
+l’application tourne.

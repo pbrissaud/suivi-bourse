@@ -1,59 +1,49 @@
 ---
 title: Home
 id: home
-description: What SuiviBourse is, and what it is not
+description: What SuiviBourse does, and where to start in this documentation
 slug: /
 ---
 
-# SuiviBourse
+# SuiviBourse {#suivibourse}
 
-A personal stock-portfolio tracker. You record what you bought, sold, received
-and paid in; it fetches the prices, values your positions and computes your
-returns — in one container, with nothing else to install.
+SuiviBourse is a self-hosted tracker for your stock portfolio. You record what
+you buy, sell, receive and pay in, and it fetches the prices, values your
+positions and computes your returns in one currency. It runs as one container
+on your own machine.
 
-## What it does
+![The dashboard with the portfolio value, its chart and the investment rhythm](/img/app/en/dashboard.png)
 
-- **It keeps your ledger.** Six kinds of event — `BUY`, `SELL`, `GRANT`,
-  `DIVIDEND`, `DEPOSIT`, `WITHDRAWAL` — recorded in the app or imported from
-  the files your broker exports. Your events are the only thing it treats as
-  yours; everything else it shows is derived from them and can be recomputed.
-- **It fetches prices, and it fetches the past.** A symbol whose market is open
-  is polled often, a symbol whose market is closed sleeps until it reopens, and
-  the history behind your first purchase is rebuilt in the background until it
-  reaches it.
-- **It reports in one currency.** Everything you own is converted into a single
-  base currency, so a portfolio spread over several markets still adds up to one
-  figure.
-- **It shows you five pages** — a dashboard, your shares, your accounts, the
-  ledger you gave it and what this installation is — and each figure explains, on
-  the figure itself, the convention it rests on.
-- **It has one interface, and it is that one.** Everything the app knows about
-  itself it says on those pages; there is no second surface to scrape and no
-  second port to publish.
+## Using SuiviBourse {#using}
 
-## What it is not
+- [First steps](./first-steps.mdx): the questions of the first launch and your first events.
+- [Dashboard](./dashboard.mdx): your portfolio value, its chart and its gain.
+- [Shares](./shares.mdx): every line you hold, and the page of each security.
+- [Accounts](./accounts.mdx): create your accounts and read each one.
+- [Ledger](./ledger.mdx): record, correct, delete and export events.
+- [Import your events](./import-your-events.mdx): load a `.csv` or `.xlsx` file.
+- [Comparison](./benchmark.mdx): your securities against an index fund.
+- [Agent](./agent.mdx): ask questions about your portfolio.
+- [Read your figures](./read-your-figures.mdx): what each figure means.
+- [Your taxation model](./your-taxation-model.mdx) and
+  [Taxation models in Europe](./taxation-models-in-europe.mdx): the tax on a sale.
+- [Settings](./settings.mdx): language, theme and preferences.
 
-- **Not a broker, and not an adviser.** It executes nothing, recommends nothing
-  and knows nothing your events do not tell it.
-- **Not a stack.** There is no database to run beside it, no dashboard tool to
-  provision and nothing to compose: one image, one store, one process.
-- **Not a market terminal.** Prices come from Yahoo! Finance on a polite
-  cadence; the further back a point is, the coarser it is kept.
-  The ticker search of the event form asks Yahoo! Finance too: the server sends
-  it what you type, your browser never does.
-- **Not an upgrade from version 4.** A version 5 install is a new install whose
-  import folder happens to be full — see [Coming from v4](./coming-from-v4.mdx).
+## Installation and administration {#admin}
 
-## Start here
+- [Install with Docker](./get-started.mdx) or [without Docker](./install-without-docker.mdx): start the app.
+- [Configuration](./configuration.mdx): the environment variables.
+- [Secure access](./secure-access.mdx): access code, sessions and access tokens.
+- [Set up the agent](./set-up-the-agent.mdx) and
+  [connect your own agent](./connect-your-own-agent.mdx): provider, key and MCP server.
+- [System](./system.mdx): jobs, logs and health.
+- [Back up and update](./backup-and-update.mdx): keep your data safe across versions.
+- [How prices are collected](./how-prices-are-collected.mdx) and
+  [rebuild and resolution](./rebuild-and-resolution.mdx): where prices and history come from.
+- [Coming from v4](./coming-from-v4.mdx) and the [release notes](./release-notes.mdx): what changed.
 
-[Get started](./get-started.mdx) is one command and one screen.
+## Support and licence {#support}
 
-## Support, licence, credits
-
-To report a problem or request a feature,
-[open a ticket](https://github.com/pbrissaud/suivi-bourse/issues/new/choose).
-Pull requests are welcome — please read
-[the contributing guide](https://github.com/pbrissaud/suivi-bourse/blob/master/CONTRIBUTING.md)
-first. The project is under the
-[MIT licence](https://github.com/pbrissaud/suivi-bourse/blob/master/LICENSE),
-and owes a great deal to the maintainers of the projects it relies on.
+- [Open a ticket](https://github.com/pbrissaud/suivi-bourse/issues/new/choose) to report a problem or request a feature.
+- Read [the contributing guide](https://github.com/pbrissaud/suivi-bourse/blob/master/CONTRIBUTING.md) before you send a pull request.
+- SuiviBourse is under the [MIT licence](https://github.com/pbrissaud/suivi-bourse/blob/master/LICENSE).

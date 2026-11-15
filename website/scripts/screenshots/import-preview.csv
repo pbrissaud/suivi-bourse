@@ -1,0 +1,6 @@
+date,event_type,account,symbol,name,quantity,unit_price,fee,amount,notes
+2026-11-02,DEPOSIT,pea,,,,,,1500.00,November transfer
+2026-11-03,BUY,pea,AI.PA,Air Liquide,4,176.20,1.99,,
+2026-11-04,BUY,pea,CW8.PA,Amundi MSCI World UCITS ETF,1,612.40,1.99,,
+2026-11-10,DEPOSIT,av,,,,,,1000.00,
+2026-11-12,BUY,av,CW8.PA,Amundi MSCI World UCITS ETF,1,615.10,0.00,,

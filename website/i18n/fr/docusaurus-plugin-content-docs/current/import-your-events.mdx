@@ -1,0 +1,153 @@
+---
+title: Importer vos événements
+description: Charger un fichier .csv ou .xlsx d’événements dans le grand livre, et le format que ce fichier suit
+---
+
+Vous pouvez charger vos événements depuis un fichier `.csv` ou `.xlsx` au lieu
+de les saisir. SuiviBourse montre ce que le fichier ajouterait, ligne par ligne,
+et n’écrit rien avant votre confirmation.
+
+## Importer un fichier {#import}
+
+Il vous faut d’abord au moins un compte. Voir [Comptes](./accounts.mdx#add).
+
+1. Dans le **Grand livre**, cliquez sur **Importer**.
+2. À côté de **Importer dans**, choisissez le compte qui reçoit les lignes pour
+   lesquelles le fichier ne nomme aucun compte.
+3. Déposez votre fichier dans le cadre, ou cliquez sur **Choisir un fichier**.
+   Vous importez un fichier à la fois.
+4. Lisez l’aperçu. Rien n’a encore été écrit.
+5. Réglez les lignes qui le demandent. Voir [Lire l’aperçu](#preview).
+6. Cliquez sur **Importer N événements**.
+
+La page confirme ensuite combien d’événements ont été importés. Cliquez sur
+**Autre fichier** pour importer le suivant. L’action **Importer un relevé** de la
+palette de recherche ouvre aussi cette page.
+
+**Le format, colonne par colonne**, sur la page d’import, ouvre le
+[format de fichier](#format) ci-dessous.
+
+## Lire l’aperçu {#preview}
+
+![L’aperçu d’import : le nom du fichier, les onglets par issue, et chaque ligne avec sa colonne Issue](/img/app/fr/import-preview.png)
+
+Chaque ligne du fichier reçoit une **Issue**. Les onglets au-dessus du tableau
+montrent une issue à la fois.
+
+| Issue | Ce qu’elle signifie | Que faire |
+|---|---|---|
+| **Nouveau** | Votre grand livre n’a pas encore cette ligne. | Elle sera écrite. |
+| **Déjà présent** | Le compte a déjà cet événement : même date, même titre, même quantité et même prix (ou montant). | Elle est ignorée. |
+| **Titre inconnu** | SuiviBourse ne sait pas de quel titre parle la ligne. | Tapez son symbole dans le champ de la ligne et cliquez sur **Associer**. Les autres lignes de même ISIN suivent. |
+| **Illisible** | La ligne ne peut pas être lue. La rangée dit pourquoi, par exemple une date ou un nombre illisible. | Corrigez le fichier et importez-le de nouveau. |
+
+Si le fichier nomme des comptes dans une colonne `account`, chacun doit déjà
+exister dans **Comptes**. Une ligne qui nomme un autre compte est **Illisible**.
+
+Quand le fichier contient des titres cotés dans une autre devise, la page
+demande la **Devise des montants** pour chacun d’eux. Gardez votre devise de
+base, choisie par défaut, si votre courtier a converti les montants. Choisissez
+la devise propre du titre pour les faire convertir au cours de chaque jour.
+
+## Quand un fichier est refusé {#refused}
+
+Un fichier refusé n’écrit rien. La page dit pourquoi :
+
+| Message | Cause |
+|---|---|
+| L’application ne lit que les fichiers .csv et .xlsx | Le fichier a une autre extension. |
+| … n’a pas pu être lu | Le fichier est endommagé, ou dans un autre format. |
+| … est vide | Le fichier n’a aucune ligne. |
+| L’en-tête de … n’est pas reconnu | La première rangée n’a pas les colonnes `date` et `event_type`. |
+| Ce que vous avez remis dépasse ce que l’application accepte en une fois | Le fichier dépasse 8 Mio. Exportez une période plus courte. |
+
+## Format de fichier {#format}
+
+Le fichier est un `.csv` ou un `.xlsx` avec une rangée d’en-tête, puis un
+événement par rangée. Dans un classeur, chaque onglet est lu. Les rangées
+peuvent venir dans n’importe quel ordre.
+
+| Colonne | Obligatoire | Ce qu’elle contient |
+|---|---|---|
+| `date` | oui | Le jour de l’événement. |
+| `event_type` | oui | `BUY`, `SELL`, `GRANT`, `DIVIDEND`, `DEPOSIT` ou `WITHDRAWAL`. |
+| `account` | non | L’identifiant d’un compte. Vide : le compte choisi dans **Importer dans**. |
+| `symbol` | pour un titre | Le symbole Yahoo! Finance, comme `ACME.PA`. Un ISIN est aussi accepté. |
+| `isin` | non | L’ISIN du titre. |
+| `name` | non | Le nom du titre. |
+| `quantity` | `BUY`, `SELL`, `GRANT` | Le nombre de titres. Les fractions sont permises. |
+| `unit_price` | `BUY`, `SELL` | Le prix d’un titre, dans votre devise de base. Facultatif sur `GRANT`. |
+| `fee` | non | Les frais, ou l’impôt retenu sur un dividende. |
+| `amount` | `DIVIDEND`, `DEPOSIT`, `WITHDRAWAL` | La somme reçue ou déplacée, dans votre devise de base. |
+| `notes` | non | Un libellé libre, affiché dans le **Grand livre**. |
+| `base_currency` | non | Écrite par l’export. Quand elle est remplie, la page ne pose pas de question de devise et écrit les montants tels quels. |
+
+Les six types sont décrits dans [Grand livre](./ledger.mdx#kinds). Une ligne qui
+porte sur un titre a besoin d’un `symbol`, d’un `isin` ou d’un `name`.
+
+### Écritures acceptées {#spellings}
+
+| Élément | Accepté |
+|---|---|
+| Noms de colonne | Majuscules ou minuscules. `event_type`, `Event Type` et `event type` sont la même colonne. Les colonnes inconnues sont ignorées. |
+| Séparateur (`.csv`) | Virgule, point-virgule ou tabulation. |
+| Encodage (`.csv`) | UTF-8, ou Windows-1252. |
+| Types d’événement | Majuscules ou minuscules : `buy`, `Buy`, `BUY`. |
+| Dates | Jour en premier : `2026-03-14`, `14/03/2026`, `14-03-2026`, `14.03.2026`, `14/03/26`. Les cellules de date d’un tableur fonctionnent aussi. |
+| Nombres | `1234.56`, `1234,56`, `1 234,56`, `1.234,56`, `1,234.56`. Les symboles monétaires sont ignorés. |
+| Signes | Un signe moins est ignoré. Le type d’événement donne le sens. |
+| Prix ou montant | Sur `BUY` et `SELL`, un `amount` peut remplacer `unit_price`. Le prix est alors déduit du montant, des frais et de la quantité. |
+
+### Fichier d’exemple {#sample}
+
+```csv
+date,event_type,account,symbol,name,quantity,unit_price,fee,amount,notes
+2026-01-05,DEPOSIT,broker-a,,,,,,5000.00,January transfer
+2026-01-12,BUY,broker-a,ACME.PA,Acme Industries,20,84.50,1.99,,
+2026-02-03,BUY,broker-a,WRLD.AS,World Index ETF,30,96.20,1.99,,
+2026-04-20,DIVIDEND,broker-a,ACME.PA,Acme Industries,,,6.40,42.00,2025 dividend
+2026-06-15,GRANT,broker-a,ACME.PA,Acme Industries,2,,,,Bonus shares
+2026-09-08,SELL,broker-a,ACME.PA,Acme Industries,10,91.30,1.99,,
+2026-10-01,WITHDRAWAL,broker-a,,,,,,800.00,
+```
+
+Un fichier exporté depuis le **Grand livre** a ces colonnes plus `base_currency`,
+et s’importe tel quel.
+
+## Importer un relevé de courtier avec l’agent {#agent}
+
+Si le relevé de votre courtier a une autre mise en page, l’agent peut le lire.
+Sur la page **Agent**, cliquez sur **Joindre un relevé**, choisissez le **Compte
+du relevé** et collez le **Texte du relevé**. L’agent propose des événements, et
+rien n’est écrit avant que vous les ayez vérifiés et confirmés. Voir
+[Agent](./agent.mdx).
+
+## Annuler un import {#undo}
+
+Un import ne s’annule pas en une seule fois. Dans le **Grand livre**, filtrez
+sur le compte et la période du fichier, cochez les événements et supprimez-les.
+Voir [Supprimer des événements](./ledger.mdx#delete).
+
+## Depuis un script {#script}
+
+Avec un jeton d’accès qui ouvre `/api`, un script peut importer un fichier. Voir
+[Sécuriser l’accès](./secure-access.mdx).
+
+```bash
+# Aperçu : compter ce qui serait écrit, sans rien écrire
+curl -H "Authorization: Bearer $TOKEN" \
+  -F 'file=@events.csv' \
+  'http://localhost:8080/api/events/import?dry_run=1'
+
+# Import
+curl -H "Authorization: Bearer $TOKEN" \
+  -F 'file=@events.csv' \
+  http://localhost:8080/api/events/import
+```
+
+Cette route est plus stricte que la page d’import. Elle exige les noms de
+colonne de l’exemple et les dates au format `YYYY-MM-DD`, et refuse le fichier
+à la première ligne fautive.
+
+Vous pouvez envoyer plusieurs fichiers en un appel avec plusieurs parties
+`-F 'file=@…'`. Les lignes déjà présentes dans votre grand livre sont ignorées.
