@@ -10,7 +10,8 @@ ledger replay: under weighted average cost a sale removes ``qty × unit_cost``
 from the basis and leaves ``unit_cost`` where it was.
 
 The only tax arithmetic is :func:`taxation_projection.projected_tax`, applied to
-**the lot** — never the change in the whole account's projected tax.
+**the lot** — or, on an aged wrapper, to the proceeds' share of the envelope
+gain — never the change in the whole account's projected tax.
 """
 import math
 from dataclasses import dataclass
@@ -18,7 +19,8 @@ from datetime import date
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from application import taxation
-from application.taxation_projection import projected_tax, rate_changes_on
+from application.taxation_projection import (projected_base, projected_tax,
+                                             rate_changes_on)
 
 #: The relative slack a quantity is compared with, so a float typed back from
 #: the screen still sells the whole line.
@@ -46,6 +48,10 @@ class Account:
     opened_on: Optional[date]
     first_payment: Optional[date]
     lines: Sequence[Line]           # every held line of the account
+    # The newest `account_metrics` figures, cash included: an aged wrapper's
+    # assiette is its envelope gain, read as the account card reads it.
+    total_value: Optional[float] = None
+    gain_absolu: Optional[float] = None
 
 
 def simulate_sale(account: Account, symbol: str, qty: float, *,
@@ -125,7 +131,7 @@ def _tax(account: Account, gain: float, proceeds: float,
         return None, None, 'not_projectable'
     if kind == taxation.AGED_FLAT_REALISED:
         # The money stays in the wrapper; what it would owe on the way out is
-        # the plan's prorata, so the other lines' latent losses lower it.
+        # the proceeds' share of the envelope gain, the card's own assiette.
         return 0.0, _if_withdrawn(account, proceeds, now), None
     tax = _project(account, gain, now)
     # A model this version would refuse projects nothing, and says so rather
@@ -135,18 +141,22 @@ def _tax(account: Account, gain: float, proceeds: float,
 
 def _if_withdrawn(account: Account, proceeds: float,
                   now: date) -> Optional[float]:
-    value = latent = 0.0
+    latent = 0.0
     for line in account.lines:
         if not line.quantity:
             continue        # a closed line is worth nothing, and that is known
         if not _finite(line.price):
             return None
-        market_value = line.quantity * line.price
-        value += market_value
-        latent += market_value - line.cost_basis
-    if value <= 0:
+        latent += line.quantity * line.price - line.cost_basis
+    # A line is held and priced here, so a wrapper with no value on record is
+    # one no perf pass has measured yet: no figure, not a zero.
+    if account.total_value is None or account.total_value <= 0:
         return None
-    return _project(account, proceeds * latent / value, now)
+    base = projected_base(account.kind, latent, account.total_value,
+                          account.gain_absolu)
+    if base is None:
+        return None
+    return _project(account, proceeds * base / account.total_value, now)
 
 
 def _project(account: Account, base: float, now: date) -> Optional[float]:

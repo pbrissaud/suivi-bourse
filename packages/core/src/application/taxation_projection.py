@@ -7,15 +7,17 @@ kinds and their parameters — and sends the projection here.
 Three rules the arithmetic is, and they are the reason this module exists rather
 than a formula inlined in the route:
 
-- **the assiette is the latent gain, and it is the same one for every kind.**
-  ``Σ market_value − Σ cost_basis`` over the account's lines, which is the
-  question the screen asks: *what would you owe if you sold everything in this
-  account today*. ``gain_absolu`` was read here for the aged family until the
-  review of 2026-09-15 and is not: it is ``total_value − net_contributed`` under
-  another name, ``net_contributed`` is net of **withdrawals**, so a gain realised
-  and taken out years ago stayed in the assiette for ever — an emptied account
-  was billed tax on money it no longer held, while the same account under a flat
-  model answered zero. One question, one assiette, three kinds;
+- **the assiette depends on when the kind taxes, and** :func:`projected_base`
+  **is its one statement.** A flat or bracketed account is taxed when a line is
+  sold, so its assiette is the latent gain of its lines, ``Σ market_value −
+  Σ cost_basis``. An aged wrapper (a PEA, an assurance-vie) is taxed when money
+  leaves it, so its assiette is the **envelope gain**, ``total_value −
+  net_contributed`` (the account's ``gain_absolu``): cash, realised gains and
+  dividends kept inside count, and an emptied wrapper owes nothing. The account
+  card and the sale simulator both read it there. **Known limit:**
+  ``net_contributed`` is net of withdrawals, so after a partial withdrawal the
+  gain already taken out (and taxed then) stays in the assiette, and the
+  estimate overstates;
 - **a gain that is not known is not zero.** One unvalued line makes the assiette
   unknown and the figure does not exist. This module returns ``None`` there, and
   the route publishes no member at all;
@@ -34,10 +36,10 @@ so the figure and the sentence beside it cannot disagree in silence.
 
 Dating the projection off ``account_metrics`` instead was triaged and refused.
 It buys no calendar — the perf pass dates its own rows from the same
-``datetime.now(timezone.utc).date()`` — and it costs one: the assiette is read
-live off :func:`store_reads.PortfolioReader.positions`, so borrowing the perf
-cache's day would put the rate on a day the base is not on, which is the one
-disagreement this module exists to make unavailable.
+``datetime.now(timezone.utc).date()`` — and it costs one: the latent gain is
+read live off :func:`store_reads.PortfolioReader.positions`, so borrowing the
+perf cache's day would put the rate on a day that base is not on. (An aged
+wrapper's envelope gain is the newest ``account_metrics`` row's.)
 
 Only the three ``*_realised`` kinds project. ``none`` and ``withholding_income``
 return ``None`` here: what a ``none`` model is worth on the screen is ``0 €``,
@@ -87,9 +89,9 @@ def projected_tax(*, kind: str, parameters: Mapping[str, Any],
                   now: date) -> Optional[float]:
     """One account's tax at one instant, or ``None`` when there is none to state.
 
-    ``latent_gain`` is ``Σ market_value − Σ cost_basis`` over the account's
-    lines, already ``None`` if one held line of it was unvalued. What the kind
-    decides is the *rate*, never the assiette: the three answer one question.
+    ``latent_gain`` is the assiette :func:`projected_base` states for the
+    kind, the envelope gain of an aged wrapper and the latent gain of the lines
+    otherwise, already ``None`` where it is unknown.
     """
     if kind not in PROJECTED_KINDS:
         return None
@@ -105,6 +107,23 @@ def projected_tax(*, kind: str, parameters: Mapping[str, Any],
     return _bracketed(checked, latent_gain)
 
 
+def projected_base(kind: str, latent_gain: Optional[float],
+                   total_value: Optional[float],
+                   envelope_gain: Optional[float]) -> Optional[float]:
+    """The assiette of ``kind``, from the account's latent gain and its newest
+    ``total_value`` and ``gain_absolu`` (the envelope gain).
+
+    The latent gain for every kind but the aged one, which reads the envelope
+    gain: zero for an emptied wrapper, unknown while one held line is unvalued
+    (``latent_gain`` is then ``None``).
+    """
+    if kind != taxation.AGED_FLAT_REALISED or latent_gain is None:
+        return latent_gain
+    if not total_value:
+        return 0.0
+    return envelope_gain
+
+
 def projected_split(*, kind: str, parameters: Mapping[str, Any],
                     latent_gain: Optional[float],
                     opened_on: Optional[date] = None,
@@ -114,7 +133,8 @@ def projected_split(*, kind: str, parameters: Mapping[str, Any],
 
     The two are owed to different authorities and the screen names them
     separately; their sum is :func:`projected_tax` to the cent. The levy is
-    ``social_rate`` on the same floored assiette, whatever the kind, so the
+    ``social_rate`` on the same floored assiette, the one
+    :func:`projected_base` states for the kind, so the
     income part is the projection of the model **without** it.
     """
     checked = _checked(kind, parameters) if kind in PROJECTED_KINDS else None
@@ -316,6 +336,7 @@ def rate_changes_on(*, kind: str, parameters: Mapping[str, Any],
     return day
 
 
-__all__ = ['PROJECTED_KINDS', 'age_date', 'applied_rates', 'projected_split',
+__all__ = ['PROJECTED_KINDS', 'age_date', 'applied_rates', 'projected_base',
+           'projected_split',
            'projected_tax',
            'rate_changes_on', 'threshold_day']

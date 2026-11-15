@@ -6078,9 +6078,8 @@ def test_a_pea_counted_from_its_first_payment_still_gets_a_figure(tmp_path):
     assert 'opened_on' not in row
     assert row['first_payment'] == '2014-01-02'
     # Past five years: exempt of income tax, and the 17,2 % still applies.
-    # The assiette is the **latent** gain — 10 AAPL bought at 150, quoted at
-    # 200 — and not `gain_absolu`, which is net of withdrawals and would keep
-    # billing a gain this account no longer holds.
+    # The assiette is the envelope gain, `gain_absolu`: 1 500 deposited, all
+    # of it in 10 AAPL quoted at 200, so 500 — the latent gain, with no cash.
     assert row['projected_tax'] == pytest.approx(0.172 * 500.0, abs=5e-3)
     # Past the threshold, so the footing names the levy and nothing is coming.
     assert row['projected_rates'] == pytest.approx([0.172])
@@ -6116,6 +6115,43 @@ def test_a_pea_is_taxed_on_the_whole_gain_of_the_envelope_from_its_first_payment
     assert row['projected_base'] == pytest.approx(600.0, abs=5e-3)
     assert row['projected_base'] == pytest.approx(row['gain_absolu'], abs=5e-3)
     assert row['projected_rate_changes_on'] == '2027-01-12'
+
+
+def test_the_card_and_the_sale_simulator_tax_an_aged_wrapper_on_one_base(
+        tmp_path):
+    """#1575: the dividend kept inside the PEA is in the card's base (600, not
+    the latent 500), so it is in what withdrawing a sale's proceeds owes too:
+    the simulator prorates the same base over the same value, cash included."""
+    from application import account_facts, simulation
+
+    events = (
+        "date,event_type,symbol,name,quantity,unit_price,amount,account\n"
+        "2022-01-12,DEPOSIT,,,,,2000.00,pea\n"
+        "2024-01-15,BUY,AAPL,Apple Inc,10,150.00,,pea\n"
+        "2024-03-01,DIVIDEND,AAPL,,,,100.00,pea\n"
+    )
+    client, _ = _valued_pea(tmp_path, events=events)
+    runtime = api_module.current_runtime()
+    metrics = registry.build(runtime.config_manager)
+    metrics.ctx.base_currency = 'EUR'
+    metrics['performance'].update_account_metrics()
+    _carry(client, name='PEA', kind='aged_flat_realised',
+           parameters={'rate_before': 0.128, 'rate_after': 0.0,
+                       'threshold_years': 5, 'age_basis': 'first_payment',
+                       'social_rate': 0.172})
+    row = _pea_row(client)
+
+    now = datetime.now(timezone.utc)
+    sale = simulation.simulate_sale(
+        account_facts.simulation_account(
+            runtime.store.reader(), runtime.config_manager.current(), now,
+            'pea', 'AAPL'),
+        'AAPL', 4, now=now.date())
+
+    assert row['projected_base'] != pytest.approx(500.0, abs=5e-3)
+    (rate,) = row['projected_rates']
+    assert sale['if_withdrawn'] == pytest.approx(
+        rate * sale['proceeds'] * row['projected_base'] / row['total_value'])
 
 
 def test_the_positions_are_not_read_where_no_model_projects(tmp_path, mocker):

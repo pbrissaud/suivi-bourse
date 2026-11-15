@@ -167,7 +167,7 @@ The base depends on the shape of the model:
 | Shape | Taxable gain | Tax |
 |---|---|---|
 | **One rate on the gain** | The account's [unrealised gain](#latent-gain) | base × (rate + social charges) |
-| **A rate that changes with the wrapper's age** | Account value − [net contributed](#net-contributed) | base × (rate in force today + social charges) |
+| **A rate that changes with the wrapper's age** | Account value, cash included, − [net contributed](#net-contributed) | base × (rate in force today + social charges) |
 | **Brackets on the gain** | The account's unrealised gain | each bracket taxes the part of the base inside it, plus social charges on all of it |
 
 Example with brackets: up to 6 000 at 19 %, up to 50 000 at 21 %, and above at
@@ -177,6 +177,13 @@ A base below zero counts as zero. Each account is taken on its own, so a loss in
 one does not reduce the tax of another. **Not taxed** and **A withholding on
 income** show no tax. If one held line has no value, the account shows no
 estimate.
+
+A wrapper with an age shape, such as a PEA, is taxed when money leaves it, so
+its base is the whole gain of the wrapper: gains realised and dividends kept
+inside count. A simulated sale in it uses the same base: what taking the
+proceeds out would owe is the tax on proceeds × base ÷ account value. Net
+contributed is net of withdrawals, so after a partial withdrawal the gain you
+already took out stays in the base, and the estimate is too high.
 
 For the age shape, see
 [What the age is counted from](./your-taxation-model.mdx#age-basis). The card

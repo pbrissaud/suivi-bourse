@@ -31,9 +31,9 @@ from application.store_reads import PortfolioReader
 
 logger = getLogger(__name__)
 
-#: The kinds with an assiette to read, which since the review of 2026-09-15 is
-#: every kind that projects: the three read the same latent gain and differ only
-#: in the rate they apply to it.
+#: The kinds with an assiette to read: every kind that projects. Each needs the
+#: latent gain of its lines, the aged one to know whether its envelope gain is
+#: measurable (:func:`taxation_projection.projected_base`).
 _NEEDS_POSITIONS = taxation_projection.PROJECTED_KINDS
 
 
@@ -87,8 +87,8 @@ class Account(TypedDict):
     # (IR) and the social levies (PS), whose sum is `projected_tax`.
     projected_income_tax: NotRequired[float]
     projected_social_levy: NotRequired[float]
-    # The latent gain `projected_tax` was computed on — not the head's `Gain`,
-    # which adds realised, dividends and fees.
+    # The assiette `projected_tax` was computed on: the latent gain of the
+    # lines, or an aged wrapper's envelope gain (`gain_absolu`).
     projected_base: NotRequired[float]
     # The rate or rates that produced `projected_tax`, as fractions: one per
     # flat family, one per rung of a ladder. Published so the front never
@@ -128,9 +128,9 @@ def accounts_payload(store, snapshot, now: datetime) -> AccountsPayload:
     payments = ledger.first_payments(store)
     # **The projection is computed here, not in the browser** (#919): the rates
     # are a declaration the front never holds, and a figure this load-bearing is
-    # not re-derived in two languages. The assiette for the kinds that read
-    # one is folded off `build_shares`, so the tax rests on the valuation the
-    # shares table already renders rather than on a second opinion of it.
+    # not re-derived in two languages. The latent gain is folded off
+    # `build_shares`, so the tax rests on the valuation the shares table
+    # already renders; an aged wrapper's envelope gain is its metrics row's.
     models = {model.id: model
               for model in accounts_module.read_models(store)}
     usable = _usable(models, carried, roster)
@@ -197,12 +197,18 @@ def simulation_account(store, snapshot, now: datetime, account_id: str,
     shares = portfolio_view.build_shares(reader.positions(), terminal)
 
     model = usable.get(account_id)
+    # **The envelope the card reads**: the same newest `account_metrics` row,
+    # so an aged wrapper's withdrawal is prorated on the card's own assiette.
+    metrics = next((row for row in reader.latest_account_metrics()
+                    if row['account'] == account_id), {})
     return simulation.Account(
         id=account_id,
         kind=None if model is None else model.kind,
         parameters={} if model is None else model.parameters,
         opened_on=opened_on.get(account_id),
         first_payment=payments.get(account_id),
+        total_value=metrics.get('total_value'),
+        gain_absolu=metrics.get('gain_absolu'),
         lines=[simulation.Line(symbol=share.symbol,
                                quantity=holding.quantity or 0,
                                cost_basis=holding.cost_basis or 0,
@@ -257,7 +263,7 @@ def _usable(models: dict, carried: dict, roster) -> Dict[str, Any]:
 
 def _latent_gains(reader, store, snapshot, now: datetime, roster,
                   usable: dict) -> dict:
-    """The per-account assiette — **read only where something reads it**.
+    """The per-account latent gain — **read only where something reads it**.
 
     `reader.positions()` is the portfolio's hot read, and this payload is asked
     for by every page that needs the account list: the settings, the ledger and
@@ -331,7 +337,9 @@ def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
     facts = dict(kind=model.kind, parameters=model.parameters,
                  opened_on=opened_on.get(row['id']),
                  first_payment=payments.get(row['id']), now=today)
-    base = _assiette(model.kind, row, latent.get(row['id']))
+    base = taxation_projection.projected_base(
+        model.kind, latent.get(row['id']), row.get('total_value'),
+        row.get('gain_absolu'))
     tax = taxation_projection.projected_tax(latent_gain=base, **facts)
     changes_on = taxation_projection.rate_changes_on(**facts)
     split = taxation_projection.projected_split(latent_gain=base, **facts)
@@ -347,8 +355,8 @@ def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
         'projected_social_levy': None if income is None else round(tax - income, 2),
         # **The base rides with the figure**, and only where there is a figure.
         # The panel states a `Gain` of its own four paces up — latent *plus*
-        # realised, dividends and fees — and the projection reads the latent
-        # term alone. Two figures called a gain, one screen, and applying the
+        # realised, dividends and fees — and a flat or bracketed projection
+        # reads the latent term alone. Two figures called a gain, one screen, and applying the
         # rate this card names to the gain the head names misses by a factor of
         # three on a real account. Published rather than re-derived from
         # `projected_tax / rate`, which is not the base on a ladder and is a
@@ -357,22 +365,6 @@ def _projection(row: dict, opened_on: dict, payments: dict, usable: dict,
         'projected_rates': taxation_projection.applied_rates(**facts),
         'projected_rate_changes_on': instants.iso(changes_on),
     }
-
-
-def _assiette(kind: str, row: dict, latent: Optional[float]) -> Optional[float]:
-    """What the rate is applied to.
-
-    An aged wrapper (PEA, assurance-vie) is taxed on the **whole gain of the
-    envelope** when it is emptied — value minus net contributions, so realised
-    gains and dividends that stayed inside count — where the other kinds read
-    the latent gain of their lines. An emptied wrapper holds nothing to tax, and
-    an assiette one unvalued line makes unknown stays unknown.
-    """
-    if kind != taxation.AGED_FLAT_REALISED or latent is None:
-        return latent
-    if not row.get('total_value'):
-        return 0.0
-    return row.get('gain_absolu')
 
 
 def declared_only(facts: dict) -> dict:
