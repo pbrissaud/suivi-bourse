@@ -1281,7 +1281,7 @@
   "settings.provider.test.passed": "Answers in {seconds, number, ::.#} s · {count, plural, one {# model available} other {# models available}}",
   "settings.refs.add": "Add a fund",
   "settings.refs.unfollow.title": "Stop following {name}?",
-  "settings.refs.unfollow.line": "Immediate. The comparison no longer offers this fund; its history stays until the next clean-up.",
+  "settings.refs.unfollow.line": "Immediate. The comparison no longer offers this fund; its history is kept until you choose Stop keeping the history.",
   "settings.refs.unfollow": "Stop following",
   "settings.refs.state.ready": "full history",
   "settings.refs.state.neverPriced": "no quotes",
