@@ -934,7 +934,7 @@ describe('the chart', () => {
       'aria-selected',
       'true',
     )
-    expect(await screen.findByText('Performance des titres')).toBeInTheDocument()
+    expect(await screen.findByText('Performance du portefeuille')).toBeInTheDocument()
   })
 
   it('names its curves with the figures the drawing ends on', async () => {
