@@ -58,6 +58,24 @@ The lint names `packages` rather than `src/`, which would walk the front's
 web API and the scheduler share one process and that file holds the whole
 sequence.
 
+**The agent's evals** (`tests/evals/`, marker `eval`) ask real models, so the
+pull request gate deselects them; run them before a release, by hand or with
+the *Agent evals* workflow (`workflow_dispatch`, secrets
+`AGENT_EVAL_ANTHROPIC_KEY`, `AGENT_EVAL_OPENAI_BASE_URL`,
+`AGENT_EVAL_OPENAI_KEY`). A provider runs when its variables are set and is
+skipped, naming the one missing, when not:
+
+```bash
+AGENT_EVAL_ANTHROPIC_KEY=… AGENT_EVAL_ANTHROPIC_MODEL=claude-sonnet-5-5 \
+AGENT_EVAL_OPENAI_BASE_URL=… AGENT_EVAL_OPENAI_MODEL=… AGENT_EVAL_OPENAI_KEY=… \
+AGENT_EVAL_OLLAMA_BASE_URL=http://localhost:11434 AGENT_EVAL_OLLAMA_MODEL=qwen3:8b \
+uv run pytest tests/evals -m eval -v -rs
+```
+
+`AGENT_EVAL_OPENAI_KEY` is optional (a local gateway may take none). Each
+scenario reads provider by provider: `test_…[anthropic]`, `[openai_compatible]`,
+`[ollama]`.
+
 **It runs on macOS**, and that is new: the app no longer forks, so
 there is no longer a container to build in order to see it work.
 

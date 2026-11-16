@@ -1,0 +1,72 @@
+name: "Agent evals"
+
+# The agent's acceptance scenarios against real providers (#1118): the tests
+# marked `eval` under `tests/evals/`, which `pr-checks.yml` deselects. By hand
+# only, before a release: a run costs money, needs keys and answers differently
+# each time, so it is a reading taken on purpose and never a gate.
+#
+# One step per provider, the same command as CONTRIBUTING.md's. A provider
+# whose secret (or model input) is empty is skipped by pytest itself, with the
+# variable named in the `-rs` summary; `!cancelled()` keeps one provider's
+# failure from hiding the next one's result.
+on:
+  workflow_dispatch:
+    inputs:
+      anthropic_model:
+        description: "Anthropic model id"
+        default: "claude-sonnet-5-5"
+      openai_model:
+        description: "Model on the OpenAI-compatible gateway (empty: skipped)"
+        default: ""
+      ollama_model:
+        description: "Ollama model to pull and evaluate, e.g. qwen3:8b (empty: skipped)"
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    name: "The agent's scenarios, provider by provider"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Anthropic
+        if: ${{ !cancelled() }}
+        env:
+          AGENT_EVAL_ANTHROPIC_KEY: ${{ secrets.AGENT_EVAL_ANTHROPIC_KEY }}
+          AGENT_EVAL_ANTHROPIC_MODEL: ${{ inputs.anthropic_model }}
+        run: uv run pytest tests/evals -m eval -v -rs -k anthropic
+
+      - name: OpenAI-compatible gateway
+        if: ${{ !cancelled() }}
+        env:
+          AGENT_EVAL_OPENAI_BASE_URL: ${{ secrets.AGENT_EVAL_OPENAI_BASE_URL }}
+          AGENT_EVAL_OPENAI_KEY: ${{ secrets.AGENT_EVAL_OPENAI_KEY }}
+          AGENT_EVAL_OPENAI_MODEL: ${{ inputs.openai_model }}
+        run: uv run pytest tests/evals -m eval -v -rs -k openai_compatible
+
+      # The model name reaches the shell through `env`, never spliced into the
+      # script: an input is text anyone who can dispatch the workflow writes.
+      - name: Install Ollama and pull the model
+        if: ${{ !cancelled() && inputs.ollama_model != '' }}
+        env:
+          OLLAMA_MODEL: ${{ inputs.ollama_model }}
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama pull "$OLLAMA_MODEL"
+
+      - name: Ollama
+        if: ${{ !cancelled() }}
+        env:
+          AGENT_EVAL_OLLAMA_BASE_URL: ${{ inputs.ollama_model != '' && 'http://localhost:11434' || '' }}
+          AGENT_EVAL_OLLAMA_MODEL: ${{ inputs.ollama_model }}
+        run: uv run pytest tests/evals -m eval -v -rs -k ollama
