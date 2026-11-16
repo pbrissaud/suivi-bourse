@@ -55,11 +55,12 @@ PROPOSED = [
 # -------------------------------------------------------------- figures --
 
 _SPACE = '[   ]'
-#: A figure: ``1 234,56`` (any of the three spaces), ``1,234.56``, ``512.4``,
+#: A figure: ``1 234,56`` or ``1 234.56`` (any of the three spaces),
+#: ``1,234.56``, ``512.4``,
 #: ``30``; never a digit glued to a word (``CW8.PA``).
 _FIGURE = re.compile(
     r'(?<![\w.,])'
-    rf'(\d{{1,3}}(?:,\d{{3}})+\.\d+|\d{{1,3}}(?:{_SPACE}\d{{3}})+(?:,\d+)?'
+    rf'(\d{{1,3}}(?:,\d{{3}})+\.\d+|\d{{1,3}}(?:{_SPACE}\d{{3}})+(?:[,.]\d+)?'
     r'|\d+(?:[.,]\d+)?)'
     rf'(?!\w)({_SPACE}?%)?')
 #: List numbering at the start of a line: ``1.``, ``2)``, ``### 3.``, ``**4.**``.

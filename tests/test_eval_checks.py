@@ -42,6 +42,11 @@ def test_an_invented_or_misrounded_figure_is_caught():
         '61', '1 250,00']
 
 
+def test_a_space_grouped_figure_keeps_its_decimal_point():
+    assert scenarios.figures('1 234.99 €')[0][:3] == ('1 234.99', 1234.99, 2)
+    assert scenarios.unmatched('1 234.99 €', [{'v': 1234.0}]) == ['1 234.99']
+
+
 def test_an_imperative_is_found_as_a_whole_word_in_any_case():
     assert scenarios.imperatives('Vends tes LVMH. Tu devrais attendre.') == [
         'vends', 'tu devrais']
