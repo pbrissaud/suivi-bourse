@@ -532,3 +532,22 @@ def test_an_empty_ledger_tracks_nothing_even_with_a_reference_named(tmp_path):
 
     assert snapshot.events == []
     assert snapshot.tracked_windows("CW8.PA") == {}
+
+
+def test_the_v4_warning_never_logs_the_home_path(tmp_path, monkeypatch, mocker):
+    """The warning reaches the Journal and its export: no user name (#1580)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config_dir = tmp_path / ".config" / "SuiviBourse"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.yaml").write_text("{}\n")
+    (config_dir / "settings.yaml").write_text("{}\n")
+    warn = mocker.patch.object(main.app_logger, "warning")
+
+    ConfigurationManager().report_unread_files()
+
+    messages = [call.args[0] for call in warn.call_args_list]
+    assert len(messages) == 2
+    for message in messages:
+        assert str(tmp_path) not in message
+        assert "~/.config/SuiviBourse/" in message
+        assert "5.4" in message

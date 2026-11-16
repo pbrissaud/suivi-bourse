@@ -260,25 +260,32 @@ class ConfigurationManager:
     def report_unread_files(self) -> List[str]:
         """Name the v4 files this version finds and does not read (#711, #698)."""
         named = []
+        # Log ~ rather than the home path: it would name the user (#1580).
+        home = Path.home()
+        shown = self.config_dir
+        if shown.is_relative_to(home):
+            shown = Path('~') / shown.relative_to(home)
+        removal = (" Version 5.4 stops recognising version 4 files: "
+                   "migrate with 5.3.")
 
         legacy = self.config_dir / self.LEGACY_MANUAL_FILE
         if legacy.exists():
             named.append(str(legacy))
             app_logger.warning(
-                f"Found {legacy}, and this version does not read it: a "
+                f"Found {shown / self.LEGACY_MANUAL_FILE}, and this version does not read it: a "
                 f"portfolio is described by dated events only. Your positions "
                 f"come from the events you record in the app or hand it in a "
-                f"file — the one above is left untouched.")
+                f"file — the one above is left untouched.{removal}")
 
         settings = self.config_dir / self.LEGACY_SETTINGS_FILE
         if settings.exists():
             named.append(str(settings))
             app_logger.warning(
-                f"Found {settings}, and this version does not read it: "
+                f"Found {shown / self.LEGACY_SETTINGS_FILE}, and this version does not read it: "
                 f"accounts are declared in the app "
                 f"({', '.join(accounts_module.ACCOUNT_COLUMNS)}), and no "
                 f"setting names where a file is read from any more — you hand "
-                f"the app one. The file above is left untouched.")
+                f"the app one. The file above is left untouched.{removal}")
 
         return named
 
