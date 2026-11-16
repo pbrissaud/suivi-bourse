@@ -189,6 +189,54 @@ describe('editing an account', () => {
     await waitFor(() => expect(sent).toEqual([{ label: 'Alpha', taxation_model_id: null }]))
   })
 
+  describe('the opening date (#1576)', () => {
+    type User = ReturnType<typeof renderApp>['user']
+    async function saveFrom(
+      account: Account,
+      edit?: (field: HTMLElement, user: User) => Promise<void>,
+    ) {
+      const { user } = renderAccounts([account])
+      const sent: unknown[] = []
+      server.use(
+        http.patch(ROUTES.account, async ({ request }) => {
+          sent.push(await request.json())
+          return HttpResponse.json(anAccount())
+        }),
+      )
+      const panel = await openEdition(user)
+      if (edit) await edit(within(panel).getByLabelText(/Ouvert le/), user)
+      await user.click(within(panel).getByRole('button', { name: 'Enregistrer' }))
+      await waitFor(() => expect(sent).toHaveLength(1))
+      return sent[0]
+    }
+
+    it('saves the first payment it shows when no date is saved', async () => {
+      const sent = await saveFrom(anAccount({ first_payment: '2020-03-01' }))
+      expect(sent).toEqual({ label: 'Alpha', opened_on: '2020-03-01' })
+    })
+
+    it('does not resend a saved date left alone', async () => {
+      const sent = await saveFrom(
+        anAccount({ opened_on: '2019-01-02', first_payment: '2020-03-01' }),
+      )
+      expect(sent).toEqual({ label: 'Alpha' })
+    })
+
+    it('sends nothing when the suggestion is cleared: there is nothing to clear', async () => {
+      const sent = await saveFrom(anAccount({ first_payment: '2020-03-01' }), (field, user) =>
+        user.clear(field),
+      )
+      expect(sent).toEqual({ label: 'Alpha' })
+    })
+
+    it('takes a saved date away with a null', async () => {
+      const sent = await saveFrom(anAccount({ opened_on: '2019-01-02' }), (field, user) =>
+        user.clear(field),
+      )
+      expect(sent).toEqual({ label: 'Alpha', opened_on: null })
+    })
+  })
+
   it('removes an account nothing names, through the destructive dialog', async () => {
     const { user } = renderAccounts([anAccount(), anAccount({ id: 'extra', label: 'Extra' })])
     const removed: string[] = []
