@@ -49,24 +49,31 @@ def bracketed(brackets, gain):
 
 
 # --------------------------------------------------------------------------- #
-# One assiette, three kinds
+# The assiette a kind reads
 # --------------------------------------------------------------------------- #
 
 def test_the_three_kinds_read_one_assiette_and_differ_only_in_the_rate():
-    """`gain_absolu` was the aged family's assiette until the review of
-    2026-09-15 found what it is: `total_value − net_contributed`, whose
-    contribution is net of **withdrawals**. A gain realised and taken out years
-    ago stayed in it for ever, so an emptied wrapper was billed tax on money it
-    no longer held while the same account under a flat model answered zero.
-
-    One question — *what would you owe if you sold everything today* — so one
-    assiette. The kind decides the rate and nothing else.
+    """`projected_tax` applies a rate to the assiette it is handed, whatever the
+    kind; which assiette a kind reads is :func:`projected_base`'s to state. An
+    emptied account owes nothing under any of the three.
     """
     emptied = 0.0
     assert flat(CTO, emptied) == 0.0
     assert aged(PEA, emptied, first_payment=date(2015, 3, 1),
                 now=date(2026, 9, 15)) == 0.0
     assert bracketed(list(LADDER), emptied) == 0.0
+
+
+def test_an_aged_wrapper_reads_its_envelope_gain_and_the_others_their_lines():
+    """#1575: what leaves an aged wrapper owes on cash and gains kept inside."""
+    base = projection.projected_base
+    for kind in (taxation.FLAT_REALISED, taxation.BRACKETED_REALISED):
+        assert base(kind, 500.0, 2_600.0, 600.0) == 500.0
+    aged_ = taxation.AGED_FLAT_REALISED
+    assert base(aged_, 500.0, 2_600.0, 600.0) == 600.0
+    assert base(aged_, 0.0, 0.0, -50.0) == 0.0          # emptied
+    assert base(aged_, None, 2_600.0, 600.0) is None    # a line unvalued
+    assert base(aged_, 500.0, None, None) is None       # no value on record yet
 
 
 # --------------------------------------------------------------------------- #

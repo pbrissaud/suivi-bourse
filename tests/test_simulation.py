@@ -21,10 +21,12 @@ LADDER = {'brackets': [{'upper_bound': 1_000.0, 'rate': 0.10},
                        {'upper_bound': None, 'rate': 0.20}]}
 
 
-def account(kind, parameters=None, lines=(), *, id='a', first_payment=None):
+def account(kind, parameters=None, lines=(), *, id='a', first_payment=None,
+            total_value=None, gain_absolu=None):
     return Account(id=id, kind=kind, parameters=parameters or {},
                    opened_on=None, first_payment=first_payment,
-                   lines=list(lines))
+                   lines=list(lines), total_value=total_value,
+                   gain_absolu=gain_absolu)
 
 
 CW8 = Line('CW8.PA', 15, 6_150.0, 512.3)
@@ -64,12 +66,15 @@ def test_a_bracketed_sale_straddles_two_brackets_from_bracket_zero():
                                     'annual_accumulation']
 
 
-#: L = 1 000 − 500 = 500, V = 2 000 + 2 500 = 4 500.
+#: Lines worth 2 000 + 2 500 = 4 500 for a latent 500, beside 500 of cash: the
+#: envelope is worth 5 000 for a gain of 800 (300 realised or paid inside).
 PLAN = [Line('A', 10, 1_000.0, 200.0), Line('B', 10, 3_000.0, 250.0)]
 
 
 def pea(lines=PLAN, **facts):
     facts.setdefault('first_payment', date(2021, 1, 1))
+    facts.setdefault('total_value', 5_000.0)
+    facts.setdefault('gain_absolu', 800.0)
     return account(taxation.AGED_FLAT_REALISED, PEA, lines, **facts)
 
 
@@ -77,12 +82,12 @@ def test_an_aged_sale_owes_nothing_now_and_the_prorata_on_withdrawal():
     under = simulate_sale(pea(), 'A', 9, now=date(2025, 6, 1))
     over = simulate_sale(pea(), 'A', 9, now=date(2026, 6, 1))
 
-    # proceeds 1 800 × 500 / 4 500 = 200, below the lot's own gain of 900.
+    # proceeds 1 800 × 800 / 5 000 = 288, below the lot's own gain of 900.
     assert under['gain'] == pytest.approx(900.0)
     assert under['tax_now'] == 0
     assert under['net_proceeds'] == pytest.approx(1_800.0)
-    assert under['if_withdrawn'] == pytest.approx(60.0)     # 200 × 30 %
-    assert over['if_withdrawn'] == pytest.approx(34.4)      # 200 × 17.2 %
+    assert under['if_withdrawn'] == pytest.approx(86.4)     # 288 × 30 %
+    assert over['if_withdrawn'] == pytest.approx(49.536)    # 288 × 17.2 %
     assert under['not_modelled'] == ['social_contributions_detail',
                                      'early_withdrawal_closure']
     assert over['not_modelled'] == ['social_contributions_detail']
@@ -91,7 +96,16 @@ def test_an_aged_sale_owes_nothing_now_and_the_prorata_on_withdrawal():
 def test_a_negative_prorata_owes_nothing_on_withdrawal():
     lines = [Line('A', 10, 1_000.0, 200.0), Line('B', 10, 5_000.0, 250.0)]
 
-    assert simulate_sale(pea(lines), 'A', 9, now=NOW)['if_withdrawn'] == 0
+    assert simulate_sale(pea(lines, gain_absolu=-1_200.0), 'A', 9,
+                         now=NOW)['if_withdrawn'] == 0
+
+
+@pytest.mark.parametrize('total_value', [None, 0.0])
+def test_a_wrapper_with_no_value_on_record_has_no_withdrawal_figure(
+        total_value):
+    """Lines worth 4 500 and no measured envelope: no figure, not a zero."""
+    assert simulate_sale(pea(total_value=total_value), 'A', 9,
+                         now=NOW)['if_withdrawn'] is None
 
 
 def test_an_unvalued_line_elsewhere_leaves_the_withdrawal_unknown():

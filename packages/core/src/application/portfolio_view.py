@@ -116,8 +116,8 @@ def build_shares(rows: Sequence[Dict[str, Any]],
 def latent_gains_by_account(
         shares: Sequence[SharePosition],
         accounts: Collection[str] = ()) -> Dict[str, Optional[float]]:
-    """``Σ market_value − Σ cost_basis`` per account — the projection's assiette
-    for the two kinds that read one (#919).
+    """``Σ market_value − Σ cost_basis`` per account — the assiette of the flat
+    and bracketed kinds, and what says an aged wrapper's is measurable (#919).
 
     Folded off :func:`build_shares` rather than off P1's rows, so the figure is
     the one the shares table already renders, carried prices and all.

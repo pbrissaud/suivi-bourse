@@ -399,11 +399,14 @@ zero.
 `if_withdrawn` is only ever a figure on an aged wrapper (a PEA, an
 assurance-vie): the sale itself owes nothing there (`tax_now` 0), and this
 is what taking the proceeds out of the wrapper would owe. It is prorated on the
-latent gain of the WHOLE plan, so the other lines' losses lower it, and it can
-be below the tax on this lot's own gain. It is null off an aged wrapper, and
-null ON one when the plan cannot be measured — a line with no price, or no day
-to age the plan from. On an aged wrapper a null is NO FIGURE for the exit, not
-an exit that owes nothing, even with `reason` null. While the plan is under its
+WHOLE gain of the envelope, the projected base `list_accounts` serves (value,
+cash included, minus net contributions): the other lines' losses lower it, cash
+and gains kept inside raise it, and it can differ from the tax on this lot's
+own gain. It is null off an aged wrapper, and
+null ON one when the plan cannot be measured — a line with no price, no value
+on record for the account yet, or no day to age the plan from. On an aged
+wrapper a null is NO FIGURE for the exit, not an exit that owes nothing, even
+with `reason` null. While the plan is under its
 age threshold, `not_modelled` carries "early_withdrawal_closure": some wrappers
 close the plan on a withdrawal before it and tax the whole plan's gain, so
 `if_withdrawn` is then a floor, not the cost of the exit.
