@@ -13,6 +13,114 @@ The version 4 history is not merged in here. It stays with the
 [version 4 documentation](/docs/v4/changelog), where the releases it announces
 can still be run.
 
+## 5.3 — An analyst agent, an access code, a new look
+
+A large feature release on top of 5.2. Same mounts: pull the image and restart the
+container. Read **Before you upgrade** first if you still keep version 4 files.
+
+### An agent that reads your portfolio
+
+An optional analyst now answers questions about your lines, accounts and ledger,
+and simulates a sale and its tax. It has its own page and you switch it on in
+four guided steps, with your own provider and key. Pick how long it thinks, and
+read each tool it used under its answer. See [Agent](./agent) and
+[Set up the agent](./set-up-the-agent).
+
+- It can **propose ledger events**. Nothing is written until you review them in
+  the import preview and merge them: [Add the events it proposes](./agent#events).
+- It can **turn a broker statement into proposed events**:
+  [Import your events](./import-your-events#agent).
+- It keeps an **investor profile** that it proposes and you confirm, plus threads
+  and usage statistics.
+- It can read the comparison with an index fund.
+
+Your own agent can also connect to the app and simulate a sale, net of tax:
+[Connect your own agent](./connect-your-own-agent).
+
+### An access code and tokens
+
+You can lock the whole app behind a six-digit **access code**, off by default.
+Choose how long a session lasts under **Auto-lock**, from 15 minutes to 30 days.
+Scripts and agents get **access tokens** that open `/api`, `/mcp` or both, with
+an expiry you choose. See [Secure access](./secure-access).
+
+### A new look
+
+The whole app was redrawn around one warm, quiet design.
+
+- A fixed dashboard that puts the portfolio value first, with cards for where
+  the money is (by security or by account) and whether you beat your index, and
+  a gain breakdown that adds up to the total.
+- The ledger, Shares and Accounts pages become lists on a phone. The Shares page
+  has a page for each security.
+- A **Settings** page in titled sections, a **System** page with each job's run
+  history, and a notifications bell: [System](./system).
+- Edit the colours as a theme with a live preview, or import one:
+  [Edit the theme](./settings#theme).
+- A message tells you when a newer release is out:
+  [Know when a new version is out](./backup-and-update#release-check).
+- Charts get readable axes, and touch targets reach 44 px on a phone.
+
+### Simulate a sale, net of tax
+
+The account card and the agent now show what a sale would leave you after tax.
+Taxation models published on the docs site can be imported in one click, and the
+docs list the European regimes and what to enter for each:
+[Taxation models in Europe](./taxation-models-in-europe).
+
+### Import and events
+
+- You can import several files at once, and the page shows the expected columns.
+- Semicolon-separated CSV files are read.
+- The import preview asks about the currency of foreign-listed lines before
+  anything is written.
+- The event form says how much cash leaves or enters the account.
+- A dividend fee larger than its dividend is refused.
+
+### Comparison funds
+
+You can follow several funds at once. They download in the background, and a
+newly chosen fund no longer waits behind your held symbols. A fund Yahoo does not
+know says so instead of reading "just started" forever. See
+[Comparison](./benchmark).
+
+### Fixes
+
+- **Daily moves match the press.** The day's close is now the official one, after
+  the closing auction, not the last price before it. The mover figures shift by
+  about 0.15 point on some days, and the stored history is repaired once at start.
+- **Prices without noise.** Prices are stored as quoted, not as `173.82000732…`.
+- **Future-dated events wait.** A buy, sale or deposit dated after today no longer
+  counts in today's positions.
+- **One share per account.** The dashboard and the Accounts page divide by the same
+  total, so the PEA no longer reads 88.6 % on one and 88.5 % on the other.
+- **One tax base.** For a PEA or an assurance-vie, the account card and the sale
+  simulator tax the same amount, cash and dividends kept inside included. A sale
+  before the age threshold says its figure is a floor, since an early withdrawal
+  may close the plan.
+- A tax bracket whose rate, with the social charges, exceeds 100 % is refused.
+- The account form saves the opening date it shows.
+- The performance legend names what the curve draws, cash included.
+- A figure's sign follows the rounded figure shown.
+- The movers are ranked by the size of their move, each against its own previous
+  close.
+- The dashboard no longer shows the cash alone while the history is rebuilding.
+- Job history and scheduling state survive a restart.
+- A failing history fetch backs off, and outbound requests identify themselves so
+  Cloudflare stops refusing them.
+- `LOG_LEVEL` is read in any case, and an unknown value no longer stops the app.
+
+### Before you upgrade
+
+**5.3 is the last release that recognises version 4 files** (`config.yaml` and
+`settings.yaml`). Version 5.4 stops reading them, so migrate with 5.3 if you
+still have them: [Coming from v4](./coming-from-v4). The start-up warning now says
+so, and shows the folder with `~` instead of your home path.
+
+The `portfolio.csv` export takes its account figures from the same source as the
+Accounts page. It gains an **as_of** column right after the account label, so
+later columns shift one place right. Accounts with no figure yet have empty cells.
+
 ## 5.2 — Compare with an index fund, truer prices
 
 A feature release on top of 5.1. Same mounts: pull the image and restart the
