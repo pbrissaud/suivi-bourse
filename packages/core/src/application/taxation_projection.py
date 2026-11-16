@@ -115,10 +115,13 @@ def projected_base(kind: str, latent_gain: Optional[float],
 
     The latent gain for every kind but the aged one, which reads the envelope
     gain: zero for an emptied wrapper, unknown while one held line is unvalued
-    (``latent_gain`` is then ``None``).
+    (``latent_gain`` is then ``None``) or while no value is on record yet
+    (``total_value`` is ``None``), as the sale simulator also answers.
     """
     if kind != taxation.AGED_FLAT_REALISED or latent_gain is None:
         return latent_gain
+    if total_value is None:
+        return None
     if not total_value:
         return 0.0
     return envelope_gain

@@ -73,6 +73,7 @@ def test_an_aged_wrapper_reads_its_envelope_gain_and_the_others_their_lines():
     assert base(aged_, 500.0, 2_600.0, 600.0) == 600.0
     assert base(aged_, 0.0, 0.0, -50.0) == 0.0          # emptied
     assert base(aged_, None, 2_600.0, 600.0) is None    # a line unvalued
+    assert base(aged_, 500.0, None, None) is None       # no value on record yet
 
 
 # --------------------------------------------------------------------------- #
