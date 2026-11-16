@@ -428,7 +428,7 @@ describe('an install that has imported nothing, and the format it reads (#1266)'
       'utf8',
     )
 
-    const example = page.split('## The format {#format}')[1].split('```csv\n')[1].split('\n')[0]
+    const example = page.split('{#format}')[1].split('```csv\n')[1].split('\n')[0]
 
     expect(example.split(',')).toEqual([...EVENT_FILE_COLUMNS])
   })
