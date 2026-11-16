@@ -47,7 +47,8 @@ def test_an_imperative_is_found_as_a_whole_word_in_any_case():
         'vends', 'tu devrais']
     assert scenarios.imperatives(
         "Une vente revendue ou des titres vendus, achetés : rien à dire.") == []
-    # Frozen as the issue lists it: a conditional "si tu vends" is flagged too.
+    # The list is frozen as the issue writes it: "si tu vends" would be
+    # flagged, while the "vous" form of a conditional is not on it.
     assert scenarios.imperatives('Si vous vendez 4 titres, vous paieriez 60 €') == []
 
 
