@@ -13,8 +13,12 @@ def bounded_get(url: str, max_bytes: int, timeout: float = 5) -> bytes:
 
     ``urlopen``'s timeout bounds each socket operation, so a server trickling
     bytes would hold the request for ever; the body is read in chunks against
-    one deadline instead.
+    one deadline instead. ``read1`` returns what one socket read brought, where
+    ``read(n)`` would wait for all ``n`` bytes.
     """
+    # ponytail: the deadline is checked between reads, each bounded by
+    # ``timeout``, so a trickling server is cut within 2 x ``timeout``; DNS has
+    # no bound of its own. A worker thread with a hard join, if that matters.
     deadline = time.monotonic() + timeout
     request = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -24,7 +28,7 @@ def bounded_get(url: str, max_bytes: int, timeout: float = 5) -> bytes:
         while len(raw) <= max_bytes:
             if time.monotonic() > deadline:
                 raise TimeoutError(f'no full answer within {timeout:g} s')
-            chunk = response.read(min(65536, max_bytes + 1 - len(raw)))
+            chunk = response.read1(min(65536, max_bytes + 1 - len(raw)))
             if not chunk:
                 break
             raw += chunk

@@ -113,6 +113,8 @@ class _Response:
         chunk, self.body = self.body[:size], self.body[size:]
         return chunk
 
+    read1 = read
+
 
 def test_http_fetch_raises_on_a_refusal_and_on_an_oversized_body(monkeypatch):
     replies = iter([_Response(200, b'{}'), _Response(404, b''),
