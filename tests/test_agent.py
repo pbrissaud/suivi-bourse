@@ -12,11 +12,21 @@ from test_mcp_server import build_runtime, listed
 
 KEY = 'test-key-0123456789abcd'
 
+#: What the settings say of the web search while no address is stored.
+NO_SEARCH = {'search_url': None, 'search_privacy': None}
+
+
+def _never(url):
+    raise AssertionError(f'the SearXNG was asked: {url}')
+
 
 @pytest.fixture
 def client(tmp_path):
     runtime, _ = build_runtime(tmp_path)
-    return create_app(runtime).test_client()
+    app = create_app(runtime)
+    # No test reaches the network: the ones that set an address serve it.
+    app.config['SEARCH_FETCH'] = _never
+    return app.test_client()
 
 
 def configured(client, kind='anthropic', **fields):
@@ -238,15 +248,15 @@ def test_ollama_and_an_older_gpt_get_no_breakpoint(tmp_path, provider, base_url)
 
 def test_the_agent_is_off_and_has_no_provider_until_configured(client):
     assert client.get('/api/agent/config').get_json() == {
-        'enabled': False, 'reasoning': 'low'}
+        'enabled': False, 'reasoning': 'low', **NO_SEARCH}
     assert client.get('/api/agent/providers').get_json() == []
 
 
-def test_the_config_holds_enabled_and_reasoning_only(client):
+def test_the_config_holds_the_settings_and_no_provider(client):
     configured(client)
 
     assert client.get('/api/agent/config').get_json() == {
-        'enabled': True, 'reasoning': 'low'}
+        'enabled': True, 'reasoning': 'low', **NO_SEARCH}
 
 
 def test_the_first_provider_is_the_default_and_the_second_is_not(client):
@@ -319,7 +329,7 @@ def test_switching_on_needs_a_default_provider_with_a_model(client):
     client.patch(f"/api/agent/providers/{default['id']}",
                  json={'default_model': 'claude-sonnet-5-5'})
     assert client.put('/api/agent/config', json={'enabled': True}).get_json() == {
-        'enabled': True, 'reasoning': 'low'}
+        'enabled': True, 'reasoning': 'low', **NO_SEARCH}
 
 
 def test_deleting_the_last_provider_switches_the_agent_off(client):
@@ -564,9 +574,10 @@ def test_each_reasoning_level_is_kept_without_touching_the_rest(client, level):
 
     answer = client.put('/api/agent/config', json={'reasoning': level})
 
-    assert answer.get_json() == {'enabled': True, 'reasoning': level}
+    assert answer.get_json() == {
+        'enabled': True, 'reasoning': level, **NO_SEARCH}
     assert client.get('/api/agent/config').get_json() == {
-        'enabled': True, 'reasoning': level}
+        'enabled': True, 'reasoning': level, **NO_SEARCH}
 
 
 def test_a_bad_reasoning_level_leaves_the_row_unchanged(client):
@@ -710,3 +721,153 @@ def test_a_thread_that_thought_on_anthropic_continues_on_openai(tmp_path):
     assert first['thinking']['type'] == 'adaptive'
     assert second['reasoning_effort'] == 'low'
     assert [m['role'] for m in second['messages']][-1] == 'user'
+
+
+# ----------------------------------------------------- the search address --
+
+SEARX = 'http://searx.example:8080'
+
+
+def serving(client, answer=b'{"query": "test", "results": []}'):
+    """Serve ``answer`` as the SearXNG (raise it if it is an exception);
+    returns the addresses asked."""
+    asked = []
+
+    def fetch(url):
+        asked.append(url)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    client.application.config['SEARCH_FETCH'] = fetch
+    return asked
+
+
+def http_error(code):
+    from urllib.error import HTTPError
+    return HTTPError(SEARX, code, 'refused', None, None)
+
+
+def test_a_searxng_that_answers_json_is_stored_and_named(client):
+    asked = serving(client)
+
+    answer = client.put('/api/agent/config', json={'search_url': f' {SEARX}/ '})
+
+    assert answer.status_code == 200, answer.get_json()
+    assert asked == [f'{SEARX}/search?q=test&format=json']
+    assert answer.get_json() == client.get('/api/agent/config').get_json() == {
+        'enabled': False, 'reasoning': 'low', 'search_url': f'{SEARX}/',
+        'search_privacy': {
+            'local': False, 'host': 'searx.example',
+            'fr': 'Vos recherches sont envoyées à searx.example.',
+            'en': 'Your searches are sent to searx.example.'}}
+
+
+def test_the_searxng_is_asked_before_the_write_lock_is_taken(client):
+    from api.common import current_runtime
+    held = []
+
+    def fetch(url):
+        held.append(current_runtime().config_manager._write_lock.locked())
+        return b'{}'
+    client.application.config['SEARCH_FETCH'] = fetch
+
+    assert client.put('/api/agent/config',
+                      json={'search_url': SEARX}).status_code == 200
+    assert held == [False]
+
+
+@pytest.mark.parametrize('blank', [None, '', '  '])
+def test_no_address_switches_the_search_off_without_asking_anyone(client, blank):
+    serving(client)
+    client.put('/api/agent/config', json={'search_url': SEARX})
+    client.application.config['SEARCH_FETCH'] = _never
+
+    answer = client.put('/api/agent/config', json={'search_url': blank})
+
+    assert answer.status_code == 200
+    assert answer.get_json() == client.get('/api/agent/config').get_json() == {
+        'enabled': False, 'reasoning': 'low', **NO_SEARCH}
+
+
+@pytest.mark.parametrize('address', [
+    'ftp://x', 'searx.example', 'http://', 3, False, 'http://h/?a=b', 'http://h/#x',
+    'http://searx.example/' + 'a' * agent.BASE_URL_MAX])
+def test_an_address_that_is_not_http_is_refused_without_being_asked(
+        client, address):
+    answer = client.put('/api/agent/config', json={'search_url': address})
+
+    assert answer.status_code == 422
+    assert answer.get_json()['key'] == 'search_url'
+
+
+def test_a_body_refused_for_another_field_asks_no_searxng(client):
+    answer = client.put('/api/agent/config',
+                        json={'search_url': SEARX, 'enabled': True})
+
+    assert answer.status_code == 422
+    assert answer.get_json()['key'] == 'enabled'
+
+
+@pytest.mark.parametrize('answer, said', [
+    (__import__('urllib.error').error.URLError(TimeoutError('timed out')),
+     'did not answer: timed out'),
+    (ConnectionRefusedError(61, 'Connection refused'), 'did not answer'),
+    (__import__('http.client').client.InvalidURL('nonnumeric port'),
+     'did not answer: nonnumeric port'),
+    (OSError('body larger than 2000000 bytes'), 'did not answer: body larger'),
+    (http_error(500), 'answered HTTP 500'),
+    (http_error(403), 'settings.yml'),
+    (b'<!doctype html><title>SearXNG</title>', 'did not return JSON'),
+    (b'[]', 'did not return JSON'),
+])
+def test_an_address_that_does_not_serve_json_is_refused_and_not_stored(
+        client, answer, said):
+    serving(client)
+    client.put('/api/agent/config', json={'search_url': 'http://old.example'})
+    serving(client, answer)
+
+    refused = client.put('/api/agent/config',
+                         json={'search_url': SEARX, 'reasoning': 'high'})
+
+    assert refused.status_code == 422
+    assert refused.get_json()['key'] == 'search_url'
+    assert said in refused.get_json()['detail']
+    kept = client.get('/api/agent/config').get_json()
+    assert (kept['search_url'], kept['reasoning']) == ('http://old.example', 'low')
+
+
+def test_the_address_outlives_the_other_settings_and_a_lost_provider(client):
+    made = configured(client)
+    serving(client)
+    client.put('/api/agent/config', json={'search_url': SEARX})
+    client.application.config['SEARCH_FETCH'] = _never
+
+    client.put('/api/agent/config', json={'reasoning': 'high'})
+    client.delete(f"/api/agent/providers/{made['id']}")
+
+    assert client.get('/api/agent/config').get_json() == {
+        'enabled': False, 'reasoning': 'high', 'search_url': SEARX,
+        'search_privacy': agent.search_privacy(SEARX)}
+
+
+def test_a_local_searxng_still_forwards_the_searches_and_says_so():
+    assert agent.search_privacy('http://127.0.0.1:8888') == {
+        'local': True, 'host': '127.0.0.1',
+        'fr': ('Vos recherches passent par votre SearXNG, qui les transmet à '
+               'ses moteurs.'),
+        'en': ('Your searches go through your SearXNG, which forwards them to '
+               'its engines.')}
+    assert agent.search_privacy('https://8.8.8.8/searx') == {
+        'local': False, 'host': '8.8.8.8',
+        'fr': 'Vos recherches sont envoyées à 8.8.8.8.',
+        'en': 'Your searches are sent to 8.8.8.8.'}
+    assert agent.search_privacy(None) is None
+
+
+def test_the_probe_fetcher_is_bounded(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(agent, 'bounded_get', lambda url, most: seen.update(
+        url=url, most=most) or b'{}')
+
+    assert agent.search_fetch(SEARX) == b'{}'
+    assert seen == {'url': SEARX, 'most': agent.SEARCH_MAX_BYTES}

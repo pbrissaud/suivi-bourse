@@ -1,6 +1,7 @@
 """The agent under ``/api``: its settings, its providers and its usage.
 
-``GET/PUT /api/agent/config`` keep ``enabled`` and ``reasoning`` alone. The
+``GET/PUT /api/agent/config`` keep ``enabled``, ``reasoning`` and
+``search_url``, the owner's SearXNG, which a PUT asks before storing it. The
 providers are ``/api/agent/providers``: a provider holds a kind, an address, a
 key, a default model and the privacy sentence computed from them. A provider
 need not pass a test to be saved; ``POST /api/agent/providers/<id>/test`` lists
@@ -10,7 +11,7 @@ its models (``new`` for one not yet saved, the body naming the candidate).
 import time
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from application import agent as agent_module
 from application import agent_probe
@@ -33,16 +34,26 @@ bp = Blueprint('agent', __name__)
 
 @bp.get('/agent/config')
 def get_agent_config():
-    """Whether the agent is on, and how hard it reasons."""
+    """Whether the agent is on, how hard it reasons, and where it searches."""
     return jsonify(agent_module.describe_settings(agent_module.read(_store())))
 
 
 @bp.put('/agent/config')
 def put_agent_config():
-    """Change ``enabled`` and ``reasoning``. On needs a default provider that
-    holds a model."""
+    """Change ``enabled``, ``reasoning`` and ``search_url``. On needs a default
+    provider that holds a model; a search address must answer as a SearXNG."""
     body = request.get_json(silent=True)
     try:
+        # Refused bodies cost no outbound call, and the call is made before the
+        # write lock is taken: the body is checked here on a read view, the
+        # address asked, and the change applied again on the row under the lock.
+        read = _store()
+        asked = agent_module.change_settings(
+            agent_module.read(read), body,
+            agent_module.default_of(agent_module.providers(read)))
+        if 'search_url' in body and asked['search_url'] is not None:
+            agent_module.probe_search(
+                asked['search_url'], current_app.config['SEARCH_FETCH'])
         with current_runtime().config_manager.writing() as opened:
             config = agent_module.change_settings(
                 agent_module.read(opened), body,
