@@ -48,7 +48,10 @@ export const agentSeam = {
   transport: (): ChatTransport<UIMessage> => httpTransport(),
 }
 
-/** The tools the MCP server serves (`mcp_server.build_server`), in plain words. */
+/**
+ * The agent's tools in plain words: the ones the MCP server serves
+ * (`mcp_server.build_server`), then its own (`agent_diagnostics.build_toolset`).
+ */
 const TOOL_SENTENCES: Record<string, MessageKey> = {
   list_positions: 'agent.tool.list_positions',
   get_portfolio_totals: 'agent.tool.get_portfolio_totals',
@@ -61,6 +64,7 @@ const TOOL_SENTENCES: Record<string, MessageKey> = {
   get_profile: 'agent.tool.get_profile',
   propose_profile_fact: 'agent.tool.propose_profile_fact',
   propose_events: 'agent.tool.propose_events',
+  get_system_status: 'agent.tool.get_system_status',
 }
 
 /** The sentence a tool call is shown as; a tool this list does not know is named. */
