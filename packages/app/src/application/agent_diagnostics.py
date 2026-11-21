@@ -12,6 +12,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from application import advisories
 from application import installation_facts
+from application import instants
 from application import runtime_view
 from application import settings
 from application import store as store_module
@@ -189,7 +190,7 @@ def system_status(runtime, checker=None,
         scheduler_running)
 
     return {
-        'now': now.isoformat(),
+        'now': instants.iso(now),
         'build': runtime.build.to_dict(),
         'scheduler_running': scheduler_running,
         'rebuilding': rebuilding,
