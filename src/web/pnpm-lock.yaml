@@ -204,7 +204,7 @@ importers:
         version: 9.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       ai:
         specifier: ^7.0.137
-        version: 7.0.176(zod@4.6.7)
+        version: 7.0.177(zod@4.6.7)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -253,7 +253,7 @@ importers:
         version: 2.6.8
       '@shadcn/helpers':
         specifier: ^0.3.0
-        version: 0.3.0(ai@7.0.176(zod@4.6.7))
+        version: 0.3.0(ai@7.0.177(zod@4.6.7))
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.5(vite@8.3.8(@types/node@26.6.6)(jiti@2.7.0))
@@ -5144,9 +5144,9 @@ snapshots:
 
   '@sec-ant/readable-stream@0.4.1': {}
 
-  '@shadcn/helpers@0.3.0(ai@7.0.176(zod@4.6.7))':
+  '@shadcn/helpers@0.3.0(ai@7.0.177(zod@4.6.7))':
     optionalDependencies:
-      ai: 7.0.176(zod@4.6.7)
+      ai: 7.0.177(zod@4.6.7)
 
   '@shadcn/react@0.3.1(@types/react@19.3.0)(react@19.3.1)':
     optionalDependencies:
