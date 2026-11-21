@@ -82,7 +82,27 @@ def test_a_real_server_trickling_its_body_is_cut_at_the_deadline():
         with pytest.raises(TimeoutError):
             module.bounded_get(f'http://127.0.0.1:{server.server_port}/', 10_000,
                                timeout=1)
-        assert time.monotonic() - started < 2
+        assert time.monotonic() - started < 1.5
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_a_server_slow_to_send_its_headers_is_cut_at_the_deadline():
+    """The bound covers ``urlopen`` too: no header ever comes."""
+    import socket
+    import time
+
+    import pytest
+
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen()
+    try:
+        started = time.monotonic()
+        with pytest.raises(TimeoutError):
+            module.bounded_get(f'http://127.0.0.1:{listener.getsockname()[1]}/',
+                               100, timeout=0.5)
+        assert time.monotonic() - started < 1
+    finally:
+        listener.close()

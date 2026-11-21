@@ -1,4 +1,5 @@
 """The one outbound GET the app makes on a click: a timeout and a size cap."""
+import threading
 import time
 import urllib.request
 
@@ -11,14 +12,33 @@ def bounded_get(url: str, max_bytes: int, timeout: float = 5) -> bytes:
     """The body at ``url``, or an exception: not a 200, larger than
     ``max_bytes``, or not all read within ``timeout`` seconds.
 
-    ``urlopen``'s timeout bounds each socket operation, so a server trickling
-    bytes would hold the request for ever; the body is read in chunks against
-    one deadline instead. ``read1`` returns what one socket read brought, where
-    ``read(n)`` would wait for all ``n`` bytes.
+    ``urlopen``'s timeout bounds each socket operation, not the whole request:
+    a slow resolver, slow headers or a trickling body would hold the caller
+    past it. The request runs on a daemon thread the caller waits for at most
+    ``timeout``; left behind, the thread stops at its own deadline or at the
+    next socket timeout, whichever comes first.
     """
-    # ponytail: the deadline is checked between reads, each bounded by
-    # ``timeout``, so a trickling server is cut within 2 x ``timeout``; DNS has
-    # no bound of its own. A worker thread with a hard join, if that matters.
+    answer = {}
+
+    def fetch():
+        try:
+            answer['raw'] = _get(url, max_bytes, timeout)
+        except BaseException as exc:  # handed to the caller as it was raised
+            answer['error'] = exc
+
+    worker = threading.Thread(target=fetch, name='bounded_get', daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise TimeoutError(f'no full answer within {timeout:g} s')
+    if 'error' in answer:
+        raise answer['error']
+    return answer['raw']
+
+
+def _get(url: str, max_bytes: int, timeout: float) -> bytes:
+    """The request itself. ``read1`` returns what one socket read brought,
+    where ``read(n)`` would wait for all ``n`` bytes."""
     deadline = time.monotonic() + timeout
     request = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
     with urllib.request.urlopen(request, timeout=timeout) as response:
