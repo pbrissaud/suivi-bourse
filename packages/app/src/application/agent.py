@@ -20,15 +20,17 @@ The provider SDKs are imported inside :func:`build_model`, so the Flask half,
 which only reads and writes the rows, never loads them.
 """
 import ipaddress
+import json
 import os
 import re
 import secrets
 import socket
 from datetime import datetime, timezone
-from typing import Any, Optional
-from urllib.parse import urlsplit
+from typing import Any, Callable, Optional
+from urllib.parse import urlencode, urlsplit
 
 from application import instants
+from application.bounded_get import bounded_get
 
 # Before the first import of pydantic_ai anywhere in the process: it prints a
 # banner on stdout on its first run otherwise.
@@ -78,6 +80,8 @@ MODEL_MAX = 200
 #: How long a provider's message may be, JSON or not (an HTML page).
 SAID_MAX = 300
 BASE_URL_MAX = 500
+#: A SearXNG result page is tens of kilobytes; past this it is not one.
+SEARCH_MAX_BYTES = 2_000_000
 
 #: How hard the analyst thinks (#1191), cheapest first. There is no "off":
 #: on Claude Opus 5.5 and Sonnet 5.5 Pydantic AI drops it and sends nothing, so
@@ -103,8 +107,13 @@ BLANK = {'id': None, 'label': None, 'provider': None, 'base_url': None,
          'api_key': None, 'key_set_at': None, 'model': None,
          'is_default': False, 'last_test_at': None, 'created_at': None}
 
-#: ``enabled`` and ``thinking`` are all the ``agent_config`` row holds now.
-EMPTY = {'enabled': False, 'thinking': 'low', 'updated_at': None}
+#: What the ``agent_config`` row holds now, in the order :func:`read` selects
+#: it. ``search_url`` is the owner's SearXNG; none means web search is off.
+EMPTY = {'enabled': False, 'thinking': 'low', 'search_url': None,
+         'updated_at': None}
+
+#: The fields ``PUT /api/agent/config`` takes, as the API spells them.
+SETTINGS_FIELDS = ('enabled', 'reasoning', 'search_url')
 
 _HTTP_URL = re.compile(r'https?://\S+')
 
@@ -118,9 +127,10 @@ class InvalidAgentConfig(ValueError):
 
 
 def read(store) -> dict:
-    """``enabled`` and ``thinking``, or :data:`EMPTY` when never written."""
+    """The settings row, or :data:`EMPTY` when never written."""
     rows = store.query(
-        'SELECT enabled, thinking, updated_at FROM agent_config WHERE id = 1')
+        'SELECT enabled, thinking, search_url, updated_at '
+        'FROM agent_config WHERE id = 1')
     return dict(zip(EMPTY, rows[0])) if rows else dict(EMPTY)
 
 
@@ -149,8 +159,11 @@ def runnable(config: Optional[dict]) -> bool:
 
 
 def describe_settings(config: dict, **extra: Any) -> dict:
-    """``GET /api/agent/config``: ``enabled`` and ``reasoning``, and nothing else."""
+    """``GET /api/agent/config``: ``enabled``, ``reasoning``, and where the
+    web searches go (``search_privacy`` is none while there is no address)."""
     return {'enabled': config['enabled'], 'reasoning': config['thinking'],
+            'search_url': config['search_url'],
+            'search_privacy': search_privacy(config['search_url']),
             **extra}
 
 
@@ -217,6 +230,64 @@ def privacy(config: dict) -> dict:
         'en': ('Your figures stay on your network.' if local
                else f'Your figures are sent to {host}.'),
     }
+
+
+def search_privacy(search_url: Optional[str]) -> Optional[dict]:
+    """Where a web search goes, in both languages; none without an address.
+
+    Built like :func:`privacy`. A local SearXNG still forwards the query to its
+    engines, and the sentence says so.
+    """
+    if search_url is None:
+        return None
+    local = is_private(search_url)
+    host = urlsplit(search_url).hostname
+    return {
+        'local': local,
+        'host': host,
+        'fr': ('Vos recherches passent par votre SearXNG, qui les transmet à '
+               'ses moteurs.' if local
+               else f'Vos recherches sont envoyées à {host}.'),
+        'en': ('Your searches go through your SearXNG, which forwards them to '
+               'its engines.' if local
+               else f'Your searches are sent to {host}.'),
+    }
+
+
+def search_fetch(url: str) -> bytes:
+    """The fetcher the app probes a SearXNG with: 5 s, a bounded body."""
+    return bounded_get(url, SEARCH_MAX_BYTES)
+
+
+def probe_search(search_url: str, fetch: Callable[[str], bytes]) -> None:
+    """Ask the SearXNG at ``search_url`` for JSON, or say why it cannot serve.
+
+    An outbound call: never under the write lock.
+    """
+    url = f"{search_url.rstrip('/')}/search?{urlencode({'q': 'test', 'format': 'json'})}"
+    try:
+        raw = fetch(url)
+    except Exception as exc:  # the fetcher is injected; anything it raises is a failed probe
+        # urlopen raises HTTPError on a 403 before bounded_get looks at the status.
+        code = getattr(exc, 'code', None)
+        if code == 403:
+            said = ('the search address answered HTTP 403: SearXNG refuses the '
+                    'json format until it is listed under search.formats in '
+                    'its settings.yml')
+        elif isinstance(code, int):
+            said = f'the search address answered HTTP {code}'
+        else:
+            why = getattr(exc, 'reason', None) or str(exc) or type(exc).__name__
+            said = f'the search address did not answer: {why}'
+        raise InvalidAgentConfig(said[:SAID_MAX], 'search_url') from exc
+    try:
+        answered = json.loads(raw)
+    except ValueError:
+        answered = None
+    if not isinstance(answered, dict):
+        raise InvalidAgentConfig(
+            'the search address did not return JSON: it is not a SearXNG, or '
+            'its json format is not enabled in settings.yml', 'search_url')
 
 
 def _clean(value: Any) -> Any:
@@ -303,23 +374,36 @@ def candidate(stored: Optional[dict], body: Any, at: datetime) -> dict:
 
 
 def change_settings(current: dict, body: Any, default: Optional[dict]) -> dict:
-    """``current`` with ``body``'s ``enabled`` and ``reasoning`` applied.
+    """``current`` with ``body``'s ``enabled``, ``reasoning`` and
+    ``search_url`` applied.
 
-    The agent is on only over a default provider that holds a model.
+    The agent is on only over a default provider that holds a model. The search
+    address is checked for its form alone: :func:`probe_search` asks it.
     """
     if not isinstance(body, dict):
         raise InvalidAgentConfig('a JSON object is required', 'body')
     for name in body:
-        if name not in ('enabled', 'reasoning'):
+        if name not in SETTINGS_FIELDS:
             raise InvalidAgentConfig(
                 f"{name!r} is not a field of the agent's configuration; "
-                f"the fields are enabled, reasoning", name)
+                f"the fields are {', '.join(SETTINGS_FIELDS)}", name)
     if 'enabled' in body and not isinstance(body['enabled'], bool):
         raise InvalidAgentConfig("'enabled' is true or false", 'enabled')
     if 'reasoning' in body and body['reasoning'] not in THINKING:
         raise InvalidAgentConfig(
             f"the reasoning level is one of {', '.join(THINKING)}", 'reasoning')
+    search_url = _clean(body.get('search_url'))
+    if search_url is not None and not all((
+            _text(search_url, BASE_URL_MAX),
+            isinstance(search_url, str) and _HTTP_URL.fullmatch(search_url),
+            '?' not in str(search_url), '#' not in str(search_url))):
+        # No query nor fragment: ``/search?…`` is appended to the address.
+        raise InvalidAgentConfig(
+            f"the search address is an http:// or https:// address of at most "
+            f"{BASE_URL_MAX} characters, without ? or #", 'search_url')
     changed = dict(current)
+    if 'search_url' in body:
+        changed['search_url'] = search_url
     if 'enabled' in body:
         changed['enabled'] = body['enabled']
     if 'reasoning' in body:
@@ -461,13 +545,14 @@ def settle(store, now: datetime) -> bool:
 
 
 def write(store, config: dict, now: datetime) -> None:
-    """Keep ``enabled`` and ``thinking``. Under the write lock."""
+    """Keep the settings row. Under the write lock."""
     store.execute(
-        'INSERT INTO agent_config (id, enabled, thinking, updated_at) '
-        'VALUES (1, ?, ?, ?) '
+        'INSERT INTO agent_config (id, enabled, thinking, search_url, '
+        'updated_at) VALUES (1, ?, ?, ?, ?) '
         'ON CONFLICT (id) DO UPDATE SET enabled = excluded.enabled, '
-        'thinking = excluded.thinking, updated_at = excluded.updated_at',
-        [config['enabled'], config['thinking'], now])
+        'thinking = excluded.thinking, search_url = excluded.search_url, '
+        'updated_at = excluded.updated_at',
+        [config['enabled'], config['thinking'], config['search_url'], now])
     config['updated_at'] = now
 
 

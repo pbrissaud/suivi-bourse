@@ -35,6 +35,7 @@ RELEASED = (
     'forget_dashboard_layout',
     'add_notification_channels',
     'add_auth_enabled_at',
+    'add_agent_search_url',
 )
 
 
@@ -308,5 +309,24 @@ def test_a_store_with_a_mandatory_label_gets_an_optional_one(tmp_path):
         assert opened.query("SELECT id, label FROM account WHERE id <> 'default' ORDER BY id") \
             == [('cto', 'Mon CTO'), ('pea', None)]
         opened.execute("INSERT INTO account VALUES ('x', NULL)")
+    finally:
+        opened.close()
+
+
+def test_the_search_address_step_adds_a_null_column_and_keeps_the_row(tmp_path):
+    """A store from before #1622 keeps the agent on at its level, with no
+    SearXNG."""
+    path, connection = _before(tmp_path, 'add_agent_search_url')
+    connection.execute('ALTER TABLE agent_config DROP COLUMN search_url')
+    connection.execute(
+        "INSERT INTO agent_config (id, enabled, thinking, updated_at) "
+        "VALUES (1, TRUE, 'high', TIMESTAMPTZ '2026-11-01 00:00:00+00')")
+    connection.close()
+
+    opened = store_module.open_store(path, schema_steps.STEPS)
+    try:
+        assert opened.query(
+            'SELECT enabled, thinking, search_url FROM agent_config') == [
+                (True, 'high', None)]
     finally:
         opened.close()

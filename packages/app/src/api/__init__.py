@@ -5,6 +5,7 @@ from typing import Optional
 from flask import Flask, abort, request, send_from_directory
 from werkzeug.exceptions import HTTPException
 
+from application import agent as agent_module
 from application import main
 from application import taxation_registry
 from application import tweakcn
@@ -31,6 +32,7 @@ def create_app(runtime: main.Runtime) -> Flask:
     flask_app.config['MAX_FORM_MEMORY_SIZE'] = uploads.MAX_BODY_BYTES
     flask_app.config['TWEAKCN_FETCH'] = tweakcn.http_fetch
     flask_app.config['TAXATION_REGISTRY_FETCH'] = taxation_registry.http_fetch
+    flask_app.config['SEARCH_FETCH'] = agent_module.search_fetch
     flask_app.config['RELEASE_CHECKER'] = update_check.Checker(update_check.http_fetch)
     flask_app.register_blueprint(health_bp)
     flask_app.register_blueprint(api_bp)

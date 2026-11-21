@@ -97,6 +97,15 @@ def _add_agent_thinking(connection) -> None:
                            "VARCHAR DEFAULT 'low'")
 
 
+def _add_agent_search_url(connection) -> None:
+    """Give ``agent_config`` the address of the owner's SearXNG (#1622).
+
+    NULL on a row stored before: web search is off until an address is set. A
+    no-op on a new store, whose table already has the column.
+    """
+    store_steps.add_column(connection, 'agent_config', 'search_url', 'VARCHAR')
+
+
 def _forget_dashboard_layout(connection) -> None:
     """Drop the saved dashboard layout: the dashboard is fixed now.
 
@@ -212,6 +221,7 @@ STEPS = store_steps.STEPS + (
     ('forget_dashboard_layout', _forget_dashboard_layout),
     ('add_notification_channels', _add_notification_channels),
     ('add_auth_enabled_at', auth_gate.add_enabled_at),
+    ('add_agent_search_url', _add_agent_search_url),
 )
 
 __all__ = ['STEPS']

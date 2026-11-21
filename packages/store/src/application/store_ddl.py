@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS agent_config (
     api_key     VARCHAR,
     key_set_at  TIMESTAMPTZ,
     thinking    VARCHAR DEFAULT 'low',
+    search_url  VARCHAR,                 -- the owner's SearXNG; NULL = web search off (#1622)
     updated_at  TIMESTAMPTZ NOT NULL);
 
 -- **The agent's providers** (« Relevé » redesign). Several rows, one of them the

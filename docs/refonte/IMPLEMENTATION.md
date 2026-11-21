@@ -195,7 +195,8 @@ client-side.
   /api/agent/providers`, `POST /api/agent/providers/<id>/test` (lists models),
   `PUT /api/agent/providers/<id>/default`.
 - A thread stores the provider and model it runs on; the composer's picker switches them
-  per thread. `GET /api/agent/config` keeps `enabled` and `reasoning` only.
+  per thread. `GET /api/agent/config` keeps `enabled` and `reasoning`
+  (and, since #1622, `search_url`, the owner's SearXNG).
 - The privacy sentence is computed from the provider: « Vos chiffres sont envoyés à
   {label or kind} » ; « restent sur ce serveur » only when `base_url` resolves to
   localhost or a private address.
