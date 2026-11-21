@@ -75,9 +75,17 @@ def _open(request, timeout: float, sockets: _Sockets):
     sockets ``sockets`` holds."""
     def tracked(base):
         class Connection(base):
-            def connect(self):
-                super().connect()
-                sockets.add(self.sock)
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                create = self._create_connection
+
+                def created(*args, **kwargs):
+                    # The TCP socket, before TLS: shutting it aborts a stalled
+                    # handshake too.
+                    sock = create(*args, **kwargs)
+                    sockets.add(sock)
+                    return sock
+                self._create_connection = created
         return Connection
 
     class Http(urllib.request.HTTPHandler):
