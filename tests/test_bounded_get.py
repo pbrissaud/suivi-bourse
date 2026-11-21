@@ -2,7 +2,16 @@
 import io
 from unittest import mock
 
+import pytest
+
 from application import bounded_get as module
+
+
+@pytest.fixture(autouse=True)
+def no_proxy(monkeypatch):
+    """The loopback servers here are asked directly, whatever ``*_proxy`` the
+    environment carries."""
+    monkeypatch.setattr(module.urllib.request, 'getproxies', lambda: {})
 
 
 class _Response(io.BytesIO):
@@ -185,3 +194,55 @@ def test_a_redirect_is_still_followed():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_a_handshake_started_late_still_ends_by_the_deadline(monkeypatch):
+    """Through a proxy slow to answer CONNECT, the TLS handshake starts late,
+    on a socket TLS detaches: its own deadline must fall by the request's,
+    not ``timeout`` after it started."""
+    import socket
+    import threading
+    import time
+    import urllib.error
+
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen()
+    port = listener.getsockname()[1]
+    monkeypatch.setattr(module.urllib.request, 'getproxies',
+                        lambda: {'https': f'http://127.0.0.1:{port}'})
+
+    def proxy():
+        connection, _ = listener.accept()
+        with connection:
+            asked = b''
+            while b'\r\n\r\n' not in asked:
+                asked += connection.recv(4096)
+            time.sleep(0.6)
+            try:
+                connection.sendall(b'HTTP/1.1 200 Connection established\r\n\r\n')
+                # A handshake record announcing 16 kB, then its body in drips.
+                record = b'\x16\x03\x03\x40\x00\x02\x00\x3f\xfc'
+                for byte in record + b'\x00' * 16380:
+                    connection.sendall(bytes([byte]))
+                    time.sleep(0.05)
+            except OSError:
+                pass
+    threading.Thread(target=proxy, daemon=True).start()
+
+    before = {t for t in threading.enumerate() if t.name == 'bounded_get'}
+    try:
+        started = time.monotonic()
+        # The handshake's own timeout and the caller's deadline now fall at
+        # the same instant: either may be the one raised.
+        with pytest.raises((TimeoutError, urllib.error.URLError)):
+            module.bounded_get('https://searx.example/', 100, timeout=1)
+        workers = [t for t in threading.enumerate()
+                   if t.name == 'bounded_get' and t not in before]
+        for worker in workers:
+            worker.join(2)
+        assert not any(t.is_alive() for t in workers)
+        # Before, the handshake ran a full timeout from its late start: 1.6 s.
+        assert time.monotonic() - started < 1.3, 'the handshake outlived the deadline'
+    finally:
+        listener.close()

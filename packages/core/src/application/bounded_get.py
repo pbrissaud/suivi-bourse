@@ -21,7 +21,7 @@ def bounded_get(url: str, max_bytes: int, timeout: float = 5) -> bytes:
     the thread ends with it.
     """
     answer = {}
-    sockets = _Sockets()
+    sockets = _Sockets(time.monotonic() + timeout)
 
     def fetch():
         try:
@@ -43,9 +43,10 @@ def bounded_get(url: str, max_bytes: int, timeout: float = 5) -> bytes:
 
 
 class _Sockets:
-    """The sockets one request opened, shut together at its deadline."""
+    """The sockets one request opened, shut together at its ``deadline``."""
 
-    def __init__(self):
+    def __init__(self, deadline: float):
+        self.deadline = deadline
         self._lock = threading.Lock()
         self._open = []
         self._shut = False
@@ -57,6 +58,10 @@ class _Sockets:
                 return
         sock.close()
         raise TimeoutError('the request was abandoned at its deadline')
+
+    def time_left(self, sock) -> None:
+        """Give ``sock`` what is left before the deadline as its timeout."""
+        sock.settimeout(max(self.deadline - time.monotonic(), 0.001))
 
     def shut(self) -> None:
         with self._lock:
@@ -80,12 +85,25 @@ def _open(request, timeout: float, sockets: _Sockets):
                 create = self._create_connection
 
                 def created(*args, **kwargs):
-                    # The TCP socket, before TLS: shutting it aborts a stalled
-                    # handshake too.
+                    # The TCP socket, held from its creation: shutting it
+                    # stops a proxy's CONNECT answer. TLS detaches it, so it
+                    # cannot stop the handshake; the handshake's own deadline,
+                    # this socket's timeout when it starts, is made to fall
+                    # by the request's deadline instead.
                     sock = create(*args, **kwargs)
                     sockets.add(sock)
+                    sockets.time_left(sock)
                     return sock
                 self._create_connection = created
+
+            def _tunnel(self):
+                super()._tunnel()
+                sockets.time_left(self.sock)  # the handshake starts now
+
+            def connect(self):
+                super().connect()
+                # The TLS socket the headers and the body are read on.
+                sockets.add(self.sock)
         return Connection
 
     class Http(urllib.request.HTTPHandler):
