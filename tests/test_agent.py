@@ -21,7 +21,14 @@ def _never(url):
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
+    import socket
+    # The privacy sentence resolves the search host: answer for it here, a
+    # public address, so no test asks the system resolver.
+    real = socket.getaddrinfo
+    monkeypatch.setattr(socket, 'getaddrinfo', lambda host, *rest: [
+        (socket.AF_INET, 0, 0, '', ('93.184.216.34', 0))]
+        if host in ('searx.example', 'old.example') else real(host, *rest))
     runtime, _ = build_runtime(tmp_path)
     app = create_app(runtime)
     # No test reaches the network: the ones that set an address serve it.

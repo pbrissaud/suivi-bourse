@@ -1,4 +1,5 @@
 """The one outbound GET the app makes on a click: a timeout and a size cap."""
+import time
 import urllib.request
 
 # Cloudflare's browser integrity check answers 403 to urllib's default
@@ -7,12 +8,26 @@ USER_AGENT = 'suivi-bourse (+https://github.com/pbrissaud/suivi-bourse)'
 
 
 def bounded_get(url: str, max_bytes: int, timeout: float = 5) -> bytes:
-    """The body at ``url``, or an exception: not a 200, or larger than ``max_bytes``."""
+    """The body at ``url``, or an exception: not a 200, larger than
+    ``max_bytes``, or not all read within ``timeout`` seconds.
+
+    ``urlopen``'s timeout bounds each socket operation, so a server trickling
+    bytes would hold the request for ever; the body is read in chunks against
+    one deadline instead.
+    """
+    deadline = time.monotonic() + timeout
     request = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         if response.status != 200:
             raise OSError(f'HTTP {response.status}')
-        raw = response.read(max_bytes + 1)
+        raw = b''
+        while len(raw) <= max_bytes:
+            if time.monotonic() > deadline:
+                raise TimeoutError(f'no full answer within {timeout:g} s')
+            chunk = response.read(min(65536, max_bytes + 1 - len(raw)))
+            if not chunk:
+                break
+            raw += chunk
     if len(raw) > max_bytes:
         raise OSError(f'body larger than {max_bytes} bytes')
     return raw

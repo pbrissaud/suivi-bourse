@@ -108,7 +108,10 @@ class _Response:
         return False
 
     def read(self, size=-1):
-        return self.body if size < 0 else self.body[:size]
+        """A stream: what is read is gone."""
+        size = len(self.body) if size < 0 else size
+        chunk, self.body = self.body[:size], self.body[size:]
+        return chunk
 
 
 def test_http_fetch_raises_on_a_refusal_and_on_an_oversized_body(monkeypatch):
