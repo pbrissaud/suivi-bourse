@@ -7,7 +7,8 @@ import pytest
 
 from api import create_app
 from application import agent
-from test_mcp_server import build_runtime
+from application import agent_diagnostics
+from test_mcp_server import build_runtime, listed
 
 KEY = 'test-key-0123456789abcd'
 
@@ -80,6 +81,11 @@ def test_the_prompt_says_how_to_state_a_return():
     assert 'Lead with the money-weighted return' in agent.SYSTEM_PROMPT
 
 
+def test_the_prompt_says_when_to_read_the_system_status():
+    assert 'whether anything is wrong with the app' in agent.SYSTEM_PROMPT
+    assert 'empty or late, read `get_system_status`' in agent.SYSTEM_PROMPT
+
+
 # ------------------------------------------------------ the prompt cache --
 
 ANSWER = {'id': 'msg_1', 'type': 'message', 'role': 'assistant',
@@ -145,7 +151,8 @@ def run_turns(tmp_path, steps):
             client = httpx2.AsyncClient(transport=httpx2.MockTransport(
                 handler_of(bodies, answer, events)))
             assistant = agent.build_agent(
-                model_for(client), server, thinking=thinking)
+                model_for(client), server,
+                agent_diagnostics.build_toolset(runtime), thinking=thinking)
             result = await assistant.run(
                 'Et le CTO ?' if history else 'Mes positions ?',
                 message_history=history)
@@ -166,7 +173,8 @@ def test_the_agent_asks_for_the_cache(tmp_path):
     runtime, _ = build_runtime(tmp_path)
     assistant = agent.build_agent(
         agent.build_model(config('anthropic')),
-        mcp_server.build_server(runtime), thinking='low')
+        mcp_server.build_server(runtime),
+        agent_diagnostics.build_toolset(runtime), thinking='low')
     assert assistant.model_settings['cache'] is True
 
 
@@ -185,6 +193,23 @@ def test_anthropic_caches_the_tools_the_prompt_and_the_conversation(tmp_path):
         assert 'cache_control' in sent
     assert json.dumps(first['system']) == json.dumps(second['system'])
     assert json.dumps(first['tools']) == json.dumps(second['tools'])
+
+
+def test_the_agent_gets_the_system_status_and_mcp_does_not(tmp_path):
+    """The diagnostics are for the owner's own agent (#1625): on the wire to
+    the provider, and on no list ``/mcp`` answers."""
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.providers.anthropic import AnthropicProvider
+    first, _ = two_turns(tmp_path, lambda client: AnthropicModel(
+        'claude-sonnet-5-5',
+        provider=AnthropicProvider(api_key=KEY, http_client=client)), ANSWER)
+    runtime, _ = build_runtime(tmp_path / 'mcp')
+
+    sent = [tool['name'] for tool in first['tools']]
+    served = [tool.name for tool in listed(runtime)]
+    assert 'get_system_status' in sent
+    assert 'get_system_status' not in served
+    assert set(served) < set(sent)
 
 
 @pytest.mark.parametrize('provider, base_url', [
@@ -597,7 +622,8 @@ def test_the_thinking_level_is_what_the_agent_is_built_with(tmp_path):
     runtime, _ = build_runtime(tmp_path)
     assistant = agent.build_agent(
         agent.build_model(config('anthropic')),
-        mcp_server.build_server(runtime), thinking='high')
+        mcp_server.build_server(runtime),
+        agent_diagnostics.build_toolset(runtime), thinking='high')
     assert assistant.model_settings['thinking'] == 'high'
 
 

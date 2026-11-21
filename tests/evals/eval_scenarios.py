@@ -11,7 +11,8 @@ import re
 from datetime import date
 
 from application import accounts as accounts_module
-from application import agent, entries, mcp_server, statements
+from application import (
+    agent, agent_diagnostics, entries, mcp_server, statements)
 from application.events.schemas import Event, EventType
 from test_mcp_server import build_runtime, rich_runtime
 
@@ -142,6 +143,7 @@ async def ask(model, runtime, question):
     from pydantic_ai.messages import ToolReturnPart
     from pydantic_ai.usage import UsageLimits
     assistant = agent.build_agent(model, mcp_server.build_server(runtime),
+                                  agent_diagnostics.build_toolset(runtime),
                                   thinking='low')
     result = await assistant.run(
         question, model_settings={'max_tokens': MAX_TOKENS},

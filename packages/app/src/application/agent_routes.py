@@ -25,6 +25,7 @@ from starlette.routing import Route
 
 from application import accounts as accounts_module
 from application import agent
+from application import agent_diagnostics
 from application import agent_threads
 from application import agent_usage
 from application import event_proposals
@@ -115,8 +116,14 @@ def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse({'error': message}, status_code=status)
 
 
-def build_app(runtime, mcp) -> Starlette:
-    """The agent's Starlette app, over ``runtime``'s store and ``mcp``'s tools."""
+def build_app(runtime, mcp, release_checker=None) -> Starlette:
+    """The agent's Starlette app, over ``runtime``'s store and ``mcp``'s tools.
+
+    ``release_checker`` is the process's update check, which the agent's own
+    diagnostics read for the ``update_available`` advisory.
+    """
+    #: The tools only this agent gets (#1625); never registered on ``mcp``.
+    own_tools = agent_diagnostics.build_toolset(runtime, release_checker)
     #: The threads with a turn in flight. One process, one loop: a set checked
     #: and filled between two awaits is as good as a lock per thread.
     running = set()
@@ -219,7 +226,8 @@ def build_app(runtime, mcp) -> Starlette:
         # Off the loop: the first build imports a provider SDK (half a second).
         assistant = await anyio.to_thread.run_sync(
             lambda: agent.build_agent(
-                agent.build_model(settings), mcp, thinking=settings['thinking']))
+                agent.build_model(settings), mcp, own_tools,
+                thinking=settings['thinking']))
         adapter = _Adapter(
             agent=assistant,
             run_input=run_input, accept=request.headers.get('accept'),

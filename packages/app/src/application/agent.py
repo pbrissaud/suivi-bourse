@@ -53,7 +53,9 @@ SYSTEM_PROMPT = (
     "is confirmed with `get_profile`. Lead with the money-weighted return; "
     "give a time-weighted return only as a percent change with the day it "
     "counts from — turning an index into that percent is the one calculation "
-    "you may do."
+    "you may do. When the user asks whether anything is wrong with the app, "
+    "or why a price, a history or a figure is empty or late, read "
+    "`get_system_status` and answer from it."
 )
 
 #: The provider kinds, and how each names itself in an error the user reads.
@@ -560,19 +562,25 @@ def build_model(config: dict):
     raise ValueError(f'unknown provider {provider!r}')
 
 
-def build_agent(model, mcp, *, thinking: str):
-    """The agent: ``model`` over the MCP server's tools, in process.
+def build_agent(model, mcp, own_tools, *, thinking: str):
+    """The agent: ``model`` over the MCP server's tools and its own, in process.
 
-    No tool exists only for the agent. ``deps`` stays empty: the investor's
-    profile is a tool, ``get_profile``, and the agent's only writes,
-    ``propose_profile_fact`` and ``propose_events``, are proposals only the app
-    confirms (#1116, #1119).
+    Two toolsets. ``mcp`` is the server ``/mcp`` serves, so the agent reads and
+    proposes exactly as a client the owner connects there would. ``own_tools``
+    (:func:`agent_diagnostics.build_toolset`) exists only for this agent: the
+    diagnostics of the installation are for the owner's own agent, and nothing
+    in it is registered on ``/mcp`` (#1625).
+
+    ``deps`` stays empty: the investor's profile is a tool, ``get_profile``,
+    and the agent's only writes, ``propose_profile_fact`` and
+    ``propose_events``, are proposals only the app confirms (#1116, #1119).
 
     ``cache=True`` puts a breakpoint after the tools, the instructions and the
     conversation for the providers that take one (Anthropic, OpenAI from
     GPT-5.6); the others ignore it. A turn re-sends all three, so the prefix
     is read back at a tenth of the price, as long as it stays byte-stable:
-    nothing per request goes into :data:`SYSTEM_PROMPT` (#1190).
+    nothing per request goes into :data:`SYSTEM_PROMPT` or a tool's
+    description (#1190).
 
     ``thinking`` is one of :data:`THINKING`. Pydantic AI maps it to each
     provider's own setting, and a model without reasoning ignores it (#1191).
@@ -580,7 +588,8 @@ def build_agent(model, mcp, *, thinking: str):
     from pydantic_ai import Agent
     from pydantic_ai.mcp import MCPToolset
     from pydantic_ai.settings import ModelSettings
-    return Agent(model, toolsets=[MCPToolset(mcp)], instructions=SYSTEM_PROMPT,
+    return Agent(model, toolsets=[MCPToolset(mcp), own_tools],
+                 instructions=SYSTEM_PROMPT,
                  model_settings=ModelSettings(cache=True, thinking=thinking))
 
 

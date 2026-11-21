@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { exampleQuestions, turnRefusal } from '@/features/agent/lib/agentChat'
+import { exampleQuestions, toolSentence, turnRefusal } from '@/features/agent/lib/agentChat'
 import { aPosition } from '@/test/factories'
 
 const label = (id: string) => id.toUpperCase()
@@ -66,5 +66,15 @@ describe('a failed turn that is the provider’s', () => {
     ['a number', new Error('3')],
   ])('is not one for %s', (_name, error) => {
     expect(turnRefusal(error)).toBeNull()
+  })
+})
+
+describe('the sentence a tool call is shown as', () => {
+  it('says the System page read in plain words, and names a tool it does not know', () => {
+    expect(toolSentence('get_system_status')).toEqual({ key: 'agent.tool.get_system_status' })
+    expect(toolSentence('unheard_of')).toEqual({
+      key: 'agent.tool.other',
+      values: { name: 'unheard_of' },
+    })
   })
 })

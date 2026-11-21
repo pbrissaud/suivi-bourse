@@ -803,7 +803,9 @@ def steps(monkeypatch):
     monkeypatch.setattr(boot.boot_env, "read",
                         _step("read_environment", boot_env.read({})))
     monkeypatch.setattr(main, "build_runtime", _step("build_runtime", runtime))
-    monkeypatch.setattr(api, "create_app", _step("create_app", "the app"))
+    # Flask's app carries the update check the agent's diagnostics read (#1625).
+    the_app = SimpleNamespace(config={"RELEASE_CHECKER": None})
+    monkeypatch.setattr(api, "create_app", _step("create_app", the_app))
     monkeypatch.setattr(main, "start_runtime", _step("start_runtime"))
     monkeypatch.setattr(boot, "serve", _step("serve"))
     monkeypatch.setattr(main, "shutdown_runtime", _step("shutdown_runtime"))

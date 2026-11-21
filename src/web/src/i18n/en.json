@@ -909,6 +909,7 @@
   "agent.tool.get_profile": "Reading your profile.",
   "agent.tool.propose_profile_fact": "Proposing a fact for your profile.",
   "agent.tool.propose_events": "Proposing events for your ledger.",
+  "agent.tool.get_system_status": "Reading the state of your installation.",
   "agent.profile": "Your profile",
   "agent.profile.all": "Your whole profile",
   "agent.profile.more": "{count, plural, one {# other} other {# others}}",

@@ -6,10 +6,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from logfmt_logger import getLogger
 
 from application import accounts
+from application import build_info
 from application import instants
 from application import ledger
 from application import quotes
 from application import runtime_state
+from application import settings
 
 logger = getLogger("advisories")
 
@@ -475,6 +477,19 @@ def _observe_update_available(release: Optional[Dict[str, str]],
                    'sub': 'Release notes'},
         },
     )]
+
+
+def known_release(opened, build, checker) -> Optional[Dict[str, str]]:
+    """The newer release ``checker`` has **already** learnt, or ``None``; asks no one.
+
+    ``None`` too for a build that is no release, for an owner who turned the
+    update check off, and without a checker.
+    """
+    if checker is None or build.source != build_info.RELEASE:
+        return None
+    if not settings.read_all(opened)['update_check']:
+        return None
+    return checker.known(build.version)
 
 
 OBSERVATIONS = (

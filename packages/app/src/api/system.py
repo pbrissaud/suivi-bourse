@@ -178,12 +178,9 @@ def list_advisories():
 
 def _known_release():
     """The newer release the check has **already** learnt, or ``None``; asks no one."""
-    build = current_runtime().build
-    if build.source != build_info.RELEASE:
-        return None
-    if not settings_module.read_all(_store())['update_check']:
-        return None
-    return current_app.config['RELEASE_CHECKER'].known(build.version)
+    return advisories.known_release(
+        _store(), current_runtime().build,
+        current_app.config['RELEASE_CHECKER'])
 
 
 @bp.post('/advisories/<key>/acknowledgement')

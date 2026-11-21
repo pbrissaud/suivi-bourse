@@ -176,7 +176,8 @@ def sequence(env: Mapping[str, str]) -> None:
     try:
         app = api.create_app(runtime)
         mcp = mcp_server.build_server(runtime)
-        agent = agent_routes.build_app(runtime, mcp)
+        agent = agent_routes.build_app(
+            runtime, mcp, app.config['RELEASE_CHECKER'])
         gate = build_gate(runtime, environment)
         main.start_runtime(runtime)
         serve(app, environment, teardown, mcp, agent, gate)
