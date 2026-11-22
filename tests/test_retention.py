@@ -737,9 +737,9 @@ def test_the_ceiling_does_not_move_and_the_pass_still_concludes(store, mocker):
     choice needs in order to be honest at all. What Yahoo sells is unchanged by
     #783 and is not what that ticket discusses.
 
-    And the pass still ends where it ended: an install that has reconstructed
-    stays reconstructed, and the cut does not set the cycle asking again for a
-    window it had concluded (issue #703).
+    And the walk still ends where it ended: the anchor arrives on the first
+    acquisition, and the cut does not set the cycle asking again for a window
+    it had concluded (issue #703).
     """
     asked = []
 
@@ -771,8 +771,10 @@ def test_the_ceiling_does_not_move_and_the_pass_still_concludes(store, mocker):
     for (_, end, _), (previous_start, _, _) in zip(asked[1:], asked):
         assert end.date() == previous_start.date()
 
-    # Terminal, and it stays terminal: two more cycles ask Yahoo nothing.
-    assert metrics['backfill'].complete['AAPL'].date() == acquired.date
+    # Arrived, and it stays there: two more cycles ask Yahoo nothing. Every
+    # window came back empty, so what holds them is the back-off of a failure
+    # and not `complete` (#1635): the walk itself is never started over.
+    assert quotes.oldest_window_tried(store, 'AAPL') == acquired.date
     concluded = len(asked)
     metrics['backfill'](now=today)
     metrics['backfill'](now=today)

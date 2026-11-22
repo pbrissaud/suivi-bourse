@@ -145,6 +145,9 @@ class BackfillJob(base.Job):
         backfilled_count = 0
 
         held = carrying.held_symbols(snapshot.shares)
+        # What an event names. Anything else in the perimeter is a followed
+        # fund nobody bought, which has its own word for an empty series.
+        owned = set(snapshot.backfill_windows())
 
         repaired_count = 0
 
@@ -170,7 +173,8 @@ class BackfillJob(base.Job):
 
             written, repaired = self.backfill_symbol(
                 symbol, windows[symbol],
-                symbol in held or symbol in references, now)
+                symbol in held or symbol in references, now,
+                reference=symbol not in owned)
             backfilled_count += written
             repaired_count += repaired
 
@@ -188,12 +192,14 @@ class BackfillJob(base.Job):
 
     def backfill_symbol(self, symbol: str,
                         window: Tuple[date, Optional[date]],
-                        advancing: bool, now: datetime) -> Tuple[int, int]:
+                        advancing: bool, now: datetime,
+                        reference: bool = False) -> Tuple[int, int]:
         """Backfill one symbol over its own window (issue #626, #703, #704).
 
         ``advancing`` asks for the forward pass: the series is still running, so
         it is walked up to today. A held symbol advances; so does a symbol that
-        is merely tracked (issue #982).
+        is merely tracked (issue #982). ``reference`` is that second kind, a
+        followed fund no event names: see :meth:`backward`.
         """
         acquired, exited = window
         target, ceiling = carrying.holding_bounds(acquired, exited, now)
@@ -205,7 +211,7 @@ class BackfillJob(base.Job):
         if self.complete.get(symbol) == target:
             app_logger.debug(f"Backfill already complete for {symbol}")
         else:
-            written += self.backward(symbol, target, ceiling, now)
+            written += self.backward(symbol, target, ceiling, now, reference)
 
         if advancing:
             written += self.forward(symbol, now)
@@ -282,8 +288,21 @@ class BackfillJob(base.Job):
         return failures
 
     def backward(self, symbol: str, target: datetime, ceiling: datetime,
-                 now: Optional[datetime] = None) -> int:
-        """Backward pass: extend the series toward the first acquisition, one chunk (``backfill_chunk_days``) per cycle. Returns points written this cycle."""
+                 now: Optional[datetime] = None,
+                 reference: bool = False) -> int:
+        """Backward pass: extend the series toward the first acquisition, one chunk (``backfill_chunk_days``) per cycle. Returns points written this cycle.
+
+        **Reaching the target with not one price stored is a failure, not
+        ``complete``** (#1635). The market answered every window empty, which is
+        a mistyped ticker far more often than a quiet one, and ``complete`` kept
+        it from the System page, the bell and the agent alike. The anchor still
+        arrives, so the walk is not started over; the window on the target is
+        asked again under the back-off, and given up on like any other.
+
+        A ``reference`` (a followed fund no event names) keeps ``complete``: the
+        Benchmark page and ``benchmark_never_priced`` already say it (#1510),
+        and the download queue steps over it, so nothing would ever retry it.
+        """
         def publish(**fields) -> None:
             self.ctx.recorder.record_backfill(runtime_state.BackfillRecord(
                 symbol=symbol,
@@ -303,10 +322,22 @@ class BackfillJob(base.Job):
             self.unreachable.pop(symbol, None)
             quotes.take_back(symbol)
 
-        oldest_timestamp = quotes.oldest_ts(self.ctx.config_manager.store, symbol)
+        store = self.ctx.config_manager.store
+        oldest_timestamp = quotes.oldest_ts(store, symbol)
         end_date = self.backward_anchor(symbol, ceiling)
 
-        if carrying.is_terminal(end_date, target):
+        unpriced = oldest_timestamp is None and not reference
+        terminal = carrying.is_terminal(end_date, target)
+        # Asked down to the target and still unpriced, by this process or the
+        # one before it. **The request is part of the fact**: a line bought
+        # today is terminal before anything was asked, and stays `complete`.
+        asked = quotes.oldest_window_tried(store, symbol) is not None
+        in_vain = terminal and unpriced and asked
+
+        if in_vain:
+            end_date = min(
+                target + timedelta(days=self.ctx.backfill_chunk_days), ceiling)
+        elif terminal:
             app_logger.debug(
                 f"Backfill complete for {symbol}: "
                 f"anchor={end_date.date()}, target={target.date()}")
@@ -361,8 +392,19 @@ class BackfillJob(base.Job):
                        f"but could not be written to the store")
             return 0
 
-        settle()
         self.record_window_tried(symbol, start_date.date())
+
+        # Decided before `settle()`: taking the symbol back and giving it up
+        # again in one call would read as a change to the performance pass.
+        if not prices and unpriced and (in_vain or start_date <= target):
+            app_logger.warning(
+                f"The market knows no price for {symbol}, will retry later")
+            fail(error=f"the market answered, and knows no price for {symbol} "
+                       f"between {target.date()} and {ceiling.date()}: nothing "
+                       f"was ever stored under that name, check the ticker")
+            return 0
+
+        settle()
 
         if not prices:
             if start_date <= target:

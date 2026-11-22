@@ -23,6 +23,7 @@ import pandas as pd
 import pytest
 
 from application.jobs import backfill
+from application import advisories
 from application import entries
 from application import main
 from application import market
@@ -1164,7 +1165,10 @@ def test_a_mute_symbol_walks_back_to_its_acquisition_and_stops_asking(
     consecutive-failure counter stays at zero too.
 
     With the anchor being the oldest window **tried**, it walks back one chunk
-    per cycle, reaches ``complete`` with **zero point**, and stops asking.
+    per cycle, reaches its acquisition with **zero point**, and stops walking.
+
+    What it reaches is no longer ``complete`` (#1635): not one price under that
+    name is a failure, and the back-off is what keeps the loop closed.
     """
     acquired = (datetime.now(timezone.utc) - timedelta(days=1125)).date()
     events = [Event(acquired, EventType.BUY, "DEAD", "Delisted Co",
@@ -1178,12 +1182,12 @@ def test_a_mute_symbol_walks_back_to_its_acquisition_and_stops_asking(
     for _ in range(10):
         metrics['backfill']()
 
-    # 1125 days over 365-day chunks: four windows, then nothing, for ever.
+    # 1125 days over 365-day chunks: four windows, then the wait of a failure.
     assert fetch.call_count == 4
     assert _points(store, "DEAD") == []
     record = metrics.ctx.recorder.backfill_of("DEAD", main.runtime_state.BACKWARD)
-    assert record.terminal == main.runtime_state.TERMINAL_COMPLETE
-    assert record.written == 0
+    assert (record.terminal, record.failed, record.failures) == (None, True, 1)
+    assert "DEAD" not in metrics['backfill'].complete
 
 
 def test_the_anchor_is_persisted_so_a_restart_does_not_start_asking_again(
@@ -1194,6 +1198,10 @@ def test_the_anchor_is_persisted_so_a_restart_does_not_start_asking_again(
     rows — which is exactly what a symbol with no rows cannot do. So this one is
     written on ``symbol_quote``, by the module that owns the row, and a process
     that restarts mid-reconstruction resumes where it left off.
+
+    A symbol that arrived with nothing stored is asked **one** window again,
+    the one on its acquisition, and not the four it walked (#1635): the restart
+    forgot the failure, and the store is what says there was one.
     """
     acquired = (datetime.now(timezone.utc) - timedelta(days=1125)).date()
     events = [Event(acquired, EventType.BUY, "DEAD", "Delisted Co",
@@ -1217,11 +1225,13 @@ def test_the_anchor_is_persisted_so_a_restart_does_not_start_asking_again(
     again = fake_history(mocker, revived, return_value=[])
 
     revived['backfill']()
+    revived['backfill']()
 
-    again.assert_not_called()
-    assert revived.ctx.recorder.backfill_of(
-        "DEAD", main.runtime_state.BACKWARD).terminal == \
-        main.runtime_state.TERMINAL_COMPLETE
+    (_, start, end), _ = again.call_args
+    assert again.call_count == 1
+    assert (start.date(), end.date()) == (acquired, acquired + timedelta(days=365))
+    record = revived.ctx.recorder.backfill_of("DEAD", main.runtime_state.BACKWARD)
+    assert (record.terminal, record.failed) == (None, True)
 
 
 def test_a_failed_fetch_leaves_the_anchor_where_it_was(store, mocker):
@@ -1548,6 +1558,154 @@ def test_a_failed_store_write_backs_off_and_counts_toward_the_give_up(
     assert record.terminal == runtime_state.TERMINAL_UNREACHABLE
 
 
+# ---------------------------------------------------------------------------
+# A ticker the market does not know is a failure, not `complete` (#1635)
+#
+# A BUY of `ZZQX.PA` answered every window empty, the walk reached the
+# acquisition, and the record read `complete` with nothing stored. Nothing in
+# the app said a word: no error, no advisory, a silent bell.
+# ---------------------------------------------------------------------------
+
+def _unknown_ticker(store, mocker, symbol="ZZQX.PA"):
+    """A held line bought three weeks ago, one chunk wide, and a provider that answers it empty."""
+    # Process memory, and a test before this one may have given the symbol up.
+    quotes.take_back(symbol)
+    events = [Event((_T0 - timedelta(days=20)).date(), EventType.BUY, symbol,
+                    "Mistyped", quantity=10, unit_price=150.0)]
+    metrics, _ = _build_metrics(
+        [_valid_shares(symbol, "Mistyped", quantity=10)], store,
+        mode="events", events=events)
+    metrics.ctx.regular_interval = 120
+    metrics.ctx.backfill_chunk_days = 365
+    return metrics, fake_history(mocker, metrics, return_value=[])
+
+
+def _backward(metrics, symbol="ZZQX.PA"):
+    return metrics.ctx.recorder.backfill_of(symbol, runtime_state.BACKWARD)
+
+
+def test_a_ticker_the_market_does_not_know_is_a_failure_the_app_says(
+        store, mocker):
+    """One cycle, and the three places that were silent all name the symbol."""
+    metrics, _ = _unknown_ticker(store, mocker)
+
+    metrics['backfill'](_T0)
+
+    record = _backward(metrics)
+    assert (record.terminal, record.failed, record.failures) == (None, True, 1)
+    assert "ZZQX.PA" not in metrics['backfill'].complete
+
+    # The bell, by the rule it already had: asked, and not one price.
+    raised = [one.key for one in advisories.listing(
+        store, _T0, register=advisories.REGISTER_USER,
+        recorder=metrics.ctx.recorder)]
+    assert "no_price:ZZQX.PA" in raised
+
+    # The System page and the agent's `get_system_status` read this list.
+    shares = metrics.ctx.config_manager.current().shares
+    scrape, backfilled = metrics.ctx.recorder.records_for(shares)
+    error, = runtime_view.build_errors(
+        runtime_view.build_symbols(shares, scrape, backfilled, {}, _T0),
+        None, None)
+    assert (error['source'], error['key']) == ('backfill:backward', "ZZQX.PA")
+    assert "knows no price for ZZQX.PA" in error['message']
+    assert "check the ticker" in error['message']
+
+
+def test_the_unknown_ticker_backs_off_and_is_given_up_on_like_a_failed_fetch(
+        store, mocker):
+    """Each retry is a request, on #617's formula, and the ninth gives up (#1288)."""
+    metrics, fetch = _unknown_ticker(store, mocker)
+
+    reached = _fetch_instants(metrics, fetch, range(0, 7801, 60))
+
+    assert reached == [0, 120, 240, 360, 600, 1080, 2040, 3960, 7800]
+    record = _backward(metrics)
+    assert (record.terminal, record.failed, record.failures) == (
+        runtime_state.TERMINAL_UNREACHABLE, True, 9)
+    assert "ZZQX.PA" in quotes.given_up()
+    assert metrics['ingestion'].reconstruction_state() == (1, 1)
+
+
+def test_a_price_that_finally_arrives_brings_the_unknown_ticker_back(
+        store, mocker):
+    metrics, fetch = _unknown_ticker(store, mocker)
+    _fetch_instants(metrics, fetch, range(0, 7801, 60))
+
+    fetch.return_value = [
+        {"timestamp": _T0 - timedelta(days=5), "price": 90.0}]
+    metrics['backfill'](_T0 + timedelta(days=2))
+
+    record = _backward(metrics)
+    assert (record.terminal, record.failures, record.written) == (None, 0, 1)
+    assert "ZZQX.PA" not in metrics['backfill'].unreachable
+    assert "ZZQX.PA" not in quotes.given_up()
+
+    # Priced now, with the anchor already on the acquisition: the walk is over.
+    metrics['backfill'](_T0 + timedelta(days=2, minutes=5))
+
+    assert _backward(metrics).terminal == runtime_state.TERMINAL_COMPLETE
+
+
+def test_a_priced_symbol_whose_earlier_window_is_empty_still_ends_complete(
+        store, mocker):
+    """Bought before the market quoted it: prices stored, nothing earlier.
+
+    That is where a walk legitimately ends, and the only thing that tells it
+    from a mistyped ticker is the series the store already holds.
+    """
+    metrics, fetch = _unknown_ticker(store, mocker, symbol="AAPL")
+    _seed_up_to_now(store, "AAPL", _T0 - timedelta(days=5))
+
+    metrics['backfill']()
+
+    fetch.assert_called_once()
+    record = _backward(metrics, "AAPL")
+    assert (record.terminal, record.failed, record.failures) == (
+        runtime_state.TERMINAL_COMPLETE, False, 0)
+    assert not [one for one in advisories.listing(
+        store, register=advisories.REGISTER_USER,
+        recorder=metrics.ctx.recorder) if one.kind == advisories.NO_PRICE]
+
+
+def test_a_line_bought_today_is_complete_before_anything_was_asked(
+        store, mocker):
+    """**The request is part of the fact.** No window, so nothing came back empty."""
+    today = datetime.now(timezone.utc)
+    events = [Event(today.date(), EventType.BUY, "ZZQX.PA", "Mistyped",
+                    quantity=10, unit_price=150.0)]
+    metrics, _ = _build_metrics(
+        [_valid_shares("ZZQX.PA", "Mistyped", quantity=10)], store,
+        mode="events", events=events)
+    fetch = fake_history(mocker, metrics, return_value=[])
+
+    metrics['backfill'](today)
+
+    fetch.assert_not_called()
+    record = _backward(metrics)
+    assert (record.terminal, record.failed) == (
+        runtime_state.TERMINAL_COMPLETE, False)
+
+
+def test_a_followed_fund_nobody_bought_keeps_its_own_word_for_an_empty_series(
+        store, mocker):
+    """The Benchmark page already says *never priced* (#1510), and steps over it.
+
+    Nothing would retry that record, so a failure there would stand for ever
+    beside the advisory that names the same fact.
+    """
+    metrics, _ = _unknown_ticker(store, mocker, symbol="AAPL")
+    _seed_up_to_now(store, "AAPL", _T0 - timedelta(days=5))
+    _names_a_reference(store, "CW8.PA")
+
+    metrics['backfill']()
+
+    record = _backward(metrics, "CW8.PA")
+    assert (record.terminal, record.failed) == (
+        runtime_state.TERMINAL_COMPLETE, False)
+    assert not quotes.backward_failed(store, "CW8.PA")
+
+
 def test_a_failing_forward_fetch_backs_off_without_a_terminal_and_one_success_resets_it(
         store, mocker):
     friday = datetime(2024, 3, 1, 16, 0, tzinfo=timezone.utc)
@@ -1659,6 +1817,10 @@ def test_a_running_reconstruction_is_advised_and_stands_down_when_it_ends(
         [_valid_shares("DEAD", "Delisted Co", quantity=5)], store,
         mode="events", events=events)
     metrics.ctx.backfill_chunk_days = 365
+    # A line the market did quote, lately: with not one price stored the empty
+    # windows would be a failure and not the end of the walk (#1635).
+    _seed_up_to_now(store, "DEAD",
+                    datetime.now(timezone.utc) - timedelta(days=30))
     fake_history(mocker, metrics, return_value=[])
 
     metrics['backfill']()
