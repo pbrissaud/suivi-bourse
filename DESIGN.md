@@ -356,7 +356,7 @@ and in a mockup alike.
 ## Layout
 
 - **The shell:** a 200 px navigation (a 64 px rail when folded, a drawer under 768 px), then a 56 px header bar holding, in order, the fold, the page title with its dated subtitle or nothing, the search (⌘K) and the bell. Nothing else lives in the bar.
-- **Navigation:** two groups and no group label. The top holds what the owner reads and records: Tableau de bord, Titres, Comptes, Grand livre, Comparaison, Agent. The foot holds the administration: Système, Réglages. Journal is reached from Système › Installation, Statistiques from the agent's rail, Thème from Réglages › Affichage; each is a page with its own title and a « ← Parent » text link on its first line.
+- **Navigation:** two groups and no group label. The top holds what the owner reads and records: Tableau de bord, Titres, Comptes, Grand livre, Comparaison, Agent. The foot holds the administration: Système, Réglages. Journal is reached from Système › Installation, Mémoire and Statistiques from the agent's rail, Thème from Réglages › Affichage; each is a page with its own title and a « ← Parent » text link on its first line.
 - **The page's envelope** is `32px 32px 56px` of padding on every page. The first line of the content is the page's control line: on the left the tabs, the back link or the file name; on the right the page's actions (outline buttons, then the one filled button). A table page's filters share that line or the one under it. Page actions never get a row of their own.
 - **Content width is set per kind of content:** a table or a chart takes the full width; a form is a 460 px sheet on the right; Réglages takes the full width, each section a `220px | 1fr` grid inside its plane; the agent's conversation is centred at 768 px; a paragraph keeps 65 characters.
 - **Tables sit on the ground**, with no plane and no frame: a header row in Label, `border` rules under every row including the last, totals as the last row. Row heights: 40 px for one line of text, 48 px for a name with a sub-line and for totals. Figures right-aligned in mono. A sortable column is `foreground` 500 with `aria-sort`, no glyph. A clickable row underlines its name on hover (offset 4); no row background, no chevron.
@@ -520,8 +520,8 @@ dialog, the notifications popover, a picker) are `background` with a 1 px `borde
 - **Chart axes (#1265):** unchanged: three to five value ticks, compact euros, dashed
   `border` grid, Label mono ticks, no axis line.
 - **Agent page:** a 240 px `muted` rail (« Nouveau fil ⌘N », search, threads grouped by
-  day, « Statistiques » at the foot), the conversation centred at 768 px. The user's turn
-  has no bubble. A trace is a `<details>` line; hypotheses are a line of underlined values
+  day, « Mémoire » and « Statistiques » at the foot), the conversation centred at 768 px.
+  The user's turn has no bubble. A trace is a `<details>` line; hypotheses are a line of underlined values
   the owner can change; proposals come under the answer as ruled rows with a checkbox, a
   duplicate unchecked and marked « déjà dans le grand livre »; one filled button « Ajouter
   N événements ». The composer is a plane with « Joindre un relevé », « @ une ligne ou un
@@ -530,6 +530,9 @@ dialog, the notifications popover, a picker) are `background` with a 1 px `borde
   Vos chiffres sont envoyés à {fournisseur}. » (« restent sur ce serveur » only when the
   provider's host is local). *Statistiques* is a page: a hero of tokens exchanged, a cache /
   new / output bar, weekly stacked bars, Par modèle and Par fil tables; no price.
+  *Mémoire* is a page: what the agent knows about the owner, the confirmed facts and
+  projects as ruled rows on the ground, each its value with « Confirmé le … » as a
+  sub-line and Modifier · Oublier as text actions; one sentence when nothing is confirmed.
 - **Réglages:** sections Sécurité, Portefeuille, Agent, Notifications, Affichage, Avancé,
   each a plane with its title in the 220 px gutter and no lead sentence. A switch is a
   section's first row where it exists (« Agent activé »). *Sécurité*: Code d'accès (state +

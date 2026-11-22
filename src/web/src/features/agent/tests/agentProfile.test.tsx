@@ -92,10 +92,10 @@ function aProposal(status: Proposal['status']): Proposal {
   }
 }
 
-async function openPage(url = '/agent/t1') {
+async function openPage(url = '/agent/t1', heading = 'Agent') {
   setViewportWidth(1024)
   const view = renderApp({ url })
-  await screen.findByRole('heading', { level: 1, name: 'Agent' })
+  await screen.findByRole('heading', { level: 1, name: heading })
   return { ...view, main: screen.getByRole('main') }
 }
 
@@ -260,27 +260,27 @@ describe('the proposal card (5A)', () => {
   })
 })
 
-describe('the profile line (13A)', () => {
-  const project = (id: string, label: string, year: number) => ({
-    id: id.padEnd(12, '0'),
-    label,
-    target_year: year,
-    amount: null,
-    confirmed_at: CONFIRMED,
-  })
-  const full: Profile = {
-    facts: {
-      income: { value: { amount: 54321, currency: 'EUR' }, confirmed_at: CONFIRMED },
-      marginal_rate: { value: 0.3, confirmed_at: CONFIRMED },
-      risk_tolerance: { value: 'balanced', confirmed_at: CONFIRMED },
-    },
-    projects: [
-      project('a', 'Maison', 2028),
-      project('b', 'Études', 2032),
-      project('c', 'Voilier', 2040),
-    ],
-  }
+const project = (id: string, label: string, year: number) => ({
+  id: id.padEnd(12, '0'),
+  label,
+  target_year: year,
+  amount: null,
+  confirmed_at: CONFIRMED,
+})
+const full: Profile = {
+  facts: {
+    income: { value: { amount: 54321, currency: 'EUR' }, confirmed_at: CONFIRMED },
+    marginal_rate: { value: 0.3, confirmed_at: CONFIRMED },
+    risk_tolerance: { value: 'balanced', confirmed_at: CONFIRMED },
+  },
+  projects: [
+    project('a', 'Maison', 2028),
+    project('b', 'Études', 2032),
+    project('c', 'Voilier', 2040),
+  ],
+}
 
+describe('the profile line (13A)', () => {
   it('draws nothing when no fact is declared', async () => {
     switchedOn()
     const { main } = await openPage('/agent')
@@ -347,5 +347,75 @@ describe('the profile line (13A)', () => {
     )
     expect(writes).toEqual([{ method: 'DELETE', path: 'risk_tolerance', body: null }])
     expect(within(chips).getByRole('button', { name: 'Revenu · non envoyé' })).toBeInTheDocument()
+  })
+})
+
+describe('the memory page (#1619)', () => {
+  const balanced: Profile = {
+    facts: { risk_tolerance: full.facts.risk_tolerance },
+    projects: [],
+  }
+  /** The list, once the page under the rail's « Mémoire » has it. */
+  const memory = () => within(screen.getByRole('main')).findByRole('group', { name: 'Mémoire' })
+
+  it('is reached from the rail, and lists every fact and project with its date', async () => {
+    switchedOn(full)
+    const { user } = await openPage('/agent')
+
+    const rail = await screen.findByRole('navigation', { name: 'Fils de l’agent' })
+    await user.click(within(rail).getByRole('link', { name: 'Mémoire' }))
+    await screen.findByRole('heading', { level: 1, name: 'Mémoire' })
+    expect(screen.getByRole('link', { name: '← Agent' })).toHaveAttribute('href', '/agent')
+
+    const rows = await within(await memory()).findAllByRole('listitem')
+    expect(rows).toHaveLength(6)
+    // The income says it is not sent, since no chip names it here.
+    expect(rows[0]).toHaveTextContent(/^Revenu · non envoyé · 54\s321,00\s€Confirmé le /)
+    expect(within(rows[2]).getByText('Équilibré')).toBeInTheDocument()
+    expect(within(rows[2]).getByText(/^Confirmé le .*2026$/)).toBeInTheDocument()
+    expect(within(rows[5]).getByText('Voilier · 2040')).toBeInTheDocument()
+    for (const row of rows) {
+      expect(within(row).getByRole('button', { name: 'Modifier' })).toBeInTheDocument()
+      expect(within(row).getByRole('button', { name: 'Oublier' })).toBeInTheDocument()
+    }
+  })
+
+  it('edits a fact in its row, and the row shows the new value', async () => {
+    const writes = switchedOn(balanced)
+    const { user } = await openPage('/agent/memory', 'Mémoire')
+
+    const list = await memory()
+    await user.click(await within(list).findByRole('button', { name: 'Modifier' }))
+    await user.selectOptions(
+      within(list).getByRole('combobox', { name: 'Tolérance au risque' }),
+      'Prudent',
+    )
+    await user.click(within(list).getByRole('button', { name: 'Enregistrer' }))
+
+    expect(await within(list).findByText('Prudent')).toBeInTheDocument()
+    expect(writes).toEqual([{ method: 'PUT', path: 'risk_tolerance', body: 'prudent' }])
+    // Back from the editor, the focus is on the row's *Modifier*.
+    expect(within(list).getByRole('button', { name: 'Modifier' })).toHaveFocus()
+  })
+
+  it('forgets the last fact, says the profile is empty, and keeps the focus', async () => {
+    const writes = switchedOn(balanced)
+    const { user } = await openPage('/agent/memory', 'Mémoire')
+
+    const list = await memory()
+    await user.click(await within(list).findByRole('button', { name: 'Oublier' }))
+
+    expect(await within(list).findByText(fr['agent.memory.empty'])).toBeInTheDocument()
+    expect(within(list).queryByText('Équilibré')).not.toBeInTheDocument()
+    expect(writes).toEqual([{ method: 'DELETE', path: 'risk_tolerance', body: null }])
+    expect(list).toHaveFocus()
+  })
+
+  it('says the agent knows nothing yet when nothing is confirmed', async () => {
+    switchedOn()
+    await openPage('/agent/memory', 'Mémoire')
+    expect(
+      await within(await memory()).findByText('L’agent ne sait encore rien de vous.'),
+    ).toBeInTheDocument()
   })
 })

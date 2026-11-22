@@ -37,7 +37,7 @@ import {
   RISK_TOLERANCES,
 } from '@/features/agent/lib/profile'
 import { type EventsProposal, eventProposalsApi } from '@/features/agent/lib/eventProposals'
-import { INLINE_LINK } from '@/features/agent/lib/styles'
+import { ACT, INLINE_LINK } from '@/features/agent/lib/styles'
 import { settingsApi } from '@/features/settings/lib/api'
 import { ApiProblem } from '@/lib/api'
 import { baseCurrency } from '@/lib/firstRun'
@@ -214,7 +214,7 @@ interface Entry {
 }
 
 /** The facts in their order, then the projects in the server's. */
-function entries(profile: Profile): Entry[] {
+export function entries(profile: Profile): Entry[] {
   return [
     ...FACTS.flatMap((key) => {
       const fact = profile.facts[key]
@@ -314,8 +314,20 @@ function ProfileValue({
   )
 }
 
-/** One fact: its value, when it was confirmed, *Modifier* and *Oublier*. */
-function FactDetail({ entry, onForgotten }: { entry: Entry; onForgotten: () => void }) {
+/**
+ * One fact: its value, when it was confirmed, *Modifier* and *Oublier*. `row`
+ * is the Memory page's ruled row (#1619): the date as a sub-line, the two as
+ * text actions on the right, and the income named since no chip names it there.
+ */
+export function FactDetail({
+  entry,
+  onForgotten,
+  row = false,
+}: {
+  entry: Entry
+  onForgotten: () => void
+  row?: boolean
+}) {
   const { t } = useI18n()
   const f = useFormatters()
   const client = useQueryClient()
@@ -333,36 +345,51 @@ function FactDetail({ entry, onForgotten }: { entry: Entry; onForgotten: () => v
       setEditing(false)
       setEdited(true)
     }
-    return <FactEditor entry={entry} onDone={done} />
+    const editor = <FactEditor entry={entry} onDone={done} />
+    // On a page the fields would run the row's whole width.
+    return row ? <div className="max-w-sm">{editor}</div> : editor
   }
-  return (
-    <div className="flex flex-col gap-2">
+  const action = (label: string, props: ComponentProps<'button'>) =>
+    row ? (
+      <button type="button" className={ACT} {...props}>
+        {label}
+      </button>
+    ) : (
+      <Button variant="outline" className="min-h-11" {...props}>
+        {label}
+      </Button>
+    )
+  const facts = (
+    <>
       <p className="text-sm font-medium">
+        {row && entry.key === 'income' ? `${t('agent.profile.income')} · ` : null}
         <FactValue entry={entry} />
       </p>
       <p className="text-xs text-muted-foreground">
         {t('agent.profile.confirmedOn', { date: f.date(entry.confirmed_at) })}
       </p>
-      <div className="flex gap-2">
-        <Button
-          variant="outline"
-          className="min-h-11"
-          autoFocus={edited}
-          onClick={() => setEditing(true)}
-        >
-          {t('agent.profile.edit')}
-        </Button>
-        <Button
-          variant="outline"
-          className="min-h-11"
-          disabled={forget.isPending}
-          onClick={() => forget.mutate()}
-        >
-          {t('agent.profile.forget')}
-        </Button>
+    </>
+  )
+  return (
+    <div
+      className={
+        row ? 'flex flex-wrap items-center justify-between gap-x-6 gap-y-1' : 'flex flex-col gap-2'
+      }
+    >
+      {/* The popover's three lines stay its own; a row groups the first two. */}
+      {row ? <div className="flex flex-col gap-0.5">{facts}</div> : facts}
+      <div className={row ? 'flex gap-4' : 'flex gap-2'}>
+        {action(t('agent.profile.edit'), { autoFocus: edited, onClick: () => setEditing(true) })}
+        {action(t('agent.profile.forget'), {
+          disabled: forget.isPending,
+          onClick: () => forget.mutate(),
+        })}
       </div>
       {forget.error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p
+          role="alert"
+          className={row ? 'w-full text-sm text-destructive' : 'text-sm text-destructive'}
+        >
           {t('agent.profile.failed')}
         </p>
       ) : null}
