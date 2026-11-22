@@ -249,8 +249,8 @@ CREATE TABLE IF NOT EXISTS profile_fact (
 -- ``ready`` row older than ``proposals.EXPIRY``.
 CREATE TABLE IF NOT EXISTS proposal (
     id          VARCHAR PRIMARY KEY,     -- uuid4 hex
-    kind        VARCHAR NOT NULL,        -- 'profile_fact' | 'events'
-    payload     VARCHAR NOT NULL,        -- JSON: {"key", "value"} | {"title", "events", "stamp"}
+    kind        VARCHAR NOT NULL,        -- 'profile_fact' | 'events' | 'setting'
+    payload     VARCHAR NOT NULL,        -- JSON: {"key", "value"} | {"title", "events", "stamp"} | {"key", "value", "previous"}
     status      VARCHAR NOT NULL,        -- 'ready' | 'merged' | 'ignored'
     created_at  TIMESTAMPTZ NOT NULL,
     decided_at  TIMESTAMPTZ);

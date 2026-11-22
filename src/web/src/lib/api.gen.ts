@@ -250,3 +250,30 @@ export interface Positions {
 export interface ProposalsPayload {
   proposals: Proposal[];
 }
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "SettingProposal".
+ */
+export interface SettingProposal {
+  created_at: string;
+  decided_at: string | null;
+  id: string;
+  key: string;
+  previous: unknown;
+  status: "ready" | "merged" | "ignored" | "expired";
+  value: unknown;
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "SettingProposalDecided".
+ */
+export interface SettingProposalDecided {
+  proposal: SettingProposal;
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "SettingProposalsPayload".
+ */
+export interface SettingProposalsPayload {
+  proposals: SettingProposal[];
+}

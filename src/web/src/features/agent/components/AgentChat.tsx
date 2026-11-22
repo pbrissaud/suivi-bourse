@@ -60,6 +60,7 @@ import { Composer } from '@/features/agent/components/Composer'
 import { defaultRunner, providerName, type Runner } from '@/features/agent/components/ModelPicker'
 import { RefusalNotice } from '@/features/agent/components/RefusalNotice'
 import { EventsCard } from '@/features/agent/components/EventsCard'
+import { SettingCard } from '@/features/agent/components/SettingCard'
 import {
   FactCard,
   ProfileLine,
@@ -669,6 +670,9 @@ function Turn({
               proposal={proposal}
               primary={latest && index === cards.length - 1}
             />
+          ) : 'previous' in proposal ? (
+            // Before the fact: a setting has a key and a value too.
+            <SettingCard key={proposal.id} proposal={proposal} />
           ) : (
             <FactCard key={proposal.id} proposal={proposal} />
           ),

@@ -13,14 +13,19 @@ from application import job_history
 from application import journal
 from application import ledger
 from application import notifications
+from application import profile as profile_module
+from application import proposals as proposals_module
 from application import runtime_view
+from application import setting_proposals
 from application import settings as settings_module
 from application import store as store_module
 from api.problem import (
     bad_request,
+    conflict,
     not_found,
     unprocessable_request,
 )
+from api.profile import PROPOSAL_IDS_MAX
 from api.common import (
     _snapshot,
     _store,
@@ -228,6 +233,55 @@ def put_log_level():
     except ValueError as exc:
         return bad_request(str(exc))
     return jsonify({'log_level': level})
+
+
+_DECIDED = {'merged': 'déjà appliquée', 'ignored': 'déjà ignorée',
+            'expired': 'expirée'}
+
+
+@bp.get('/config/proposals')
+def get_setting_proposals():
+    """The setting proposals ``ids`` names; an id that names none is left out."""
+    ids = list(dict.fromkeys(
+        part for part in (request.args.get('ids') or '').split(',') if part))
+    if not 1 <= len(ids) <= PROPOSAL_IDS_MAX or not all(
+            profile_module.is_proposal_id(i) for i in ids):
+        return bad_request(
+            f"'ids' is 1 to {PROPOSAL_IDS_MAX} proposal ids, comma-separated")
+    return jsonify({'proposals': setting_proposals.read(
+        _store(), ids, datetime.now(timezone.utc))})
+
+
+@bp.post('/config/proposals/<proposal_id>/confirm')
+def confirm_setting_proposal(proposal_id):
+    """Apply the proposed setting: the one road from a proposal to a setting."""
+    return _decide_setting(proposal_id, confirm=True)
+
+
+@bp.post('/config/proposals/<proposal_id>/ignore')
+def ignore_setting_proposal(proposal_id):
+    """Leave the setting as it is; the proposal reads ``ignored``."""
+    return _decide_setting(proposal_id, confirm=False)
+
+
+def _decide_setting(proposal_id, confirm: bool):
+    from application import main
+
+    if not profile_module.is_proposal_id(proposal_id):
+        return not_found("no proposal has this id")
+    decide = setting_proposals.confirm if confirm else setting_proposals.ignore
+    try:
+        with current_runtime().config_manager.writing() as opened:
+            proposal = decide(opened, proposal_id, datetime.now(timezone.utc))
+    except proposals_module.UnknownProposal:
+        return not_found(f"no proposal {proposal_id!r}")
+    except proposals_module.ProposalNotReady as exc:
+        return conflict(f"Cette proposition est {_DECIDED[exc.status]}.")
+    if confirm:
+        # Only once the decision has won, and by the road ``PUT
+        # /config/log-level`` takes: the level was validated when proposed.
+        main.set_log_level(proposal['value'])
+    return jsonify({'proposal': proposal})
 
 
 def _log_directory():

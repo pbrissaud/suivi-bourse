@@ -884,6 +884,78 @@
       "title": "ProposedLine",
       "type": "object"
     },
+    "SettingProposal": {
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "decided_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "previous": {},
+        "status": {
+          "enum": [
+            "ready",
+            "merged",
+            "ignored",
+            "expired"
+          ],
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "id",
+        "key",
+        "value",
+        "previous",
+        "status",
+        "created_at",
+        "decided_at"
+      ],
+      "title": "SettingProposal",
+      "type": "object"
+    },
+    "SettingProposalDecided": {
+      "properties": {
+        "proposal": {
+          "$ref": "#/$defs/SettingProposal"
+        }
+      },
+      "required": [
+        "proposal"
+      ],
+      "title": "SettingProposalDecided",
+      "type": "object"
+    },
+    "SettingProposalsPayload": {
+      "properties": {
+        "proposals": {
+          "items": {
+            "$ref": "#/$defs/SettingProposal"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "proposals"
+      ],
+      "title": "SettingProposalsPayload",
+      "type": "object"
+    },
     "StatementFacts": {
       "description": "What a statement proposal says beyond its lines (#1120).",
       "properties": {

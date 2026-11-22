@@ -168,6 +168,10 @@ export const ROUTES = {
   profileProposals: '/api/profile/proposals',
   profileProposalConfirm: '/api/profile/proposals/:id/confirm',
   profileProposalIgnore: '/api/profile/proposals/:id/ignore',
+  /** The settings the agent proposed (#1628), read by `?ids=` and decided only here. */
+  configProposals: '/api/config/proposals',
+  configProposalConfirm: '/api/config/proposals/:id/confirm',
+  configProposalIgnore: '/api/config/proposals/:id/ignore',
   /** The ledger events the agent proposed (#1119). The `:id` ones are patterns. */
   agentProposals: '/api/agent/proposals',
   agentProposalPreview: '/api/agent/proposals/:id/preview',
