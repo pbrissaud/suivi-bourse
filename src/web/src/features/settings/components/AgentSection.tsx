@@ -164,6 +164,8 @@ function SearchRow({
   const [typed, setTyped] = useState<string | null>(null)
   // Edited since the last save: leaving the field must not ask the same address twice.
   const edited = useRef(false)
+  // The last value handed to the save: what a save in flight will leave, and what a refusal is about.
+  const sent = useRef<string | null>(null)
   const search = useRowSave({
     send: (search_url: string | null) => settingsApi.saveAgentSettings({ search_url }),
     onAnswer: (answer) => {
@@ -175,9 +177,12 @@ function SearchRow({
     },
     said: (error) => settingRefusal(error, 'search_url'),
   })
-  // A refusal is about the text in the field; once the stored one is back, it is not.
+  const saving = search.state.kind === 'saving'
+  // A refusal is about the text that was sent; once the field says something else, it is not.
   const state =
-    typed === null && search.state.kind === 'failed' ? ({ kind: 'idle' } as const) : search.state
+    search.state.kind === 'failed' && (typed === null || (typed.trim() || null) !== sent.current)
+      ? ({ kind: 'idle' } as const)
+      : search.state
   const privacy = settings.search_privacy?.[language === 'en' ? 'en' : 'fr']
 
   function commit(again: boolean) {
@@ -185,8 +190,13 @@ function SearchRow({
     const next = typed.trim() || null
     if (!again && !edited.current) return
     edited.current = false
-    if (next === held) setTyped(null)
-    else search.save(next)
+    // Compared with what the server will hold once the save in flight lands.
+    if (next === (saving ? sent.current : held)) {
+      if (!saving) setTyped(null)
+      return
+    }
+    sent.current = next
+    search.save(next)
   }
 
   return (

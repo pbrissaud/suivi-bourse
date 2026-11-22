@@ -35,7 +35,7 @@ export function SettingRow({
     <div
       className={cn(
         'grid min-h-12 items-center gap-x-6 gap-y-2 border-b py-2 last:border-b-0',
-        wide ? 'sm:grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-[minmax(0,1fr)_auto]',
+        wide ? 'grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto]' : 'grid-cols-[minmax(0,1fr)_auto]',
       )}
     >
       <div className="min-w-0">

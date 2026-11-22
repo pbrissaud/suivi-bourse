@@ -434,6 +434,44 @@ describe('the providers', () => {
     await user.type(field, '{Escape}')
     expect(field).toHaveValue('')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    // Typing again does not bring back a refusal about text never sent.
+    await user.type(field, 'h')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(field).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('sends a revert typed while the SearXNG address is being asked', async () => {
+    const writes = searxng(null)
+    let release = () => {}
+    const asked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.put(ROUTES.agentConfig, async ({ request }) => {
+        const body = (await request.json()) as { search_url: string | null }
+        writes.push(body)
+        if (writes.length === 1) await asked
+        return HttpResponse.json({
+          enabled: false,
+          reasoning: 'low',
+          search_url: body.search_url,
+          search_privacy: null,
+        })
+      }),
+    )
+    const { user } = renderApp({ url: '/settings' })
+
+    const field = await screen.findByRole('textbox', { name: 'Recherche web (SearXNG)' })
+    await user.type(field, 'https://searx.example.net{Enter}{Enter}')
+    await waitFor(() => expect(writes).toHaveLength(1))
+    await user.clear(field)
+    await user.tab()
+    release()
+
+    await waitFor(() =>
+      expect(writes).toEqual([{ search_url: 'https://searx.example.net' }, { search_url: null }]),
+    )
+    await waitFor(() => expect(field).toHaveValue(''))
   })
 })
 
