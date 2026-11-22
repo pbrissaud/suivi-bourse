@@ -1,4 +1,5 @@
-"""The built-in agent's own tools: the System page, read (#1625).
+"""The built-in agent's own tools: the System page, read (#1625), and a
+setting proposed for the owner to confirm (#1628).
 
 Served to the owner's built-in agent only, through :func:`agent.build_agent`.
 Nothing here is registered on the ``/mcp`` server: a client the owner connects
@@ -13,7 +14,9 @@ from pydantic import TypeAdapter, ValidationError
 from application import advisories
 from application import installation_facts
 from application import instants
+from application import proposals
 from application import runtime_view
+from application import setting_proposals
 from application import settings
 from application import store as store_module
 from application.jobs import registry
@@ -61,6 +64,21 @@ variables that are set and no longer read) complete the configuration.
 `advisories`, `installation_facts` and `settings` are read from the store. \
 When the store cannot answer they are `null` and `store_fault` says why: \
 that is unknown, never "none". An empty list is a real "none".\
+"""
+
+PROPOSE_SETTING_DESCRIPTION = """\
+Propose a change to one setting of this installation, for the owner to \
+confirm or ignore on a card under your answer. **This records a proposal and \
+never changes the setting**: nothing changes until the owner confirms, so \
+never say the setting is changed, and no tool confirms a proposal.
+
+The only setting that can be proposed is `log_level`, with `value` one of \
+`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. It applies until the app \
+restarts; it is not stored. Any other key is refused, and so is the level \
+the app is already at: tell the owner the reason the refusal gives. They \
+change every other setting themself, in the app's Settings.
+
+`previous` is the setting's value when the proposal was made.\
 """
 
 
@@ -137,6 +155,17 @@ class SystemStatus(TypedDict):
     installation_facts: Optional[List[Fact]]
     settings: Optional[List[Setting]]
     store_fault: Optional[str]
+
+
+class ProposedSetting(TypedDict):
+    proposal_id: str
+    key: str
+    value: Any
+    previous: Any
+    status: str
+    created_at: str
+    expires_at: str
+    note: str
 
 
 _SHAPE = TypeAdapter(SystemStatus)
@@ -270,6 +299,7 @@ def build_toolset(runtime, checker=None):
     one. Left out, no update is ever announced.
     """
     from pydantic_ai import ModelRetry
+    from pydantic_ai.exceptions import ToolFailed
     from pydantic_ai.toolsets import FunctionToolset
 
     def get_system_status() -> SystemStatus:
@@ -283,7 +313,39 @@ def build_toolset(runtime, checker=None):
                 f"so it is withheld rather than served wrong: {exc}") from exc
         return answer
 
+    def propose_setting(key: str, value: Any) -> ProposedSetting:
+        """**This toolset's only write**: a ``proposal`` row, ``ready``.
+
+        No tool confirms or ignores it; only the app's
+        ``/api/config/proposals/<id>/confirm`` applies the setting. A refusal
+        is a :class:`ToolFailed`: the model reads the reason and relays it,
+        and is not asked to try again.
+        """
+        from application import main
+
+        now = datetime.now(timezone.utc)
+        try:
+            with runtime.config_manager.writing() as opened:
+                proposal_id = setting_proposals.propose(
+                    opened, key, value, main.current_log_level(), now)
+                proposal, = setting_proposals.read(opened, [proposal_id], now)
+        except setting_proposals.InvalidSettingProposal as exc:
+            raise ToolFailed(f"this setting is refused: {exc}") from exc
+        except (store_module.StoreUnavailable, duckdb.Error) as exc:
+            raise ToolFailed(
+                f"the store could not record this proposal, so nothing is "
+                f"proposed: {exc}") from exc
+        return {'proposal_id': proposal_id, 'key': proposal['key'],
+                'value': proposal['value'], 'previous': proposal['previous'],
+                'status': proposal['status'],
+                'created_at': proposal['created_at'],
+                'expires_at': instants.iso(now + proposals.EXPIRY),
+                'note': "Le propriétaire doit confirmer dans SuiviBourse ; "
+                        "rien n'est changé avant."}
+
     toolset = FunctionToolset()
     toolset.add_function(
         get_system_status, description=GET_SYSTEM_STATUS_DESCRIPTION)
+    toolset.add_function(
+        propose_setting, description=PROPOSE_SETTING_DESCRIPTION)
     return toolset

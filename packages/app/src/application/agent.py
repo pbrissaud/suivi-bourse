@@ -57,7 +57,10 @@ SYSTEM_PROMPT = (
     "counts from — turning an index into that percent is the one calculation "
     "you may do. When the user asks whether anything is wrong with the app, "
     "or why a price, a history or a figure is empty or late, read "
-    "`get_system_status` and answer from it."
+    "`get_system_status` and answer from it. When a setting would help, such "
+    "as debug logs to find a cause, propose it with `propose_setting`; the "
+    "owner confirms it on a card, so never say it is changed, and when the "
+    "tool refuses, say why."
 )
 
 #: The provider kinds, and how each names itself in an error the user reads.
@@ -653,12 +656,14 @@ def build_agent(model, mcp, own_tools, *, thinking: str):
     Two toolsets. ``mcp`` is the server ``/mcp`` serves, so the agent reads and
     proposes exactly as a client the owner connects there would. ``own_tools``
     (:func:`agent_diagnostics.build_toolset`) exists only for this agent: the
-    diagnostics of the installation are for the owner's own agent, and nothing
-    in it is registered on ``/mcp`` (#1625).
+    diagnostics of the installation and the settings it proposes are for the
+    owner's own agent, and nothing in it is registered on ``/mcp`` (#1625,
+    #1628).
 
     ``deps`` stays empty: the investor's profile is a tool, ``get_profile``,
-    and the agent's only writes, ``propose_profile_fact`` and
-    ``propose_events``, are proposals only the app confirms (#1116, #1119).
+    and the agent's only writes, ``propose_profile_fact``, ``propose_events``
+    and ``propose_setting``, are proposals only the app confirms (#1116,
+    #1119, #1628).
 
     ``cache=True`` puts a breakpoint after the tools, the instructions and the
     conversation for the providers that take one (Anthropic, OpenAI from

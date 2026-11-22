@@ -113,6 +113,10 @@ const WRITE_ONLY_ROUTES = [
   // A statement given to the agent (#1120) and its re-reading as the other kind
   // answer the reader's own press too.
   'agentProposalRekind',
+  // A setting proposal decided (#1628) answers the reader's own press too; the
+  // proposals a thread made are a read.
+  'configProposalConfirm',
+  'configProposalIgnore',
   'agentStatements',
   // The three exports are in here for what they are, not for who fetches them:
   // **nothing on any page is rendered on the strength of one**, which is
@@ -437,6 +441,16 @@ const EVENTS_PROPOSAL = {
   decided_at: null,
 }
 
+const SETTING_PROPOSAL = {
+  id: 'c'.repeat(32),
+  key: 'log_level',
+  value: 'DEBUG',
+  previous: 'INFO',
+  status: 'ready',
+  created_at: '2026-10-12T09:00:00+00:00',
+  decided_at: null,
+}
+
 /** The agent switched on, with one kept thread. */
 function agentHandlers() {
   return [
@@ -470,6 +484,13 @@ function agentHandlers() {
                 input: { title: 'Achat CW8', events_json: '[]' },
                 output: { proposal_id: EVENTS_PROPOSAL.id },
               },
+              {
+                type: 'tool-propose_setting',
+                toolCallId: 'p3',
+                state: 'output-available',
+                input: { key: 'log_level', value: 'DEBUG' },
+                output: { proposal_id: SETTING_PROPOSAL.id },
+              },
               { type: 'text', text: 'Voici la simulation.' },
             ],
           },
@@ -479,6 +500,7 @@ function agentHandlers() {
     // The proposal the thread made (#1116): its card is drawn from this read.
     http.get(ROUTES.profileProposals, () => HttpResponse.json({ proposals: [PROPOSAL] })),
     http.get(ROUTES.agentProposals, () => HttpResponse.json({ proposals: [EVENTS_PROPOSAL] })),
+    http.get(ROUTES.configProposals, () => HttpResponse.json({ proposals: [SETTING_PROPOSAL] })),
   ]
 }
 

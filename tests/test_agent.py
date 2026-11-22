@@ -103,6 +103,11 @@ def test_the_prompt_says_when_to_read_the_system_status():
     assert 'empty or late, read `get_system_status`' in agent.SYSTEM_PROMPT
 
 
+def test_the_prompt_says_a_setting_is_proposed_and_never_changed():
+    assert 'propose it with `propose_setting`' in agent.SYSTEM_PROMPT
+    assert 'never say it is changed' in agent.SYSTEM_PROMPT
+
+
 # ------------------------------------------------------ the prompt cache --
 
 ANSWER = {'id': 'msg_1', 'type': 'message', 'role': 'assistant',
@@ -224,8 +229,9 @@ def test_the_agent_gets_the_system_status_and_mcp_does_not(tmp_path):
 
     sent = [tool['name'] for tool in first['tools']]
     served = [tool.name for tool in listed(runtime)]
-    assert 'get_system_status' in sent
-    assert 'get_system_status' not in served
+    for own in ('get_system_status', 'propose_setting'):
+        assert own in sent
+        assert own not in served
     assert set(served) < set(sent)
 
 

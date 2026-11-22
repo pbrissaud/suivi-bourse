@@ -64,6 +64,7 @@ const TOOL_SENTENCES: Record<string, MessageKey> = {
   get_profile: 'agent.tool.get_profile',
   propose_profile_fact: 'agent.tool.propose_profile_fact',
   propose_events: 'agent.tool.propose_events',
+  propose_setting: 'agent.tool.propose_setting',
   get_system_status: 'agent.tool.get_system_status',
 }
 
