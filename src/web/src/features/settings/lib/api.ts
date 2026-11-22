@@ -191,8 +191,9 @@ export interface TaxationImportResult {
 
 export const settingsApi = {
   agentSettings: () => get<AgentSettings>(ROUTES.agentConfig),
-  saveAgentSettings: (change: Partial<AgentSettings>) =>
-    send<AgentSettings>(ROUTES.agentConfig, 'PUT', change),
+  saveAgentSettings: (
+    change: Partial<Pick<AgentSettings, 'enabled' | 'reasoning' | 'search_url'>>,
+  ) => send<AgentSettings>(ROUTES.agentConfig, 'PUT', change),
   /** The wrappers the docs publish, listed and nothing stored. */
   taxationRegistry: () => send<TaxationRegistryResponse>(ROUTES.taxationRegistry, 'POST', {}),
   /** Import wrappers by registry id, all or none (a `422` names the one refused). */

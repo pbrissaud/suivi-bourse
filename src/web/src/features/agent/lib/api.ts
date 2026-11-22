@@ -131,7 +131,7 @@ async function agentSend<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const agentApi = {
-  /** `GET /api/agent/config` since providers: `enabled` and `reasoning` alone. */
+  /** `GET /api/agent/config` since providers: the agent's own settings. */
   settings: () => get<AgentSettings>(ROUTES.agentConfig),
   /** The configured providers, the default first. */
   providers: () => api.agentProviders(),
