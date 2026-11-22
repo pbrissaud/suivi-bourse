@@ -208,7 +208,11 @@ class BackfillJob(base.Job):
         self.classify(symbol)
 
         written = 0
-        if self.complete.get(symbol) == target:
+        # A fund completed unpriced as a reference may since have been bought:
+        # its `complete` no longer holds, and `backward` decides again (#1635).
+        if self.complete.get(symbol) == target and (
+                reference or quotes.oldest_ts(
+                    self.ctx.config_manager.store, symbol) is not None):
             app_logger.debug(f"Backfill already complete for {symbol}")
         else:
             written += self.backward(symbol, target, ceiling, now, reference)
@@ -354,6 +358,10 @@ class BackfillJob(base.Job):
 
         start_date = scheduling.clip_to_hourly_ceiling(
             start_date, end_date, now)
+        if in_vain and (start_date - target).days >= 1:
+            # The retry must ask the target's own days: stop on the ceiling
+            # rather than above it, or they are never asked again.
+            start_date, end_date = target, start_date
 
         if (end_date - start_date).days < 1:
             app_logger.debug(
@@ -396,7 +404,10 @@ class BackfillJob(base.Job):
 
         # Decided before `settle()`: taking the symbol back and giving it up
         # again in one call would read as a change to the performance pass.
-        if not prices and unpriced and (in_vain or start_date <= target):
+        # Read again: a scrape may have stored the first price during the fetch.
+        reaches = in_vain or start_date <= target
+        if not prices and unpriced and reaches and \
+                quotes.oldest_ts(store, symbol) is None:
             app_logger.warning(
                 f"The market knows no price for {symbol}, will retry later")
             fail(error=f"the market answered, and knows no price for {symbol} "

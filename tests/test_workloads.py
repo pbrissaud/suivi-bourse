@@ -969,7 +969,9 @@ def test_backfill_forward_noop_when_series_empty(store, mocker):
         [_valid_shares("AAPL", "Apple")], store,
         mode="events", acquisitions={"AAPL": acquired}, events=None)
     metrics.ctx.backfill_chunk_days = 365
-    metrics['backfill'].complete["AAPL"] = datetime(2024, 1, 15, tzinfo=timezone.utc)
+    # The backward pass is out of the way: with nothing stored, `complete`
+    # alone no longer keeps it from running (#1635).
+    mocker.patch.object(metrics['backfill'], 'backward', return_value=0)
     fetch = fake_history(mocker, metrics, return_value=[])
 
     metrics['backfill']()
@@ -1645,6 +1647,42 @@ def test_a_price_that_finally_arrives_brings_the_unknown_ticker_back(
     metrics['backfill'](_T0 + timedelta(days=2, minutes=5))
 
     assert _backward(metrics).terminal == runtime_state.TERMINAL_COMPLETE
+
+
+def test_the_retry_of_an_old_unknown_ticker_asks_its_own_first_days(
+        store, mocker):
+    """Past the hourly ceiling, the retry stops on it rather than skipping the target's days."""
+    quotes.take_back("ZZQX.PA")
+    acquired = (_T0 - timedelta(days=800)).date()
+    metrics, _ = _build_metrics(
+        [_valid_shares("ZZQX.PA", "Mistyped", quantity=10)], store,
+        mode="events", events=[Event(acquired, EventType.BUY, "ZZQX.PA",
+                                     "Mistyped", quantity=10, unit_price=1.0)])
+    metrics.ctx.regular_interval = 120
+    metrics.ctx.backfill_chunk_days = 365
+    windows = _window_recorder(metrics, mocker)
+    quotes.record_window_tried(store, "ZZQX.PA", acquired)
+
+    metrics['backfill'](_T0)
+
+    (start, end), = windows
+    assert start.date() == acquired
+    assert end <= _T0 - timedelta(days=scheduling.HOURLY_CEILING_DAYS - 1)
+    assert _backward(metrics).failed
+
+
+def test_a_fund_completed_unpriced_as_a_reference_is_decided_again_once_bought(
+        store, mocker):
+    metrics, fetch = _unknown_ticker(store, mocker)
+    target = datetime.combine((_T0 - timedelta(days=20)).date(),
+                              datetime.min.time(), tzinfo=timezone.utc)
+    metrics['backfill'].complete["ZZQX.PA"] = target
+    quotes.record_window_tried(store, "ZZQX.PA", target.date())
+
+    metrics['backfill'](_T0)
+
+    fetch.assert_called_once()
+    assert _backward(metrics).failed
 
 
 def test_a_priced_symbol_whose_earlier_window_is_empty_still_ends_complete(
