@@ -325,7 +325,10 @@ def build_toolset(runtime, checker=None):
 
         now = datetime.now(timezone.utc)
         try:
-            with runtime.config_manager.writing() as opened:
+            # One transaction: a read-back that fails takes the row with it,
+            # so the model is never told *nothing is proposed* about a card.
+            with runtime.config_manager.writing() as opened, \
+                    opened.transaction():
                 proposal_id = setting_proposals.propose(
                     opened, key, value, main.current_log_level(), now)
                 proposal, = setting_proposals.read(opened, [proposal_id], now)

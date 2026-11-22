@@ -275,3 +275,24 @@ def test_a_store_that_cannot_record_says_so_to_the_model(tmp_path, monkeypatch):
     assert 'the store could not record this proposal' in error
     assert not any(c['type'] == 'error' for c in streamed)
     assert main.current_log_level() == 'INFO'
+
+
+def test_a_read_back_that_fails_takes_the_row_with_it(tmp_path, monkeypatch):
+    """The model is told *nothing is proposed*: so nothing must be stored."""
+    import duckdb
+
+    runtime = rich_runtime(tmp_path)
+    switched_on(runtime)
+
+    def broken(*_):
+        raise duckdb.Error('read-back failed')
+    monkeypatch.setattr(setting_proposals, 'read', broken)
+    monkeypatch.setattr(agent, 'build_model', scripted(FunctionModel(
+        stream_function=_proposing(('log_level', 'debug')))))
+
+    streamed = chunks(run(runtime, post('t1')).text)
+
+    error, = [c['errorText'] for c in streamed
+              if c['type'] == 'tool-output-error']
+    assert 'the store could not record this proposal' in error
+    assert rows(runtime.store) == []

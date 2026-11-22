@@ -16,9 +16,23 @@ function proposalPath(route: string, id: string): string {
   return route.replace(':id', encodeURIComponent(id))
 }
 
+/** The most ids one read takes: the server's `PROPOSAL_IDS_MAX`. */
+export const IDS_PER_READ = 50
+
 export const settingProposalsApi = {
-  proposals: (ids: string[]) =>
-    get<SettingProposalsPayload>(`${ROUTES.configProposals}?ids=${ids.join(',')}`),
+  /** Read in batches the server accepts, so a long thread keeps every card. */
+  proposals: async (ids: string[]): Promise<SettingProposalsPayload> => {
+    const batches = []
+    for (let i = 0; i < ids.length; i += IDS_PER_READ) {
+      batches.push(ids.slice(i, i + IDS_PER_READ))
+    }
+    const answers = await Promise.all(
+      batches.map((batch) =>
+        get<SettingProposalsPayload>(`${ROUTES.configProposals}?ids=${batch.join(',')}`),
+      ),
+    )
+    return { proposals: answers.flatMap((answer) => answer.proposals) }
+  },
   confirm: (id: string) =>
     send<SettingProposalDecided>(proposalPath(ROUTES.configProposalConfirm, id), 'POST', {}),
   ignore: (id: string) =>

@@ -147,3 +147,27 @@ describe('the setting proposal card', () => {
     expect(within(main).getByRole('button', { name: 'Confirmer' })).toBeInTheDocument()
   })
 })
+
+describe('the read of a long thread', () => {
+  it('asks in batches the server takes, and keeps every proposal', async () => {
+    const { IDS_PER_READ, settingProposalsApi } = await import(
+      '@/features/agent/lib/settingProposals'
+    )
+    const asked: number[] = []
+    server.use(
+      http.get(ROUTES.configProposals, ({ request }) => {
+        const ids = new URL(request.url).searchParams.get('ids')?.split(',') ?? []
+        asked.push(ids.length)
+        return HttpResponse.json({
+          proposals: ids.map((id) => ({ ...aProposal('ready'), id })),
+        })
+      }),
+    )
+    const ids = Array.from({ length: IDS_PER_READ + 1 }, (_, i) => i.toString(16).padStart(32, '0'))
+
+    const read = await settingProposalsApi.proposals(ids)
+
+    expect(asked).toEqual([IDS_PER_READ, 1])
+    expect(read.proposals.map((p) => p.id)).toEqual(ids)
+  })
+})
