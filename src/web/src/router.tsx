@@ -5,6 +5,7 @@ import { NotFound } from '@/components/NotFound'
 import { Shell } from '@/components/Shell'
 import { validateLedgerSearch, type LedgerSearch } from '@/features/data/lib/ledger'
 import AccountsPage from '@/pages/AccountsPage'
+import AgentMemoryPage from '@/pages/AgentMemoryPage'
 import AgentPage from '@/pages/AgentPage'
 import AgentStatsPage from '@/pages/AgentStatsPage'
 import BenchmarkPage from '@/pages/BenchmarkPage'
@@ -247,6 +248,13 @@ const agentStatsRoute = createRoute({
   component: AgentStatsPage,
 })
 
+/** What the agent knows about the owner (#1619): the rail's other foot page. */
+const agentMemoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/agent/memory',
+  component: AgentMemoryPage,
+})
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   sharesRoute,
@@ -262,6 +270,7 @@ const routeTree = rootRoute.addChildren([
   agentThreadRoute,
   journalRoute,
   agentStatsRoute,
+  agentMemoryRoute,
 ])
 
 /**

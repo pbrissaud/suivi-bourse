@@ -387,6 +387,26 @@ const SURFACES: readonly Surface[] = [
     handlers: () => server.use(...agentHandlers()),
   },
   {
+    // The agent's memory (#1619), one fact confirmed: an empty profile would put
+    // the page's own sentence in the baseline, and nothing in flight could add it.
+    name: 'la mémoire de l’agent',
+    url: '/agent/memory',
+    heading: 'Mémoire',
+    handlers: () =>
+      server.use(
+        ...agentHandlers(),
+        http.get(ROUTES.profile, () =>
+          HttpResponse.json({
+            facts: {
+              risk_tolerance: { value: 'balanced', confirmed_at: '2026-10-12T09:00:00+00:00' },
+            },
+            projects: [],
+          }),
+        ),
+      ),
+    open: () => screen.findByText('Équilibré'),
+  },
+  {
     // And a thread read back by its address: nothing of it is drawn, not even
     // the empty thread's questions, until it has landed.
     name: 'l’agent, un fil gardé rouvert',

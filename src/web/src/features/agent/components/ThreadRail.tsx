@@ -1,7 +1,7 @@
 /**
  * The agent's rail (« Relevé », `Agent-Refonte.dc.html`): 240 px on `muted`,
  * « Nouveau fil ⌘N », a search field, the threads grouped by day, and
- * « Statistiques » at the foot. Under 1 024 px the same body lives in a popover
+ * « Mémoire » and « Statistiques » at the foot. Under 1 024 px the same body lives in a popover
  * of the page's control line.
  *
  * A thread is deleted from its own head (`ThreadHead`), not from here: the rail
@@ -10,7 +10,7 @@
  */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ChartColumn, Search, SquarePen } from 'lucide-react'
+import { Brain, ChartColumn, Search, SquarePen } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { Input } from '@/components/ui/input'
@@ -106,6 +106,12 @@ export function RailBody({ onOpened }: { onOpened?: () => void }) {
         )}
       </div>
       <div className="mt-auto border-t pt-3">
+        <Link to="/agent/memory" className={RAIL_ROW} onClick={onOpened}>
+          <span className="inline-flex items-center gap-2">
+            <Brain className="size-4" aria-hidden="true" />
+            {t('agent.memory.link')}
+          </span>
+        </Link>
         <Link to="/agent/stats" className={RAIL_ROW} onClick={onOpened}>
           <span className="inline-flex items-center gap-2">
             <ChartColumn className="size-4" aria-hidden="true" />
