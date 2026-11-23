@@ -23,16 +23,6 @@ _NAMED = (r'(?:token|secret|passw(?:or)?d|pwd|pass(?:phrase|code)'
           r'|session(?:[_\-]?id)?|crumb|(?<![a-z])pin)')
 
 _RULES = tuple((re.compile(pattern, re.IGNORECASE), kept) for pattern, kept in (
-    # A URL's credentials, to the last ``@`` of the run: a password may hold a
-    # raw ``/``, ``?`` or ``@``. A port is no password: a number behind a
-    # dotted host or ``localhost``, with one ``@`` at most after it.
-    (r'(\b[a-z][a-z0-9+.\-]{0,20}://)'
-     r'(?!(?:localhost|[^\s/?#@:]{0,200}\.[^\s/?#@:]{0,200}):\d{1,5}[/?#]'
-     r'[^\s@]{0,200}@?[^\s@]{0,200}(?:\s|$))'
-     r'[^\s/?#@:]{0,200}:[^\s]{1,200}@',
-     r'\1' + MASK + '@'),
-    # The same with no password, or a numeric one: the host stays, it says where.
-    (r'(\b[a-z][a-z0-9+.\-]{0,20}://)[^\s/?#]+@', r'\1' + MASK + '@'),
     # A cookie header, every pair in it: to its closing quote, or to the end of
     # the line when it has no opening one.
     (r"""(\b(?:set-)?cookie\\*["']?\s*[=:]\s*)(\\*["'])"""
@@ -62,12 +52,53 @@ _RULES = tuple((re.compile(pattern, re.IGNORECASE), kept) for pattern, kept in (
 ))
 
 
+_RUN = re.compile(r'\S+')
+_SCHEME = re.compile(r'\b[a-z][a-z0-9+.\-]{0,20}://', re.IGNORECASE)
+#: A host and its port, and no credentials: a dotted name or ``localhost``.
+_PORT = re.compile(r'(?:localhost|[^\s/?#@:]*\.[^\s/?#@:]*):\d{1,5}[/?#]',
+                   re.IGNORECASE)
+_USER = re.compile(r'[^\s/?#@:]*:')
+_AUTHORITY = re.compile(r'[^\s/?#]+@')
+
+
+def _url_credentials(found: 're.Match[str]') -> str:
+    """One run of non-blanks, the credentials of its URLs masked and the hosts
+    kept: they say where.
+
+    ``user:password`` goes to the **last** ``@`` of the run, however long: a
+    password may hold a raw ``/``, ``?`` or ``@``. What reads as a host and
+    its port, with one ``@`` at most after it, is no credential.
+    """
+    run = found.group()
+    last = run.rfind('@')
+    if last < 0:
+        return run
+    kept, at = [], 0
+    for scheme in _SCHEME.finditer(run):
+        start = scheme.end()
+        if start > last:
+            break
+        if start < at:
+            continue
+        port = _PORT.match(run, start) and run.find('@', start) == last
+        if not port and _USER.match(run, start):
+            kept += [run[at:start], MASK]
+            at = last
+            break
+        authority = _AUTHORITY.match(run, start)
+        if authority:
+            kept += [run[at:start], MASK]
+            at = authority.end() - 1
+    return ''.join(kept) + run[at:]
+
+
 def mask(text: str) -> str:
     """``text`` with every secret it shows replaced by :data:`MASK`.
 
     Mask **before** cutting a text: a secret straddling the cut would be left
     half shown.
     """
+    text = _RUN.sub(_url_credentials, text)
     for pattern, kept in _RULES:
         text = pattern.sub(kept, text)
     return text
