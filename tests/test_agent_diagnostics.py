@@ -353,10 +353,10 @@ def test_the_app_s_half_holds_the_version_the_job_and_its_error_and_no_money(
     assert url.startswith(bug_report.NEW_ISSUE + '?title=The%20performance')
     assert body.startswith(
         'The dashboard should show a return and stays empty.\n\n---\n')
-    assert '**Version**: 5.4.0 (0123456789ab) (release)' in body
+    assert 'Version: 5.4.0 (0123456789ab) (release)' in body
     # The job and its error, readable: only what is the owner's is gone.
-    assert (f'- `performance`: the series of {masked} could not be '
-            f'written: {masked} {HELD} worth {masked}, token={masked}') in body
+    assert (f'- performance: the series of {masked} could not be written: '
+            f'{masked} {HELD} worth {masked} EUR, token={masked}') in body
     # The failing job's line first, the unrelated one after it; a secret
     # masked by the logs' masker stays masked here.
     failed, served = [line for line in body.splitlines()
@@ -365,7 +365,7 @@ def test_the_app_s_half_holds_the_version_the_job_and_its_error_and_no_money(
         f'error performance: the pass failed on https://{masked}'
         '@proxy.example:8080/v8')
     assert served.endswith('error system: the page could not be served')
-    assert f'ValueError: {masked}: {masked} {HELD} at {masked}' in body
+    assert f'ValueError: {masked}: {masked} {HELD} at {masked} EUR' in body
     for private in (SECRET, 'hunter2', LABEL, '1 500', '12 '):
         assert private not in body
 
@@ -434,7 +434,7 @@ def test_the_agent_drafts_a_report_and_gets_the_link(tmp_path, monkeypatch):
 
     assert set(answer.content) == {'url', 'note'}
     assert answer.content['url'].startswith(bug_report.NEW_ISSUE + '?title=')
-    assert '- `performance`: the series of' in body_of(answer.content['url'])
+    assert '- performance: the series of' in body_of(answer.content['url'])
 
 
 def test_the_agent_reads_why_a_report_is_refused_and_no_link(

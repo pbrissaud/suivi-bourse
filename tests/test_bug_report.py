@@ -33,29 +33,44 @@ def sent(url):
 @pytest.mark.parametrize('text', [
     'The page of PEA Boursorama stays empty',
     'the pea  boursorama page stays empty',
-    'Empty page (PEA Boursorama).',
+    'Empty page (PEA\u00a0Boursorama).',
+    # Whatever stands between the label's words.
+    'The PEA-Boursorama page stays empty',
+    'The pea_boursorama page stays empty',
+    'PEABoursorama stays empty',
 ])
 def test_a_text_that_names_an_account_is_refused(text):
     assert found(text).startswith("names one of the owner's accounts")
 
 
 @pytest.mark.parametrize('text, quoted', [
-    ('The total reads 12 000 € and should not', '12 000 €'),
-    ('The total reads 1,200.50 USD', '1,200.50 USD'),
-    ('The total reads USD 500', 'USD 500'),
+    ('The total reads 12\u202f000\u00a0€ and should not', '12\u202f000'),
+    ('The total reads 1,200.50 USD', '1,200.50'),
+    ('The total reads USD 500', '500'),
     ('The total reads €12', '€12'),
     ('It shows $5 of fees', '$5'),
-    ('A gain of 3 k€ is missing', '3 k€'),
-    ('A gain of 1.2M EUR is missing', '1.2M EUR'),
-    ('It lost 500 euros overnight', '500 euros'),
-    ('It lost 250 RSD overnight', '250 RSD'),
+    ('A gain of 3 k€ is missing', '3'),
+    ('A gain of 1.2M EUR is missing', '1.2M'),
+    ('It lost 500 euros overnight', '500'),
+    ('It lost 250 RSD overnight', '250'),
+    # The currency a few words away, as a model rephrases a refused amount.
+    ('The portfolio is worth 52340 in EUR', '52340'),
+    ('Portfolio value (EUR): 52340', '52340'),
+    ('The value in EUR is about 52 340', '52 340'),
+    ('It is worth 52340 US dollars', '52340'),
+    ('It is worth 12 chf', '12'),
+    ('Il vaut 1,2 million d’euros', '1,2'),
+    ('La valeur est de 52\u202f340 en euros', '52\u202f340'),
 ])
 def test_a_number_beside_a_currency_is_refused(text, quoted):
-    assert found(text) == f'gives an amount of money ("{quoted}")'
+    assert found(text) == (
+        f'gives an amount of money, a number beside a currency ("{quoted}")')
 
 
 @pytest.mark.parametrize('text, quoted', [
     ('The line of 12 shares of AAPL is missing', '12'),
+    ('The line of 12 shares of Apple (AAPL) is missing', '12'),
+    ('The first line, AAPL, shows its quantity as 12', '12'),
     ('AAPL closed at 180.50 and the page says otherwise', '180.50'),
     ('The line CW8.PA x12 is drawn twice', 'x12'),
     ('12x AAPL is drawn twice', '12x'),
@@ -73,6 +88,7 @@ def test_a_number_beside_a_held_security_is_refused(text, quoted):
     NO_HISTORY,
     'The backfill of CW8.PA has failed since 2026-11-20 09:00',
     'CW8.PA and AAPL have no price',
+    'Since 5.4.0 the page of AAPL stays empty',
     # A number with no currency beside it and no security near it is a count.
     'HTTP 404 on GET /api/positions, 3 passes in a row since 5.4.0',
     # A currency with no number is only its name, and a code is capitals.
@@ -91,13 +107,21 @@ def test_a_text_nobody_chose_is_scrubbed_and_stays_readable():
             'rejected after sold 12 AAPL at 180.50')
 
     assert scrub(line, LABELS, SYMBOLS, STORED) == (
-        f'ingestion: the deposit of {MASK} on {MASK} was rejected after '
+        f'ingestion: the deposit of {MASK} EUR on {MASK} was rejected after '
         f'sold {MASK} AAPL at {MASK}')
+
+
+def test_a_quantity_a_few_words_after_its_security_is_scrubbed_too():
+    line = 'Insufficient quantity for CW8.PA: have 10.5, need 12'
+
+    assert scrub(line, LABELS, SYMBOLS, STORED) == (
+        f'Insufficient quantity for CW8.PA: have {MASK} need {MASK}')
 
 
 def test_nothing_to_look_for_finds_nothing():
     assert refusal('12 shares of AAPL on PEA Boursorama') is None
-    assert refusal('12 EUR') == 'gives an amount of money ("12 EUR")'
+    assert refusal('12 EUR') == (
+        'gives an amount of money, a number beside a currency ("12")')
 
 
 @pytest.mark.parametrize('title, description', [
@@ -121,7 +145,8 @@ def test_the_refusal_says_which_text_and_what_to_take_out():
                          LABELS, SYMBOLS, STORED)
 
     assert str(refused.value).startswith(
-        'the description gives an amount of money ("12 000 €"). ')
+        'the description gives an amount of money, a number beside a '
+        'currency ("12 000"). ')
 
 
 def test_the_body_holds_the_version_the_jobs_and_their_errors():
@@ -139,12 +164,14 @@ def test_the_body_holds_the_version_the_jobs_and_their_errors():
     assert url.startswith(bug_report.NEW_ISSUE + '?title=The%20benchmark%20')
     assert title == 'The benchmark stays empty'
     assert body.startswith('Nothing is drawn.\n\nSee /benchmark.\n\n---\n')
-    assert '**Version**: 5.4.0 (0123456789ab) (release)' in body
-    assert f'- `backfill` (error): {NO_HISTORY}' in body
-    assert f'- `backfill:backward` `CW8.PA`: {NO_HISTORY}' in body
-    # A fence in a traceback does not close the block the lines sit in.
+    # What the app adds sits in one block, so none of it reads as Markdown.
+    assert body.count('```') == 2
+    assert '\n```text\nVersion: 5.4.0 (0123456789ab) (release)\n' in body
+    assert f'- backfill (error): {NO_HISTORY}' in body
+    assert f'- backfill:backward CW8.PA: {NO_HISTORY}' in body
+    # A fence in a traceback does not close that block.
     assert body.endswith(
-        "```text\n2026-11-21T09:00:00+00:00 error backfill: the pass failed\n"
+        "2026-11-21T09:00:00+00:00 error backfill: the pass failed\n"
         "Traceback\n'''\nValueError: no closes\n```")
 
 
@@ -153,8 +180,8 @@ def test_a_quiet_installation_still_drafts_a_report():
         'A wrong figure', 'The return reads twice.',
         build_info.UNSTAMPED, [], [], []))
 
-    assert body.endswith('**Version**: unknown (unknown)\n\n'
-                         '**Failing jobs**\n- none')
+    assert body.endswith('```text\nVersion: unknown (unknown)\n\n'
+                         'Failing jobs:\n- none\n```')
 
 
 def test_the_link_is_capped_by_dropping_log_lines_never_the_agent_s_text():
@@ -171,7 +198,7 @@ def test_the_link_is_capped_by_dropping_log_lines_never_the_agent_s_text():
     assert len(url) <= bug_report.URL_MAX
     assert title == 'The scrape fails'
     assert body.startswith(description + '\n\n---\n')
-    assert '- `scrape` (error): HTTP 500' in body
+    assert '- scrape (error): HTTP 500' in body
     # The newest lines stay, the oldest went first.
     assert 'line 29 ' in body and 'line 0 ' not in body
     kept = body.count(' error scrape: line ')
@@ -185,7 +212,7 @@ def test_the_job_errors_go_after_the_lines_and_then_the_report_is_refused():
     _, body = sent(bug_report.draft(
         'The scrape fails', 'é' * 500, BUILD, [], errors, []))
 
-    assert 0 < body.count('- `scrape` `S') < bug_report.ERRORS_MAX
+    assert 0 < body.count('- scrape S') < bug_report.ERRORS_MAX
     with pytest.raises(Refused, match='shorten the description'):
         bug_report.draft('The scrape fails', 'é' * bug_report.DESCRIPTION_MAX,
                          BUILD, [], errors, [])

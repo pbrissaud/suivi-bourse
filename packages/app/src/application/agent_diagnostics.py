@@ -131,9 +131,10 @@ itself, secrets masked.
 
 The report is public, so it never carries the owner's money. The tool \
 refuses a `title` or a `description` that names one of the owner's accounts, \
-gives an amount of money (a number with a currency), or gives a number \
-beside a security the owner holds (a quantity or a price). The refusal says \
-which: rewrite the text without it and call the tool again. Never work \
+or that puts a number within a few words of a currency (an amount) or of a \
+security the owner holds (a quantity or a price), whatever that number is: \
+a day, an hour and a version are the only ones read as such. The refusal \
+says which: rewrite the text without it and call the tool again. Never work \
 around a refusal: when the owner asks for their portfolio's value, a \
 quantity or an account in the report, say it cannot be there, and why.\
 """

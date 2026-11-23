@@ -14,8 +14,9 @@ model:
 - :func:`draft` composes the body and the link, and drops the oldest log lines
   until the link fits :data:`URL_MAX`.
 
-Like the masker it reads shapes: a figure with no currency beside it and no
-held security near it is a count like any other, and is left alone.
+Like the masker it reads shapes: a figure with no currency and no held
+security within a few words of it is a count like any other, and is left
+alone. A security is known by its ticker, not by its name.
 """
 import re
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -32,24 +33,29 @@ DESCRIPTION_MAX = 1500
 #: The job errors a report lists at most; the newest come first.
 ERRORS_MAX = 10
 
-#: A report may say a currency; it may not say one beside a number.
+#: A report may say a currency; it may not say one beside a number. Read in
+#: any case (*12 chf*), so no code here is also a word: the lira's is left to
+#: the store, which adds its own reporting currency in capitals.
 CODES = ('EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'NZD', 'SEK', 'NOK',
          'DKK', 'PLN', 'CZK', 'HUF', 'RON', 'CNY', 'HKD', 'SGD', 'INR', 'KRW',
-         'BRL', 'MXN', 'ZAR', 'ILS', 'TRY', 'AED')
+         'BRL', 'MXN', 'ZAR', 'ILS', 'AED')
 _SIGNS = '€$£¥₹₩₽₣'
-_WORDS = r'euros?|eur|usd|dollars?|pounds?|francs?|yens?'
-#: Digits with their thousands grouped as a locale writes them (``12 000,50``,
-#: ``1,200.50``), and never the year of a date.
-_NUMBER = (r"(?!\d{4}-\d{2}-\d{2})\d+(?:[.,'   ]\d{3})*(?:[.,]\d+)?")
-_BLANK = r'[ \t  ]{0,2}'
+_WORDS = r'euros?|dollars?|pounds?|francs?|yens?|cents?|centimes?'
 
-_TOKEN = re.compile(r'\S+')
+#: A word, or a number with its thousands spaced as a locale writes them
+#: (``12 000,50``): one figure is one word.
+_TOKEN = re.compile(
+    r'\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?(?!\d)|\S+')
 _DIGIT = re.compile(r'\d')
-#: A day or an hour: a number beside a security that is no quantity.
-_DATED = re.compile(r'\d{4}-\d{2}-\d{2}|^\W*\d{1,2}:\d{2}(?::\d{2})?\W*$')
-#: How many words away from a security a number still reads as its quantity
-#: or its price: *12 shares of X*, *X closed at 180.50*.
-NEAR = 3
+#: A day, an hour or a version: a number that is no quantity and no amount.
+_DATED = re.compile(r'\d{4}-\d{2}-\d{2}'
+                    r'|^\W*(?:\d{1,2}:\d{2}(?::\d{2})?|v?\d+\.\d+\.\d+)\W*$')
+#: How many words away a number still reads as the quantity or the price of
+#: a security, or as an amount in a currency: *12 shares of Apple (X)*, *X
+#: closed at 180.50*, *a value in EUR of about 52 340*. Wide on purpose: a
+#: status code beside a ticker is refused or masked with the quantities,
+#: because nothing here can tell them apart.
+NEAR = 5
 
 Span = Tuple[int, int]
 
@@ -64,9 +70,16 @@ def _alternation(words: Iterable[str]) -> str:
 
 
 def _accounts(text: str, labels: Iterable[Optional[str]]) -> List[Span]:
-    """Where ``text`` names an account, whatever the case and the spacing."""
-    named = [r'\s+'.join(map(re.escape, label.split()))
-             for label in labels if label and label.strip()]
+    """Where ``text`` names an account, whatever the case and whatever
+    stands between the label's words (*PEA-Boursorama*, *pea boursorama*).
+
+    The label is read whole: one of its words alone, or its words in another
+    order, is not found.
+    """
+    worded = [[word for word in re.split(r'[\W_]+', label or '') if word]
+              for label in labels]
+    named = [r'[\W_]*'.join(map(re.escape, words))
+             for words in worded if words]
     if not named:
         return []
     pattern = re.compile(rf'(?<!\w)(?:{_alternation(named)})(?!\w)',
@@ -74,43 +87,47 @@ def _accounts(text: str, labels: Iterable[Optional[str]]) -> List[Span]:
     return [found.span() for found in pattern.finditer(text)]
 
 
-def _amounts(text: str, currencies: Iterable[Optional[str]]) -> List[Span]:
-    """Where a number stands beside a currency: its sign, its code, its name.
+def _beside(text: str, marker: 're.Pattern[str]') -> List[Span]:
+    """The numbers within :data:`NEAR` words of what ``marker`` finds.
 
-    ``currencies`` adds the codes the store knows (the reporting currency) to
-    :data:`CODES`. A code is read in capitals only: *try* is a word.
+    Read word by word, ``marker`` taken out of each first: a ticker holds
+    digits of its own (``CW8.PA``), a sign sticks to its figure (``€12``),
+    and both stand beside dates (*no history for CW8.PA over 2020-03-02*).
     """
-    codes = _alternation(
-        {*CODES, *(re.escape(code.upper()) for code in currencies if code)})
-    money = (rf'(?:[{_SIGNS}]'
-             rf'|(?<![A-Za-z])(?:{codes}|(?i:{_WORDS}))(?![A-Za-z]))')
-    pattern = re.compile(
-        rf'(?<![\w.,]){_NUMBER}{_BLANK}(?:[kKmM]{_BLANK})?{money}'
-        rf'|{money}{_BLANK}{_NUMBER}')
-    return [found.span() for found in pattern.finditer(text)]
-
-
-def _quantities(text: str, symbols: Iterable[Optional[str]]) -> List[Span]:
-    """The numbers within :data:`NEAR` words of a held security.
-
-    Read word by word: a ticker holds digits of its own (``CW8.PA``) and
-    stands beside dates (*no history for CW8.PA over 2020-03-02*), and neither
-    is a quantity. A ticker is read in the case the market writes it: a held
-    ``NOW`` or ``A`` must not turn every sentence into one about a security.
-    """
-    held = [re.escape(symbol.strip()) for symbol in symbols
-            if symbol and symbol.strip()]
-    if not held:
-        return []
-    security = re.compile(rf'(?<![\w.])(?:{_alternation(held)})(?!\w)')
     tokens = list(_TOKEN.finditer(text))
-    rest = [security.sub('', token.group()) for token in tokens]
+    rest = [marker.sub('', token.group()) for token in tokens]
     named = [at for at, token in enumerate(tokens)
              if rest[at] != token.group()]
     counted = [at for at, left in enumerate(rest)
                if _DIGIT.search(left) and not _DATED.search(left)]
     return [tokens[at].span() for at in counted
             if any(abs(at - one) <= NEAR for one in named)]
+
+
+def _amounts(text: str, currencies: Iterable[Optional[str]]) -> List[Span]:
+    """The numbers beside a currency: its sign, its code, its name.
+
+    ``currencies`` adds the codes the store knows (the reporting currency) to
+    :data:`CODES`, in capitals only: any of them may be a word.
+    """
+    named = [rf'(?i:{_alternation([*CODES, _WORDS])})',
+             *(re.escape(code.upper()) for code in currencies if code)]
+    return _beside(text, re.compile(
+        rf'[{_SIGNS}]|(?<![A-Za-z])(?:{"|".join(named)})(?![A-Za-z])'))
+
+
+def _quantities(text: str, symbols: Iterable[Optional[str]]) -> List[Span]:
+    """The numbers beside a held security: a quantity or a price.
+
+    A ticker is read in the case the market writes it: a held ``NOW`` or
+    ``A`` must not turn every sentence into one about a security.
+    """
+    held = [re.escape(symbol.strip()) for symbol in symbols
+            if symbol and symbol.strip()]
+    if not held:
+        return []
+    return _beside(text, re.compile(
+        rf'(?<![\w.])(?:{_alternation(held)})(?!\w)'))
 
 
 def _private(text: str, labels: Iterable[Optional[str]],
@@ -120,7 +137,8 @@ def _private(text: str, labels: Iterable[Optional[str]],
     a refusal says it in."""
     return [
         ('names one of the owner\'s accounts', _accounts(text, labels)),
-        ('gives an amount of money', _amounts(text, currencies)),
+        ('gives an amount of money, a number beside a currency',
+         _amounts(text, currencies)),
         ('gives a number beside a security the owner holds, a quantity or a '
          'price', _quantities(text, symbols)),
     ]
@@ -184,21 +202,18 @@ def check(title: str, description: str,
 
 def _job(job: Dict[str, Any]) -> str:
     state = f" ({job['state']})" if job.get('state') else ''
-    return (f"- `{job['id']}`{state}: "
+    return (f"- {job['id']}{state}: "
             f"{job.get('last_error') or 'no error message'}")
 
 
 def _error(error: Dict[str, Any]) -> str:
-    key = f" `{error['key']}`" if error.get('key') else ''
-    return f"- `{error['source']}`{key}: {error['message']}"
+    key = f" {error['key']}" if error.get('key') else ''
+    return f"- {error['source']}{key}: {error['message']}"
 
 
 def _line(line: Dict[str, Any]) -> str:
-    """One log line in a fenced block, which nothing in it may close."""
     said = f"{line['time']} {line['level']} {line['job']}: {line['message']}"
-    if line.get('detail'):
-        said += '\n' + line['detail']
-    return said.replace('```', "'''")
+    return said + ('\n' + line['detail'] if line.get('detail') else '')
 
 
 def compose(description: str, build: build_info.Build,
@@ -208,22 +223,21 @@ def compose(description: str, build: build_info.Build,
 
     ``jobs`` are the failing ones, ``errors`` what the jobs still carry and
     ``lines`` the journal's error lines, newest first. All three arrive masked
-    and scrubbed: this only lays them out.
+    and scrubbed: this only lays them out, in one fenced block that nothing in
+    them may close, so an error's own words are never read as Markdown (a
+    ``@name`` in a traceback notifies nobody).
     """
-    parts = [
+    known = [f'Version: {build_info.said(build)} ({build.source})', '',
+             'Failing jobs:', *(map(_job, jobs) if jobs else ['- none'])]
+    if errors:
+        known += ['', 'Errors the jobs carry:', *map(_error, errors)]
+    if lines:
+        known += ['', 'Recent error lines of the journal:', *map(_line, lines)]
+    return '\n'.join([
         description.strip(), '', '---',
         f'_Added by SuiviBourse. Secrets, amounts, quantities and account '
         f'names are replaced by `{MASK}`._', '',
-        f'**Version**: {build_info.said(build)} ({build.source})', '',
-        '**Failing jobs**',
-        *(map(_job, jobs) if jobs else ['- none']),
-    ]
-    if errors:
-        parts += ['', '**Errors the jobs carry**', *map(_error, errors)]
-    if lines:
-        parts += ['', '**Recent error lines of the journal**', '```text',
-                  *map(_line, lines), '```']
-    return '\n'.join(parts)
+        '```text', '\n'.join(known).replace('```', "'''"), '```'])
 
 
 def link(title: str, body: str) -> str:
