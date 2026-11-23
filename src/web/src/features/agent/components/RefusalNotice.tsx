@@ -22,6 +22,8 @@ const SENTENCES: Record<string, MessageKey> = {
   unreachable: 'agent.refusal.unreachable',
   unreadable: 'agent.refusal.unreadable',
   refused: 'agent.refusal.refused',
+  context: 'agent.refusal.context',
+  timeout: 'agent.refusal.timeout',
 }
 
 /** `provider` is the translated label; a `reason` this list does not know is `refused`. */
@@ -29,11 +31,13 @@ export function RefusalNotice({
   provider,
   reason,
   said,
+  retryAfter,
   children,
 }: {
   provider: string
   reason: string
   said: string
+  retryAfter?: number
   children?: ReactNode
 }) {
   const { t } = useI18n()
@@ -41,7 +45,9 @@ export function RefusalNotice({
   return (
     <div role="alert" className="space-y-1">
       <p className="text-sm text-destructive">
-        {t(SENTENCES[reason] ?? SENTENCES.refused, { provider })}
+        {reason === 'rate_limit' && retryAfter !== undefined
+          ? t('agent.refusal.rate_limit_wait', { provider, seconds: retryAfter })
+          : t(SENTENCES[reason] ?? SENTENCES.refused, { provider })}
       </p>
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger className="group flex min-h-8 items-center gap-1 rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 pointer-coarse:min-h-11">

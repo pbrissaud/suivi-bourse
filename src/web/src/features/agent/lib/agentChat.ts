@@ -154,14 +154,15 @@ export function errorSentence(error: Error): string {
  * A failed turn that is the provider's (#1269): the error chunk's text is then
  * a JSON object holding the provider's label, the `reason` the page translates
  * and the message as the provider said it (`Anthropic: …`, which is stripped of
- * its prefix here). `null` for anything else, said as {@link errorSentence}.
+ * its prefix here), and the seconds to wait when the provider said. The reason
+ * `limit` is the agent's own: the turn passed its limits. `null` for anything else, said as {@link errorSentence}.
  */
 export function turnRefusal(
   error: Error,
-): { provider: string; reason: string; said: string } | null {
+): { provider: string; reason: string; said: string; retryAfter?: number } | null {
   try {
     const body = JSON.parse(error.message) as Record<string, unknown>
-    const { error: said, provider, reason } = body
+    const { error: said, provider, reason, retry_after: retryAfter } = body
     if (typeof said !== 'string' || typeof provider !== 'string' || typeof reason !== 'string') {
       return null
     }
@@ -169,6 +170,7 @@ export function turnRefusal(
       provider,
       reason,
       said: said.startsWith(`${provider}: `) ? said.slice(provider.length + 2) : said,
+      ...(typeof retryAfter === 'number' ? { retryAfter } : {}),
     }
   } catch {
     return null

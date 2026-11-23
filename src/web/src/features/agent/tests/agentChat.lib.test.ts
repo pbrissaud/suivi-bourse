@@ -55,6 +55,11 @@ describe('a failed turn that is the provider’s', () => {
     expect(
       turnRefusal(chunk({ error: 'no prefix', provider: 'Anthropic', reason: 'key' }))?.said,
     ).toBe('no prefix')
+    expect(
+      turnRefusal(
+        chunk({ error: 'slow', provider: 'Anthropic', reason: 'rate_limit', retry_after: 13 }),
+      )?.retryAfter,
+    ).toBe(13)
   })
 
   it.each([

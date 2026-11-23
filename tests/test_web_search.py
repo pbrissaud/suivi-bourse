@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import anyio
 import pytest
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import ModelHTTPError, UsageLimitExceeded
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -212,6 +212,22 @@ def test_a_search_answers_from_the_snippets_and_names_the_result_list(
     assert models.extractor_tools == [[]]
     # The extractor's request is counted in the turn's usage.
     assert result.usage.requests == 3
+
+
+def test_the_extractor_is_held_to_the_turns_limits(tmp_path, monkeypatch):
+    searx(monkeypatch)
+    models = Models()
+    monkeypatch.setattr(agent, 'TURN_REQUESTS', 1)
+
+    for name in ('under', 'over'):
+        (tmp_path / name).mkdir()
+    with pytest.raises(UsageLimitExceeded):
+        called(tmp_path / 'over', models)
+    assert models.snippets == []
+
+    monkeypatch.setattr(agent, 'TURN_REQUESTS', 2)
+    part, _ = called(tmp_path / 'under', models)
+    assert part.content['answer'] == READ
 
 
 def test_a_refused_query_asks_no_one(tmp_path, monkeypatch):

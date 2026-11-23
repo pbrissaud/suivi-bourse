@@ -14,7 +14,11 @@ import time
 
 import httpx2
 import pytest
-from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
+from pydantic_ai.exceptions import (
+    ModelAPIError, ModelContextWindowExceededError, ModelHTTPError,
+    ModelOverloadedError, ModelQuotaExceededError, ModelRateLimitError,
+    ModelRequestTimeout, ModelServerError, ModelTimeoutError,
+)
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -328,6 +332,16 @@ def test_a_provider_failure_is_said_by_name_and_never_with_the_key(
      'rate_limit'),
     (ModelHTTPError(529, 'm', body='overloaded'), 'overloaded'),
     (ModelAPIError('m', 'Connection error.'), 'unreachable'),
+    (ModelHTTPError.for_category(
+        ModelContextWindowExceededError, status_code=400, model_name='m',
+        body={'error': {'message': 'prompt is too long'}}), 'context'),
+    (ModelQuotaExceededError('m', 'no credit', in_stream=True), 'quota'),
+    (ModelOverloadedError('m', 'busy', in_stream=True), 'overloaded'),
+    (ModelServerError('m', 'broke', in_stream=True), 'overloaded'),
+    (ModelAPIError('m', 'no', in_stream=True), 'refused'),
+    (ModelRequestTimeout('m', 600), 'timeout'),
+    (ModelTimeoutError('m', 'slow', phase='read'), 'timeout'),
+    (ModelTimeoutError('m', 'slow', phase='connect'), 'unreachable'),
 ])
 def test_a_turn_refusal_is_classified(runtime, monkeypatch, failure, reason):
     switched_on(runtime)
@@ -344,6 +358,59 @@ def test_a_turn_refusal_is_classified(runtime, monkeypatch, failure, reason):
               if c['type'] == 'error']
     assert [(e['provider'], e['reason']) for e in errors] == [
         ('Anthropic', reason)]
+
+
+@pytest.mark.parametrize('said, told', [
+    (12.2, 13), (None, None), (float('inf'), None), (0, None)])
+def test_a_rate_limit_tells_how_long_to_wait(runtime, monkeypatch, said, told):
+    switched_on(runtime)
+
+    async def fails(messages, info):
+        raise ModelRateLimitError('m', 'slow down', retry_after=said)
+        yield  # pragma: no cover
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=fails)))
+
+    [error] = [json.loads(c['errorText'])
+               for c in chunks(run(runtime, post('k1')).text)
+               if c['type'] == 'error']
+    assert error['reason'] == 'rate_limit'
+    assert error.get('retry_after') == told
+
+
+def test_a_turn_that_loops_stops_at_its_limit(runtime, monkeypatch):
+    switched_on(runtime)
+    asked = []
+
+    async def loops(messages, info):
+        asked.append(1)
+        yield {0: DeltaToolCall('get_system_status', '{}')}
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=loops)))
+
+    [error] = [json.loads(c['errorText'])
+               for c in chunks(run(runtime, post('k1')).text)
+               if c['type'] == 'error']
+    assert error['reason'] == 'limit'
+    assert len(asked) == agent.TURN_REQUESTS
+    assert stored(runtime, 'k1')['failed'] is True
+
+
+def test_a_request_past_its_deadline_is_a_timeout(runtime, monkeypatch):
+    switched_on(runtime)
+    monkeypatch.setattr(agent, 'REQUEST_TIMEOUT', 0.05)
+
+    async def stuck(messages, info):
+        yield 'one'
+        await asyncio.sleep(5)
+        yield 'two'
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=stuck)))
+
+    [error] = [json.loads(c['errorText'])
+               for c in chunks(run(runtime, post('k1')).text)
+               if c['type'] == 'error']
+    assert error['reason'] == 'timeout'
 
 
 def test_two_failed_turns_leave_one_trailing_question(runtime, monkeypatch):
