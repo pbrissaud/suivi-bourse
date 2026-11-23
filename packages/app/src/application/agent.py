@@ -63,7 +63,10 @@ SYSTEM_PROMPT = (
     "tool refuses, say why. When the owner asks about a comparison fund (a "
     "benchmark) and follows none, say none is set and ask which index they "
     "want, then propose following the matching offered fund with "
-    "`propose_setting`."
+    "`propose_setting`. What `web_search` answers comes from the web: cite "
+    "the URL of every source your answer uses, and say its figures are from "
+    "the web, never the app's. When a question needs the web and you have no "
+    "`web_search` tool, say that you cannot search the web."
 )
 
 #: The provider kinds, and how each names itself in an error the user reads.
@@ -270,7 +273,14 @@ def probe_search(search_url: str, fetch: Callable[[str], bytes]) -> None:
 
     An outbound call: never under the write lock.
     """
-    url = f"{search_url.rstrip('/')}/search?{urlencode({'q': 'test', 'format': 'json'})}"
+    ask_search(search_url, 'test', fetch)
+
+
+def ask_search(search_url: str, query: str,
+               fetch: Callable[[str], bytes]) -> dict:
+    """What the SearXNG at ``search_url`` answers ``query``, as JSON, or an
+    :class:`InvalidAgentConfig` that says why it did not."""
+    url = f"{search_url.rstrip('/')}/search?{urlencode({'q': query, 'format': 'json'})}"
     try:
         raw = fetch(url)
     except Exception as exc:  # the fetcher is injected; anything it raises is a failed probe
@@ -294,6 +304,7 @@ def probe_search(search_url: str, fetch: Callable[[str], bytes]) -> None:
         raise InvalidAgentConfig(
             'the search address did not return JSON: it is not a SearXNG, or '
             'its json format is not enabled in settings.yml', 'search_url')
+    return answered
 
 
 def _clean(value: Any) -> Any:
@@ -653,15 +664,18 @@ def build_model(config: dict):
     raise ValueError(f'unknown provider {provider!r}')
 
 
-def build_agent(model, mcp, own_tools, *, thinking: str):
+def build_agent(model, mcp, own_tools, web_tools=None, *, thinking: str):
     """The agent: ``model`` over the MCP server's tools and its own, in process.
 
-    Two toolsets. ``mcp`` is the server ``/mcp`` serves, so the agent reads and
-    proposes exactly as a client the owner connects there would. ``own_tools``
+    Two toolsets, and a third while a search address is stored. ``mcp`` is the
+    server ``/mcp`` serves, so the agent reads and proposes exactly as a client
+    the owner connects there would. ``own_tools``
     (:func:`agent_diagnostics.build_toolset`) exists only for this agent: the
     diagnostics of the installation and the settings it proposes are for the
     owner's own agent, and nothing in it is registered on ``/mcp`` (#1625,
-    #1628).
+    #1628). ``web_tools`` (:func:`web_search.build_toolset`) is ``web_search``,
+    for this agent only too; ``None`` while no SearXNG is set, and then the
+    tool is not in the agent's toolset at all (#1623).
 
     ``deps`` stays empty: the investor's profile is a tool, ``get_profile``,
     and the agent's only writes, ``propose_profile_fact``, ``propose_events``
@@ -681,17 +695,19 @@ def build_agent(model, mcp, own_tools, *, thinking: str):
     from pydantic_ai import Agent
     from pydantic_ai.mcp import MCPToolset
     from pydantic_ai.settings import ModelSettings
-    return Agent(model, toolsets=[MCPToolset(mcp), own_tools],
-                 instructions=SYSTEM_PROMPT,
+    toolsets = [MCPToolset(mcp), own_tools]
+    if web_tools is not None:
+        toolsets.append(web_tools)
+    return Agent(model, toolsets=toolsets, instructions=SYSTEM_PROMPT,
                  model_settings=ModelSettings(cache=True, thinking=thinking))
 
 
 def build_extractor(model, output_type, instructions: str):
     """An agent that reads a text and answers ``output_type``, **with no tool**.
 
-    The statement of #1120 goes to this one and to no other: whatever the text
-    asks for, nothing here can act on it. ``thinking='low'``: it copies, it
-    does not reason.
+    The statement of #1120 and the web results of #1623 go to this one and to
+    no other: whatever the text asks for, nothing here can act on it.
+    ``thinking='low'``: it copies, it does not reason.
     """
     from pydantic_ai import Agent
     from pydantic_ai.settings import ModelSettings

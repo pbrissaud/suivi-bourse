@@ -33,6 +33,7 @@ from application import instants
 from application import market
 from application import proposals
 from application import statements
+from application import web_search
 from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import (
     ModelAPIError, ModelHTTPError, UnexpectedModelBehavior,
@@ -223,11 +224,18 @@ def build_app(runtime, mcp, release_checker=None) -> Starlette:
             return _error(422, str(exc))
         # The provider this turn runs on, with the agent's own settings.
         settings = {**settings, **chosen}
+
+        def built():
+            """One model, for the agent and for the reader of web results."""
+            model = agent.build_model(settings)
+            # No address, no tool: the agent then says it cannot search (#1623).
+            web_tools = web_search.build_toolset(
+                settings['search_url'], model, runtime.store.reader
+            ) if settings['search_url'] else None
+            return agent.build_agent(model, mcp, own_tools, web_tools,
+                                     thinking=settings['thinking'])
         # Off the loop: the first build imports a provider SDK (half a second).
-        assistant = await anyio.to_thread.run_sync(
-            lambda: agent.build_agent(
-                agent.build_model(settings), mcp, own_tools,
-                thinking=settings['thinking']))
+        assistant = await anyio.to_thread.run_sync(built)
         adapter = _Adapter(
             agent=assistant,
             run_input=run_input, accept=request.headers.get('accept'),

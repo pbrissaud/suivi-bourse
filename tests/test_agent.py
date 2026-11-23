@@ -237,6 +237,43 @@ def test_the_agent_gets_the_system_status_and_mcp_does_not(tmp_path):
     assert set(served) < set(sent)
 
 
+def test_web_search_is_the_agent_s_with_an_address_and_never_mcp_s(tmp_path):
+    """No address, no tool at all; an address brings it to the owner's agent,
+    and to no client of ``/mcp`` (#1623)."""
+    import asyncio
+
+    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.models.function import FunctionModel
+
+    from application import mcp_server, web_search
+    runtime, _ = build_runtime(tmp_path)
+    seen = []
+
+    def answer(messages, info):
+        seen.append([tool.name for tool in info.function_tools])
+        return ModelResponse(parts=[TextPart('ok')])
+    model = FunctionModel(answer)
+    for web_tools in (None, web_search.build_toolset(
+            'http://searx.example', model, runtime.store.reader)):
+        assistant = agent.build_agent(
+            model, mcp_server.build_server(runtime),
+            agent_diagnostics.build_toolset(runtime), web_tools,
+            thinking='low')
+        asyncio.run(assistant.run('Que contient CW8 ?'))
+
+    without, with_address = seen
+    assert 'web_search' not in without
+    assert with_address == without + ['web_search']
+    assert 'web_search' not in [tool.name for tool in listed(runtime)]
+
+
+def test_the_prompt_says_how_to_answer_from_the_web_and_without_it():
+    assert 'cite the URL of every source' in agent.SYSTEM_PROMPT
+    assert "from the web, never the app's" in agent.SYSTEM_PROMPT
+    assert ('no `web_search` tool, say that you cannot search the web'
+            in agent.SYSTEM_PROMPT)
+
+
 @pytest.mark.parametrize('provider, base_url', [
     ('ollama', 'http://ollama:11434'), ('openai', None)])
 def test_ollama_and_an_older_gpt_get_no_breakpoint(tmp_path, provider, base_url):

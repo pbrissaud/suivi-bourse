@@ -911,6 +911,7 @@
   "agent.tool.propose_events": "Proposing events for your ledger.",
   "agent.tool.propose_setting": "Proposing a setting change.",
   "agent.tool.get_system_status": "Reading the state of your installation.",
+  "agent.tool.web_search": "Searching the web.",
   "agent.profile": "Your profile",
   "agent.profile.all": "Your whole profile",
   "agent.profile.more": "{count, plural, one {# other} other {# others}}",
