@@ -11,6 +11,8 @@ Served to the owner's built-in agent only, and only while a search address is
 stored (:func:`agent.build_agent`); nothing here is registered on ``/mcp``.
 """
 import re
+import socket
+import ssl
 from typing import Iterable, List, Optional, Tuple, TypedDict
 
 import anyio
@@ -62,10 +64,14 @@ NOTHING = 'The search returned no result.'
 _ISIN = re.compile(r'\b[A-Z]{2}[A-Z0-9]{9}[0-9]\b')
 _SIGNS = '€$£¥'
 _CODES = 'EUR|USD|GBP|CHF|JPY|CAD|AUD|SEK|NOK|DKK|PLN|CNY|HKD|SGD'
+#: As a word after the number, in the app's two languages. Never before it:
+#: ``Euro 2026`` is no amount.
+_WORDS = ('euros?|dollars?|pounds?|livres?|sterling|francs?|yens?|yuans?|'
+          'couronnes?|kron[ae]|kroner|zlotys?')
 #: A number beside a currency. ``\b`` before the digits: the 8 of ``CW8 EUR``
 #: ends a ticker, it is no amount.
 _AMOUNT = re.compile(
-    rf'\b\d+\s*(?:[{_SIGNS}]|(?:{_CODES})\b)|(?:[{_SIGNS}]|\b(?:{_CODES}))\s*\d',
+    rf'\b\d+\s*[km]?(?:[{_SIGNS}]|(?:{_CODES}|{_WORDS})\b)|(?:[{_SIGNS}]|\b(?:{_CODES}))\s*\d',
     re.IGNORECASE)
 _DECIMAL = re.compile(r'\d[.,]\d')
 #: A run of digits, the thousands a space groups read as one: ``12 500``.
@@ -112,6 +118,30 @@ def refusal(query: str, account_names: Iterable[str]) -> Optional[str]:
            for run in _DIGITS.findall(bare)):
         return 'it carries a number of more than 4 digits'
     return None
+
+
+def reason(failed: agent.InvalidAgentConfig) -> str:
+    """Why the search failed, in words of ours alone.
+
+    An exception's own text may quote the server, or a proxy's refusal, and
+    the agent must not read it: a known failure has a fixed phrase, any other
+    its type. The owner's probe of the address keeps the words. An HTTP status
+    and an answer that is not JSON are already said in a fixed sentence.
+    """
+    cause = failed.__cause__
+    if cause is None or isinstance(getattr(cause, 'code', None), int):
+        return str(failed)
+    inner = getattr(cause, 'reason', None)
+    if isinstance(inner, BaseException):
+        cause = inner
+    said = next((words for kind, words in (
+        (TimeoutError, f'no full answer within {SEARCH_TIMEOUT} s'),
+        (ConnectionRefusedError, 'connection refused'),
+        (ConnectionError, 'connection lost'),
+        (socket.gaierror, 'its host name does not resolve'),
+        (ssl.SSLError, 'the TLS connection failed'),
+    ) if isinstance(cause, kind)), type(cause).__name__)
+    return f'the search address did not answer: {said}'
 
 
 def fetch(url: str) -> bytes:
@@ -185,14 +215,7 @@ def build_toolset(search_url: str, model, reader):
                 f'the store could not name the accounts, so the query was '
                 f'not checked and nothing was sent: {exc}') from exc
         except agent.InvalidAgentConfig as exc:
-            # An ``http.client`` error quotes the server's own line, which
-            # the agent must not read: its type alone. The owner's probe of
-            # the address keeps the words.
-            cause = exc.__cause__
-            why = (f'the search address did not answer: {type(cause).__name__}'
-                   if cause is not None and not isinstance(cause, OSError)
-                   else exc)
-            raise ToolFailed(f'the web search failed: {why}') from exc
+            raise ToolFailed(f'the web search failed: {reason(exc)}') from exc
 
         found = kept(answered)
         if not found:

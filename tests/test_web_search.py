@@ -49,6 +49,9 @@ NAMES = ['PEA Paul', 'cto', 'pea']
     ('USD 400 in CW8', 'amount'),
     ('CW8 400 EUR', 'amount'),
     ('CW8 400 usd', 'amount'),
+    ('CW8 1200 euros', 'amount'),
+    ('CW8 400 Dollars', 'amount'),
+    ('CW8 12k€', 'amount'),
     ('CW8 35.5 shares', 'amount'),
     ('dividend 3,5 CW8', 'amount'),
     ('CW8 12500', 'more than 4 digits'),
@@ -65,6 +68,7 @@ def test_a_query_that_carries_portfolio_data_is_refused(query, why):
     'FR0000120271 dividend 2025 2026',
     'MC.PA news',
     'CW8 EUR hedged',
+    'Euro Stoxx 50 composition',
     'S&P 500 composition 2026',
     'European ETF',       # `pea` is in the word, not a word of the query
 ])
@@ -221,11 +225,14 @@ def test_a_refused_query_asks_no_one(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize('failure, said', [
     (urllib.error.URLError(ConnectionRefusedError(61, 'Connection refused')),
-     'the search address did not answer: [Errno 61] Connection refused'),
+     'the search address did not answer: connection refused'),
     (urllib.error.HTTPError(SEARX, 500, 'Internal Server Error', {}, None),
      'the search address answered HTTP 500'),
     (TimeoutError('no full answer within 10 s'),
      'the search address did not answer: no full answer within 10 s'),
+    # A proxy's reason for refusing CONNECT, which urllib quotes.
+    (urllib.error.URLError(OSError(f'Tunnel connection failed: 403 {INJECTION}')),
+     'the search address did not answer: OSError'),
     # The server's own line, in no word of the error.
     (http.client.BadStatusLine(INJECTION),
      'the search address did not answer: BadStatusLine'),
@@ -362,4 +369,4 @@ def test_a_stopped_searxng_fails_the_tool_line_with_the_reason(
     assert failed['toolCallId'] == 'w1'
     assert failed['errorText'] == (
         'the web search failed: the search address did not answer: '
-        '[Errno 61] Connection refused')
+        'connection refused')
