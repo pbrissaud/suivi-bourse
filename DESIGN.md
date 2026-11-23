@@ -540,7 +540,7 @@ dialog, the notifications popover, a picker) are `background` with a 1 px `borde
   30 jours), Jetons d'accès · API et MCP as a ruled list (name, scopes and last use in
   Table-muted, Régénérer · Révoquer as text actions, « + Créer un jeton »). *Portefeuille*:
   Devise (fixed at first run), Fonds de comparaison list, Modèles d'imposition list.
-  *Agent*: Agent activé, Fournisseurs list (name, « Par défaut », Modifier), Réflexion.
+  *Agent*: Agent activé, Fournisseurs list (name, « Par défaut », Modifier), Réflexion, Recherche web (SearXNG) (an address field, saved when left; the sentence of where the searches go under it; under 640 px the field goes below its name).
   *Notifications*: Dans l'application (switch), Canaux list (ntfy, e-mail, webhook,
   Apprise: name · target, scope, Tester, Modifier, « + Ajouter un canal »). *Affichage*:
   Apparence, Langue, Densité, Thème (« Personnaliser » opens the Thème page: the token list

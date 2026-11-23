@@ -1057,10 +1057,16 @@ export interface AgentProviderTest {
   elapsed_ms: number
 }
 
-/** `GET /api/agent/config` since providers: the agent's own two settings. */
+/**
+ * `GET /api/agent/config` since providers: the agent's own settings.
+ * `search_url` is the owner's SearXNG, `null` while web search is off, and
+ * `search_privacy` says where the searches go (`null` without an address).
+ */
 export interface AgentSettings {
   enabled: boolean
   reasoning: 'low' | 'medium' | 'high'
+  search_url: string | null
+  search_privacy: { local: boolean; host: string | null; fr: string; en: string } | null
 }
 
 export type AgentStatsRange = '1M' | 'YTD' | '1Y' | 'MAX'

@@ -2,20 +2,23 @@
  * *Agent* on the row pattern. Its switch is its first row, « Agent activé »,
  * saved on change; the providers are a ruled list — name, « Par défaut »,
  * « Modifier » — ending on « Ajouter un fournisseur », each opening
- * `ProviderSheet`; « Réflexion » is a value, saved on change.
+ * `ProviderSheet`; « Réflexion » is a value, saved on change; « Recherche web
+ * (SearXNG) » is an address, saved when the field is left or on Enter.
  *
  * The agent is off by default, and the server refuses to switch it on before a
  * default provider holds a model: the refusal is said on the switch's row.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { Segmented } from '@/components/Segmented'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import {
   AddRow,
   ListRow,
   ListSetting,
+  TEXT_ACTION,
   TextAction,
 } from '@/features/settings/components/ListSetting'
 import { ProviderSheet, providerName } from '@/features/settings/components/ProviderSheet'
@@ -24,7 +27,9 @@ import { SettingsSection, type SectionRead } from '@/features/settings/component
 import { settingsApi } from '@/features/settings/lib/api'
 import { useRowSave } from '@/features/settings/lib/useRowSave'
 import type { AgentProvider, AgentSettings } from '@/lib/api'
+import { useDocs } from '@/lib/docs'
 import { useI18n, type MessageKey } from '@/lib/i18n'
+import { settingRefusal } from '@/lib/problem'
 
 const THINKING_LEVELS: AgentSettings['reasoning'][] = ['low', 'medium', 'high']
 
@@ -124,6 +129,8 @@ function AgentRows({
         />
       </SettingRow>
 
+      <SearchRow settings={settings} onAnswer={stored} />
+
       {sheet !== undefined ? (
         <ProviderSheet
           key={sheet?.id ?? 'new'}
@@ -133,5 +140,109 @@ function AgentRows({
         />
       ) : null}
     </>
+  )
+}
+
+/**
+ * The owner's SearXNG: empty is off, and clearing the field saves `null`. The
+ * server asks the address before storing it (up to 5 s), so a refusal is the
+ * instance's own answer and is said as such; the refused text stays in the
+ * field. Leaving the field saves what was edited, Enter also asks again an
+ * address that was just refused, Escape gives back the stored one.
+ */
+function SearchRow({
+  settings,
+  onAnswer,
+}: {
+  settings: AgentSettings
+  onAnswer: (answer: AgentSettings) => void
+}) {
+  const { t, language } = useI18n()
+  const { docsPageHref } = useDocs()
+  const held = settings.search_url ?? null
+  /** `null` shows what the server holds. */
+  const [typed, setTyped] = useState<string | null>(null)
+  // Edited since the last save: leaving the field must not ask the same address twice.
+  const edited = useRef(false)
+  // The last value handed to the save: what a save in flight will leave, and what a refusal is about.
+  const sent = useRef<string | null>(null)
+  const search = useRowSave({
+    send: (search_url: string | null) => settingsApi.saveAgentSettings({ search_url }),
+    onAnswer: (answer) => {
+      onAnswer(answer)
+      // What was typed while the address was asked is kept.
+      setTyped((now) =>
+        now !== null && (now.trim() || null) === (answer.search_url ?? null) ? null : now,
+      )
+    },
+    said: (error) => settingRefusal(error, 'search_url'),
+  })
+  const saving = search.state.kind === 'saving'
+  // A refusal is about the text that was sent; once the field says something else, it is not.
+  const state =
+    search.state.kind === 'failed' && (typed === null || (typed.trim() || null) !== sent.current)
+      ? ({ kind: 'idle' } as const)
+      : search.state
+  const privacy = settings.search_privacy?.[language === 'en' ? 'en' : 'fr']
+
+  function commit(again: boolean) {
+    if (typed === null) return
+    const next = typed.trim() || null
+    if (!again && !edited.current) return
+    edited.current = false
+    // Compared with what the server will hold once the save in flight lands.
+    if (next === (saving ? sent.current : held)) {
+      if (!saving) setTyped(null)
+      return
+    }
+    sent.current = next
+    search.save(next)
+  }
+
+  return (
+    <SettingRow
+      id="agent-search"
+      label={t('settings.agent.search')}
+      description={
+        <>
+          {t('settings.agent.search.description')}{' '}
+          <a
+            href={docsPageHref(language, 'set-up-the-agent', 'web-search')}
+            target="_blank"
+            rel="noreferrer"
+            className={TEXT_ACTION}
+          >
+            {t('settings.agent.search.docs')}
+          </a>
+        </>
+      }
+      state={state}
+      wide
+    >
+      <Input
+        id="agent-search"
+        type="url"
+        className="fig h-8 w-full rounded-md bg-background px-2.5 text-sm sm:w-72"
+        spellCheck={false}
+        placeholder="https://"
+        value={typed ?? held ?? ''}
+        aria-invalid={state.kind === 'failed' || undefined}
+        aria-describedby={`agent-search-description${privacy ? ' agent-search-privacy' : ''}`}
+        onChange={(event) => {
+          edited.current = true
+          setTyped(event.target.value)
+        }}
+        onBlur={() => commit(false)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') commit(true)
+          if (event.key === 'Escape') setTyped(null)
+        }}
+      />
+      {privacy ? (
+        <p id="agent-search-privacy" className="max-w-72 text-right text-xs text-muted-foreground">
+          {privacy}
+        </p>
+      ) : null}
+    </SettingRow>
   )
 }

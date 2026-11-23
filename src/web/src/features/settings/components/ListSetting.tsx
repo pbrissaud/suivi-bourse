@@ -9,7 +9,7 @@ import { PlusIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
-const TEXT_ACTION =
+export const TEXT_ACTION =
   'text-sm text-muted-foreground underline decoration-border underline-offset-3 outline-none hover:text-foreground focus-visible:rounded-sm focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50'
 
 /** An action on a row that is not its main one: 13 px, muted, underlined in `border`. */

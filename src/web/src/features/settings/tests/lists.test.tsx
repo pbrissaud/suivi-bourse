@@ -324,6 +324,155 @@ describe('the providers', () => {
     await user.click(screen.getByRole('radio', { name: 'Longue' }))
     await waitFor(() => expect(writes).toEqual([{ enabled: true }, { reasoning: 'high' }]))
   })
+
+  /** `/api/agent/config` holding `search_url`, and every PUT it was sent. */
+  function searxng(search_url: string | null, refuse?: string) {
+    const writes: unknown[] = []
+    const privacy = (url: string | null) =>
+      url === null
+        ? null
+        : {
+            local: false,
+            host: new URL(url).hostname,
+            fr: `Vos recherches sont envoyées à ${new URL(url).hostname}.`,
+            en: `Your searches are sent to ${new URL(url).hostname}.`,
+          }
+    const settings = (url: string | null) => ({
+      enabled: false,
+      reasoning: 'low',
+      search_url: url,
+      search_privacy: privacy(url),
+    })
+    server.use(
+      http.get(ROUTES.agentProviders, () => HttpResponse.json([provider()])),
+      http.get(ROUTES.agentConfig, () => HttpResponse.json(settings(search_url))),
+      http.put(ROUTES.agentConfig, async ({ request }) => {
+        const body = (await request.json()) as { search_url: string | null }
+        writes.push(body)
+        return refuse
+          ? HttpResponse.json(
+              {
+                type: '/problems/invalid-setting',
+                title: 'Invalid setting',
+                status: 422,
+                detail: refuse,
+                key: 'search_url',
+              },
+              { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+            )
+          : HttpResponse.json(settings(body.search_url))
+      }),
+    )
+    return writes
+  }
+
+  it('saves the SearXNG address once, and says where the searches go', async () => {
+    const writes = searxng(null)
+    const { user } = renderApp({ url: '/settings' })
+
+    const field = await screen.findByRole('textbox', { name: 'Recherche web (SearXNG)' })
+    expect(field).toHaveValue('')
+    expect(screen.queryByText(/Vos recherches/)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Configurer SearXNG' })).toHaveAttribute(
+      'href',
+      'https://pbrissaud.github.io/suivi-bourse/fr/docs/v5/set-up-the-agent#web-search',
+    )
+
+    // Leaving an untouched field writes nothing; Enter then leaving writes once.
+    await user.click(field)
+    await user.tab()
+    await user.type(field, ' https://searx.example.net {Enter}')
+    await user.tab()
+
+    expect(
+      await screen.findByText('Vos recherches sont envoyées à searx.example.net.'),
+    ).toBeInTheDocument()
+    expect(field).toHaveValue('https://searx.example.net')
+    expect(field).toHaveAccessibleDescription(/Vos recherches sont envoyées à searx.example.net\./)
+    expect(writes).toEqual([{ search_url: 'https://searx.example.net' }])
+  })
+
+  it('clears the SearXNG address with null, and the sentence goes', async () => {
+    const writes = searxng('https://searx.example.net')
+    const { user } = renderApp({ url: '/settings' })
+
+    const field = await screen.findByRole('textbox', { name: 'Recherche web (SearXNG)' })
+    expect(field).toHaveValue('https://searx.example.net')
+    expect(screen.getByText('Vos recherches sont envoyées à searx.example.net.')).toBeVisible()
+
+    await user.clear(field)
+    await user.tab()
+
+    await waitFor(() => expect(screen.queryByText(/Vos recherches/)).not.toBeInTheDocument())
+    expect(field).toHaveValue('')
+    expect(writes).toEqual([{ search_url: null }])
+  })
+
+  it('says a refused SearXNG address in the server’s words, and keeps what was typed', async () => {
+    const said = 'the search address did not answer: timed out'
+    const writes = searxng(null, said)
+    const { user } = renderApp({ url: '/settings' })
+
+    const field = await screen.findByRole('textbox', { name: 'Recherche web (SearXNG)' })
+    await user.type(field, 'http://10.255.255.1:8080')
+    await user.tab()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(`Non enregistré : ${said}`)
+    expect(field).toHaveValue('http://10.255.255.1:8080')
+    expect(field).toBeInvalid()
+    expect(screen.queryByText(/Vos recherches/)).not.toBeInTheDocument()
+
+    // Leaving the field again does not ask the same address twice; Enter does.
+    await user.click(field)
+    await user.tab()
+    expect(writes).toHaveLength(1)
+    await user.type(field, '{Enter}')
+    await waitFor(() => expect(writes).toHaveLength(2))
+
+    // Escape gives back what the server holds, and the refusal with it.
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    await user.type(field, '{Escape}')
+    expect(field).toHaveValue('')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    // Typing again does not bring back a refusal about text never sent.
+    await user.type(field, 'h')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(field).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('sends a revert typed while the SearXNG address is being asked', async () => {
+    const writes = searxng(null)
+    let release = () => {}
+    const asked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.put(ROUTES.agentConfig, async ({ request }) => {
+        const body = (await request.json()) as { search_url: string | null }
+        writes.push(body)
+        if (writes.length === 1) await asked
+        return HttpResponse.json({
+          enabled: false,
+          reasoning: 'low',
+          search_url: body.search_url,
+          search_privacy: null,
+        })
+      }),
+    )
+    const { user } = renderApp({ url: '/settings' })
+
+    const field = await screen.findByRole('textbox', { name: 'Recherche web (SearXNG)' })
+    await user.type(field, 'https://searx.example.net{Enter}{Enter}')
+    await waitFor(() => expect(writes).toHaveLength(1))
+    await user.clear(field)
+    await user.tab()
+    release()
+
+    await waitFor(() =>
+      expect(writes).toEqual([{ search_url: 'https://searx.example.net' }, { search_url: null }]),
+    )
+    await waitFor(() => expect(field).toHaveValue(''))
+  })
 })
 
 describe('the notification channels', () => {

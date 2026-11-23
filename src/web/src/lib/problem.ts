@@ -319,6 +319,22 @@ export function refusedKey(error: unknown): string | null {
     : null
 }
 
+/**
+ * The server's own sentence for an `invalidSetting` on the field `key`, or
+ * `null` for any other failure.
+ *
+ * An exception to *never by `detail`*, on `providerRefused`'s grounds: for the
+ * SearXNG address (#1624) the detail is what the instance answered (it did not
+ * answer, HTTP 403, no `json` format), and the reader acts on it there.
+ */
+export function settingRefusal(error: unknown, key: string): string | null {
+  return error instanceof ApiProblem &&
+    error.type === PROBLEM_TYPES.invalidSetting &&
+    text(error, 'key') === key
+    ? error.detail?.trim() || null
+    : null
+}
+
 /** A withdrawal larger than the account's cash, which the server refuses with a `code`. */
 export function overdrawn(error: unknown): boolean {
   return error instanceof ApiProblem && text(error, 'code') === 'overdraft'

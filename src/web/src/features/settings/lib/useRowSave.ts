@@ -17,12 +17,15 @@ export function useRowSave<T, A>({
   send,
   onAnswer,
   reason = problemMessageKey,
+  said,
 }: {
   send: (value: T) => Promise<A>
   /** The last answer, once nothing else is waiting. */
   onAnswer: (answer: A) => void
   /** What a refusal is said as; the API's problem types by default. */
   reason?: (error: unknown) => MessageKey
+  /** The refusal in the server's own words, where the row shows them; `null` leaves it to `reason`. */
+  said?: (error: unknown) => string | null
 }) {
   const { t } = useI18n()
   const [state, setState] = useState<DialState>({ kind: 'idle' })
@@ -44,7 +47,7 @@ export function useRowSave<T, A>({
         // An earlier answer of this run, if any, is still what the server holds.
         setState({
           kind: 'failed',
-          reason: t('settings.row.notSaved', { reason: t(reason(error)) }),
+          reason: t('settings.row.notSaved', { reason: said?.(error) ?? t(reason(error)) }),
         })
       }
       const next = queued.current
