@@ -106,6 +106,8 @@ def test_the_prompt_says_when_to_read_the_system_status():
 def test_the_prompt_says_a_setting_is_proposed_and_never_changed():
     assert 'propose it with `propose_setting`' in agent.SYSTEM_PROMPT
     assert 'never say it is changed' in agent.SYSTEM_PROMPT
+    # No comparison fund followed (#1629): the index is asked, never guessed.
+    assert 'ask which index they want' in agent.SYSTEM_PROMPT
 
 
 # ------------------------------------------------------ the prompt cache --

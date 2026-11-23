@@ -446,6 +446,7 @@ const SETTING_PROPOSAL = {
   key: 'log_level',
   value: 'DEBUG',
   previous: 'INFO',
+  doc: null,
   status: 'ready',
   created_at: '2026-10-12T09:00:00+00:00',
   decided_at: null,

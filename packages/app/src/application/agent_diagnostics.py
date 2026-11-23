@@ -1,5 +1,5 @@
 """The built-in agent's own tools: the System page, read (#1625), and a
-setting proposed for the owner to confirm (#1628).
+setting proposed for the owner to confirm (#1628, #1629).
 
 Served to the owner's built-in agent only, through :func:`agent.build_agent`.
 Nothing here is registered on the ``/mcp`` server: a client the owner connects
@@ -18,6 +18,7 @@ from application import proposals
 from application import runtime_view
 from application import setting_proposals
 from application import settings
+from application import settings_registry
 from application import store as store_module
 from application.jobs import registry
 from application.jobs.scrape import scrape_next_runs
@@ -66,17 +67,41 @@ When the store cannot answer they are `null` and `store_fault` says why: \
 that is unknown, never "none". An empty list is a real "none".\
 """
 
-PROPOSE_SETTING_DESCRIPTION = """\
+
+def _stored_setting(key: str) -> str:
+    """One stored setting as the tool's description lists it."""
+    spec = settings_registry.spec_for(key)
+    bounds = (f', {spec.minimum} to {spec.maximum}'
+              if spec.minimum is not None else '')
+    return f'- `{key}` ({spec.kind}{bounds}): {spec.doc}'
+
+
+PROPOSE_SETTING_DESCRIPTION = f"""\
 Propose a change to one setting of this installation, for the owner to \
 confirm or ignore on a card under your answer. **This records a proposal and \
 never changes the setting**: nothing changes until the owner confirms, so \
 never say the setting is changed, and no tool confirms a proposal.
 
-The only setting that can be proposed is `log_level`, with `value` one of \
-`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. It applies until the app \
-restarts; it is not stored. Any other key is refused, and so is the level \
-the app is already at: tell the owner the reason the refusal gives. They \
-change every other setting themself, in the app's Settings.
+`key` is one of these, and `value` is what the setting would become:
+- `log_level`: `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`. It applies \
+until the app restarts; it is not stored.
+{chr(10).join(_stored_setting(key) for key in setting_proposals.STORED)}
+
+Any other key is refused, the reporting currency among them: the owner \
+changes those themself, in the app's Settings. A value out of range is \
+refused too, and so is the value the setting already has. Tell the owner the \
+reason the refusal gives, and propose nothing in its place unless they ask.
+
+The comparison fund (the benchmark) is set up here, from a closed list. \
+{setting_proposals.OFFERED}. When the owner wants a comparison and follows \
+none, say so and ask which index they want before proposing anything. Then \
+propose `benchmark_symbols` with the **whole list** to follow, as a list of \
+symbols: the ones already followed plus the new one, because `value` \
+replaces the list. Once confirmed, the fund's history downloads in the \
+background. Propose `benchmark_symbol`, the one the Benchmark page displays, \
+only once that fund's history reads `complete` in `get_system_status`: \
+before that, the confirmation is refused. An index no offered reference \
+tracks cannot be followed: name the offered ones instead.
 
 `previous` is the setting's value when the proposal was made.\
 """

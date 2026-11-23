@@ -257,6 +257,7 @@ export interface ProposalsPayload {
 export interface SettingProposal {
   created_at: string;
   decided_at: string | null;
+  doc: string | null;
   id: string;
   key: string;
   previous: unknown;

@@ -60,7 +60,10 @@ SYSTEM_PROMPT = (
     "`get_system_status` and answer from it. When a setting would help, such "
     "as debug logs to find a cause, propose it with `propose_setting`; the "
     "owner confirms it on a card, so never say it is changed, and when the "
-    "tool refuses, say why."
+    "tool refuses, say why. When the owner asks about a comparison fund (a "
+    "benchmark) and follows none, say none is set and ask which index they "
+    "want, then propose following the matching offered fund with "
+    "`propose_setting`."
 )
 
 #: The provider kinds, and how each names itself in an error the user reads.

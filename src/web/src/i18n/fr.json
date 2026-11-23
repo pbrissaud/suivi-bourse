@@ -943,6 +943,7 @@
   "agent.fact.failed": "La décision n’a pas été enregistrée.",
   "agent.setting.ask": "Changer ce réglage : {change}",
   "agent.setting.untilRestart": "Le niveau de journalisation dure jusqu’au prochain redémarrage.",
+  "agent.setting.none": "aucun",
   "agent.setting.merged": "Appliqué",
   "agent.setting.ignored": "Ignoré",
   "agent.setting.expired": "Expiré",

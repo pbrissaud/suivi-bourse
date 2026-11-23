@@ -1,8 +1,9 @@
 /**
- * A setting the agent proposed to change (#1628), drawn as `FactCard` draws a
- * fact: *Confirmer* and *Ignorer* while it is ready, one status line once
- * decided or expired. Only `log_level` is proposed today, and it lasts until
- * the next restart: a process setting, not a stored one.
+ * A setting the agent proposed to change (#1628, #1629), drawn as `FactCard`
+ * draws a fact: *Confirmer* and *Ignorer* while it is ready, one status line
+ * once decided or expired. `log_level` lasts until the next restart: a process
+ * setting. Every other one is stored, and says what it does in the registry's
+ * own line (`doc`).
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
@@ -10,6 +11,12 @@ import { Button } from '@/components/ui/button'
 import { type SettingProposal, settingProposalsApi } from '@/features/agent/lib/settingProposals'
 import { ApiProblem } from '@/lib/api'
 import { useI18n } from '@/lib/i18n'
+
+/** A stored value as the card says it: a list by its members, an unset one as a word. */
+function said(value: unknown, none: string): string {
+  if (Array.isArray(value)) return value.length ? value.join(', ') : none
+  return value === null || value === '' ? none : String(value)
+}
 
 /** A setting proposal: the change and its two answers, or the one line it came to. */
 export function SettingCard({ proposal }: { proposal: SettingProposal }) {
@@ -28,16 +35,23 @@ export function SettingCard({ proposal }: { proposal: SettingProposal }) {
             proposals: read.proposals.map((p) => (p.id === decided.id ? decided : p)),
           },
       ),
-    // A 409 too: the card then reads what the server holds. The System page
-    // reads the log level from the configuration.
+    // A 409 too: the card then reads what the server holds. The settings and
+    // the log level are read from the configuration, the followed funds by the
+    // comparison page.
     onSettled: () =>
       Promise.all([
         client.invalidateQueries({ queryKey: ['proposals'] }),
         client.invalidateQueries({ queryKey: ['config'] }),
+        client.invalidateQueries({ queryKey: ['benchmark'] }),
       ]),
   })
-  // The levels are stored upper-case (`INFO`); the card says them as a reader would.
-  const named = `${proposal.key}: ${String(proposal.previous).toLowerCase()} → ${String(proposal.value).toLowerCase()}`
+  // The levels are stored upper-case (`INFO`); the card says them as a reader
+  // would. A ticker keeps its case.
+  const say = (value: unknown) =>
+    proposal.key === 'log_level'
+      ? String(value).toLowerCase()
+      : said(value, t('agent.setting.none'))
+  const named = `${proposal.key}: ${say(proposal.previous)} → ${say(proposal.value)}`
   const refused =
     decide.error instanceof ApiProblem && decide.error.detail
       ? decide.error.detail
@@ -54,7 +68,9 @@ export function SettingCard({ proposal }: { proposal: SettingProposal }) {
       {proposal.status === 'ready' ? (
         <>
           <p className="text-prose">{t('agent.setting.ask', { change: named })}</p>
-          <p className="text-sm text-muted-foreground">{t('agent.setting.untilRestart')}</p>
+          <p className="text-sm text-muted-foreground">
+            {proposal.doc ?? t('agent.setting.untilRestart')}
+          </p>
           <div className="flex flex-wrap gap-2">
             <Button
               className="min-h-11"
