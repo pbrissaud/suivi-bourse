@@ -911,6 +911,7 @@
   "agent.tool.propose_events": "Proposition d’événements pour votre grand livre.",
   "agent.tool.propose_setting": "Proposition d’un changement de réglage.",
   "agent.tool.get_system_status": "Lecture de l’état de votre installation.",
+  "agent.tool.read_logs": "Lecture du journal.",
   "agent.tool.web_search": "Recherche sur le web.",
   "agent.profile": "Votre profil",
   "agent.profile.all": "Tout votre profil",
