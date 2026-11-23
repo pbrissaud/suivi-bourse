@@ -42,7 +42,7 @@
     "@biomejs/biome": "2.6.8",
     "@shadcn/helpers": "^0.3.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/jest-dom": "^8.0.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.3",
     "@types/culori": "^4.0.1",
