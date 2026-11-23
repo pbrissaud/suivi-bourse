@@ -53,6 +53,9 @@ _RULES = tuple((re.compile(pattern, re.IGNORECASE), kept) for pattern, kept in (
 
 
 _RUN = re.compile(r'\S+')
+#: Where a run moves on to another URL: a list, a dict's repr.
+_NEXT = re.compile(r'''(?<=[,;|"'()\[\]<>])(?=[a-z][a-z0-9+.\-]{0,20}://)''',
+                   re.IGNORECASE)
 _SCHEME = re.compile(r'\b[a-z][a-z0-9+.\-]{0,20}://', re.IGNORECASE)
 #: A host and its port, and no credentials: a dotted name or ``localhost``.
 _PORT = re.compile(r'(?:localhost|[^\s/?#@:]*\.[^\s/?#@:]*):\d{1,5}[/?#]',
@@ -61,18 +64,23 @@ _USER = re.compile(r'[^\s/?#@:]*:')
 _AUTHORITY = re.compile(r'[^\s/?#]+@')
 
 
-def _url_credentials(found: 're.Match[str]') -> str:
-    """One run of non-blanks, the credentials of its URLs masked and the hosts
-    kept: they say where.
+def _run_credentials(found: 're.Match[str]') -> str:
+    """One run of non-blanks, each URL of a list on its own."""
+    return ''.join(map(_url_credentials, _NEXT.split(found.group())))
 
-    ``user:password`` goes to the **last** ``@`` of the run, however long: a
+
+def _url_credentials(run: str) -> str:
+    """The credentials masked and the host kept: it says where.
+
+    ``user:password`` goes to the **last** ``@`` of ``run``, however long: a
     password may hold a raw ``/``, ``?`` or ``@``. What reads as a host and
     its port, with one ``@`` at most after it, is no credential.
     """
-    run = found.group()
     last = run.rfind('@')
     if last < 0:
         return run
+    # Read once: searching again from each scheme would be quadratic.
+    before_last = run.rfind('@', 0, last)
     kept, at = [], 0
     for scheme in _SCHEME.finditer(run):
         start = scheme.end()
@@ -80,7 +88,7 @@ def _url_credentials(found: 're.Match[str]') -> str:
             break
         if start < at:
             continue
-        port = _PORT.match(run, start) and run.find('@', start) == last
+        port = _PORT.match(run, start) and start > before_last
         if not port and _USER.match(run, start):
             kept += [run[at:start], MASK]
             at = last
@@ -98,7 +106,7 @@ def mask(text: str) -> str:
     Mask **before** cutting a text: a secret straddling the cut would be left
     half shown.
     """
-    text = _RUN.sub(_url_credentials, text)
+    text = _RUN.sub(_run_credentials, text)
     for pattern, kept in _RULES:
         text = pattern.sub(kept, text)
     return text

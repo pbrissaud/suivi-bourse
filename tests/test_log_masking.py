@@ -94,6 +94,8 @@ SK = 'sk' + '-'
      f'{SCHEME}{MASK}{AT}proxy.example/v8'),
     (f'["{SCHEME}ok.example:80/a","{SCHEME}paul:{SECRET}{AT}proxy.example"]',
      f'["{SCHEME}ok.example:80/a","{SCHEME}{MASK}{AT}proxy.example"]'),
+    (f'{SCHEME}a:{SECRET}{AT}first.example,{SCHEME}b:{SECRET}{AT}second.example',
+     f'{SCHEME}{MASK}{AT}first.example,{SCHEME}{MASK}{AT}second.example'),
     (f'session_id: {SECRET}', f'session_id: {MASK}'),
 ])
 def test_a_secret_is_masked_and_the_line_around_it_kept(line, masked):
@@ -143,6 +145,7 @@ def test_masking_twice_changes_nothing_more():
 @pytest.mark.parametrize('text', [
     'a' * 50_000, 'a-' * 25_000, 'token' * 10_000, 'http' + '://' + 'a:' * 25_000,
     'a' + '://b:c' * 10_000, 'a' + '://b.c:1/' * 6_000, 'a://b.c:1/' * 6_000 + '@x',
+    'a://b.c:1/,' * 60_000 + '@x', 'a://b.c:1/' * 60_000 + '@x',
     'a://b@c/' * 8_000, 'a.' * 25_000 + '@', 'sk' + '-sk' * 15_000, 'token="' * 8_000,
     'token' + ' ' * 50_000, 'key' + '\\' * 50_000,
 ])
