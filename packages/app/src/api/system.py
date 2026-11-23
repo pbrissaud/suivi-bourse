@@ -278,10 +278,11 @@ def _decide_setting(proposal_id, confirm: bool):
     now = datetime.now(timezone.utc)
     changes = ()
     try:
-        with runtime.config_manager.writing() as opened:
+        with runtime.config_manager.writing() as opened, \
+                opened.transaction():
             if confirm:
-                # A stored setting, by the road ``PUT /api/settings`` takes
-                # and before the decision: a refused write leaves it ready.
+                # A stored setting, by the road ``PUT /api/settings`` takes,
+                # and the decision with it: both are kept, or neither.
                 changes = setting_proposals.write(
                     opened, proposal_id, now,
                     lambda symbol: benchmark_view.ready(

@@ -265,6 +265,25 @@ def test_a_setting_that_moved_since_the_proposal_is_not_confirmed(client):
     assert _status(http, proposal_id) == 'ready'
 
 
+def test_a_decision_that_fails_takes_the_setting_back_with_it(
+        client, monkeypatch):
+    """The write and the decision are one transaction: the retry still works."""
+    http, runtime = client
+    proposal_id = stored(runtime.store)
+    with monkeypatch.context() as broken:
+        def fails(*_):
+            raise RuntimeError('the decision was not recorded')
+        broken.setattr(proposals, 'decide', fails)
+        assert http.post(
+            f'/api/config/proposals/{proposal_id}/confirm').status_code == 500
+    assert _stored_value(http, 'regular_interval') == 120
+    assert _status(http, proposal_id) == 'ready'
+
+    assert http.post(
+        f'/api/config/proposals/{proposal_id}/confirm').status_code == 200
+    assert _stored_value(http, 'regular_interval') == 300
+
+
 def test_following_an_offered_fund_is_confirmed_through_save(client):
     http, runtime = client
     proposal_id = stored(runtime.store, 'benchmark_symbols', ['CSPX.AS'])

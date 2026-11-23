@@ -54,6 +54,14 @@ def save(store, values: Mapping[str, Any],
     ``benchmark_symbol`` whose history is not complete. The followed-list
     invariant needs no store beyond this one and always holds.
     """
+    with store.transaction():
+        return save_within(store, values, is_ready)
+
+
+def save_within(store, values: Mapping[str, Any],
+                is_ready: Optional[Callable[[str], bool]] = None
+                ) -> Tuple[Change, ...]:
+    """:func:`save`, inside the transaction its caller holds open."""
     if not values:
         raise settings_registry.InvalidSetting(
             '', 'No setting was named; a write with nothing to write is a mistake')
@@ -69,14 +77,13 @@ def save(store, values: Mapping[str, Any],
         current, dict(pending), is_ready).items())
 
     changes: List[Change] = []
-    with store.transaction():
-        for key, value in pending:
-            store.execute(
-                'INSERT INTO setting (key, value) VALUES (?, ?) '
-                'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
-                [key, settings_registry.stored_form(key, value)])
-            changes.append(Change(key, current.get(key), value))
-        _remember_the_references(store, dict(pending))
+    for key, value in pending:
+        store.execute(
+            'INSERT INTO setting (key, value) VALUES (?, ?) '
+            'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+            [key, settings_registry.stored_form(key, value)])
+        changes.append(Change(key, current.get(key), value))
+    _remember_the_references(store, dict(pending))
     return tuple(changes)
 
 
@@ -136,4 +143,4 @@ def _refuse_a_reinterpretation(store, current, pending) -> None:
             f"it. Forget those imports first.")
 
 
-__all__ = ['Change', 'read_all', 'describe', 'save']
+__all__ = ['Change', 'read_all', 'describe', 'save', 'save_within']

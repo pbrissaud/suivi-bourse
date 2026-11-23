@@ -4,7 +4,8 @@ owner's decision.
 **The agent never writes a setting, it proposes one; only the UI confirms.**
 :func:`propose` is the agent's one write and lands in ``proposal``.
 :func:`confirm` marks the row ``merged`` and applies nothing. A stored setting
-is written just before it by :func:`write`, through ``settings.save``, the
+is written just before it by :func:`write`, in the same transaction and
+through ``settings.save_within``, the
 road the settings page itself takes; the log level is applied by the caller
 once the decision has won.
 
@@ -125,16 +126,13 @@ def write(store, proposal_id: str, now: datetime,
           is_ready=None) -> Tuple[settings.Change, ...]:
     """Write a ready proposal's stored setting, and say what moved.
 
-    Called before :func:`confirm`, under the same writers' mutex, so a write
-    ``settings.save`` refuses leaves the proposal ``ready``. Its guards are
+    Called before :func:`confirm`, in the transaction its caller holds over
+    both: either failing leaves the setting as it was and the card ``ready``. Its guards are
     ``PUT /api/settings``'; ``is_ready`` is the comparison's gate. A setting
     that is no longer at ``previous`` is :class:`SettingMoved`. Nothing is
     written for the log level, nor for a proposal that is not ready:
     :func:`confirm` says why.
     """
-    # ponytail: two transactions, as ``settings.save`` opens its own and DuckDB
-    # does not nest them. A store that fails between the two leaves the setting
-    # written and the card ready; one transaction if that is ever seen.
     found = read(store, [proposal_id], now)
     if not found or found[0]['status'] != 'ready' \
             or found[0]['key'] == LOG_LEVEL:
@@ -142,7 +140,7 @@ def write(store, proposal_id: str, now: datetime,
     key, value = found[0]['key'], found[0]['value']
     if settings.read_all(store)[key] != found[0]['previous']:
         raise SettingMoved(key)
-    return settings.save(store, {key: value}, is_ready)
+    return settings.save_within(store, {key: value}, is_ready)
 
 
 def confirm(store, proposal_id: str, now: datetime) -> SettingProposal:
