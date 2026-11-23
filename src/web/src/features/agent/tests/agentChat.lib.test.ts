@@ -72,6 +72,7 @@ describe('a failed turn that is the provider’s', () => {
 describe('the sentence a tool call is shown as', () => {
   it('says the System page read in plain words, and names a tool it does not know', () => {
     expect(toolSentence('get_system_status')).toEqual({ key: 'agent.tool.get_system_status' })
+    expect(toolSentence('read_logs')).toEqual({ key: 'agent.tool.read_logs' })
     expect(toolSentence('propose_setting')).toEqual({ key: 'agent.tool.propose_setting' })
     expect(toolSentence('web_search')).toEqual({ key: 'agent.tool.web_search' })
     expect(toolSentence('unheard_of')).toEqual({

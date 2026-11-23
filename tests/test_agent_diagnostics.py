@@ -1,9 +1,13 @@
-"""The built-in agent's own tool: the System page, read (#1625).
+"""The built-in agent's own tools: the System page, read (#1625), and its
+journal, secrets masked (#1627).
 
 Over a real store and the process's own recorder, as ``/api/runtime`` and
 ``/api/advisories`` are tested; no provider is ever called.
 """
 import asyncio
+import json
+import logging
+import sys
 from datetime import date, datetime, timezone
 
 from application import accounts as accounts_module
@@ -13,6 +17,8 @@ from application import agent_diagnostics
 from application import build_info
 from application import entries
 from application import job_history
+from application import journal
+from application import log_masking
 from application import mcp_server
 from application import quotes
 from application import runtime_state
@@ -143,3 +149,132 @@ def test_the_agent_calls_the_tool_and_gets_the_published_shape(tmp_path):
                for part in message.parts if isinstance(part, ToolReturnPart)]
     agent_diagnostics._SHAPE.validate_python(answer)
     assert [error['key'] for error in answer['errors']] == [FUND]
+
+
+# --- read_logs (#1627) -------------------------------------------------------
+
+#: Built by concatenation: a literal credentialed URL or a provider-shaped key
+#: in a test file stops the push.
+SECRET = 'hunter2' + 'Zq9' * 6
+PROXY = 'https' + f'://paul:{SECRET}' + '@proxy.example:8080'
+
+
+def _record(message, level=logging.WARNING, module='scrape', exc_info=None):
+    record = logging.LogRecord('suivi_bourse', level, f'{module}.py', 1,
+                               message, None, exc_info)
+    record.module = module
+    return record
+
+
+def _raised(error):
+    try:
+        raise error
+    except Exception:
+        return sys.exc_info()
+
+
+def test_the_log_lines_default_to_warnings_and_narrow_as_the_page_does(
+        monkeypatch):
+    ring = journal.Ring()
+    monkeypatch.setattr(journal, 'RING', ring)
+    ring.emit(_record('fetched 6 symbols', logging.INFO))
+    ring.emit(_record('HTTP 429 for AI.PA'))
+    ring.emit(_record('no closes', logging.ERROR, module='performance'))
+
+    def messages(**asked):
+        return [line['message']
+                for line in agent_diagnostics.log_lines(**asked)['lines']]
+
+    assert messages() == ['no closes', 'HTTP 429 for AI.PA']
+    assert messages(level='error') == ['no closes']
+    assert messages(level='debug', job='scrape') == [
+        'HTTP 429 for AI.PA', 'fetched 6 symbols']
+    assert messages(since=datetime(2999, 1, 1)) == []
+    assert agent_diagnostics.log_lines() == {
+        'more': False, 'lines': ring.select('warning')[0]}
+
+
+def test_one_call_is_bounded_and_says_when_it_left_lines_out(monkeypatch):
+    ring = journal.Ring()
+    monkeypatch.setattr(journal, 'RING', ring)
+    lines = agent_diagnostics.LOG_LINES
+    for n in range(lines + 3):
+        ring.emit(_record(f'line {n}'))
+
+    answer = agent_diagnostics.log_lines()
+
+    assert [line['message'] for line in answer['lines']] == [
+        f'line {n}' for n in range(lines + 2, 2, -1)]
+    assert answer['more'] is True
+    assert agent_diagnostics.log_lines(level='error') == {
+        'lines': [], 'more': False}
+
+
+def test_a_line_is_masked_then_cut_and_a_traceback_keeps_its_end(monkeypatch):
+    """A secret straddling the cut is masked whole, never left half shown."""
+    ring = journal.Ring()
+    monkeypatch.setattr(journal, 'RING', ring)
+    cut = agent_diagnostics.LOG_MESSAGE_MAX
+    straddling = 'x' * (cut - 20) + f' token={SECRET} ' + 'y' * cut
+    ring.emit(_record(straddling, logging.ERROR, exc_info=_raised(
+        ConnectionError('z' * 2000 + f' could not reach {PROXY}/v8'))))
+
+    line, = agent_diagnostics.log_lines()['lines']
+
+    assert len(line['message']) == cut
+    assert straddling[:cut].endswith(SECRET[:13])
+    assert line['message'].endswith(' token=' + log_masking.MASK + ' yyyyyyyyy')
+    assert len(line['detail']) == agent_diagnostics.LOG_DETAIL_MAX
+    assert line['detail'].endswith(
+        'could not reach https://' + log_masking.MASK + '@proxy.example:8080/v8')
+    assert 'hunter2' not in json.dumps(line)
+
+
+def test_the_tool_takes_the_journal_s_own_levels_and_jobs_and_no_other(tmp_path):
+    """``Ring.select`` reads an unknown level as *everything*: the schema is
+    what refuses a typo, so it must list exactly what the journal knows."""
+    runtime, _ = build_runtime(tmp_path)
+    toolset = agent_diagnostics.build_toolset(runtime)
+
+    asked = toolset.tools['read_logs'].function_schema.json_schema['properties']
+
+    assert asked['level']['enum'] == list(journal.LEVELS)
+    assert asked['level']['default'] == 'warning'
+    assert asked['job']['anyOf'][0]['enum'] == list(journal.JOBS)
+    assert set(asked) == {'level', 'job', 'since'}
+
+
+def test_the_agent_reads_the_logs_and_never_an_unmasked_secret(tmp_path):
+    """Written through ``logging``, read by the agent's own call: the secret
+    is in a message and in a traceback, and in nothing the tool returns."""
+    from pydantic_ai.messages import ToolReturnPart
+    from pydantic_ai.models.test import TestModel
+
+    runtime, _ = build_runtime(tmp_path)
+    journal.install()
+    logger = logging.getLogger('suivi_bourse')
+    logger.warning('read-logs-marker GET %s/v8?crumb=%s refused', PROXY, SECRET)
+    try:
+        raise ConnectionError(f'Authorization: Bearer {SECRET} was refused')
+    except ConnectionError:
+        logger.exception('read-logs-marker the pass failed')
+    assistant = agent.build_agent(
+        TestModel(call_tools=['read_logs']),
+        mcp_server.build_server(runtime),
+        agent_diagnostics.build_toolset(runtime), thinking='low')
+
+    result = asyncio.run(assistant.run('What errors are in the logs?'))
+
+    answer, = [part.content for message in result.all_messages()
+               for part in message.parts if isinstance(part, ToolReturnPart)]
+    failed, refused = [line for line in answer['lines']
+                       if 'read-logs-marker' in line['message']]
+    masked = log_masking.MASK
+    assert refused['message'] == (
+        f'read-logs-marker GET https://{masked}@proxy.example:8080/v8'
+        f'?crumb={masked} refused')
+    assert failed['level'] == 'error'
+    assert failed['detail'].endswith(
+        f'ConnectionError: Authorization: Bearer {log_masking.MASK} was refused')
+    assert SECRET not in json.dumps(answer)
+    assert len(answer['lines']) <= agent_diagnostics.LOG_LINES
