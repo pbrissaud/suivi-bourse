@@ -109,6 +109,14 @@ _PROVIDER_NAMES = ('id', 'label', 'provider', 'base_url', 'api_key',
 
 LABEL_MAX = 60
 
+#: The seconds one model request may take, its stream included. Wide: a local
+#: model loading, or a long reasoning, is slow and not stuck.
+REQUEST_TIMEOUT = 600
+#: What one turn may cost: its model requests, a web search's reading included,
+#: and its tokens, the conversation counted again by every request.
+TURN_REQUESTS = 20
+TURN_TOKENS = 1_000_000
+
 #: The provider fields a body may name, as the API spells them.
 PROVIDER_FIELDS = ('label', 'kind', 'base_url', 'key', 'default_model')
 
@@ -702,7 +710,9 @@ def build_agent(model, mcp, own_tools, web_tools=None, *, thinking: str):
     if web_tools is not None:
         toolsets.append(web_tools)
     return Agent(model, toolsets=toolsets, instructions=SYSTEM_PROMPT,
-                 model_settings=ModelSettings(cache=True, thinking=thinking))
+                 model_settings=ModelSettings(
+                     cache=True, thinking=thinking,
+                     request_timeout=REQUEST_TIMEOUT))
 
 
 def build_extractor(model, output_type, instructions: str):

@@ -11,6 +11,7 @@ the thread files go through ``anyio.to_thread``, and the MCP SDK runs the tools'
 store reads in worker threads of its own.
 """
 import json
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -36,7 +37,10 @@ from application import statements
 from application import web_search
 from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import (
-    ModelAPIError, ModelHTTPError, UnexpectedModelBehavior,
+    ModelAPIError, ModelConnectionError, ModelContextWindowExceededError,
+    ModelHTTPError, ModelQuotaExceededError, ModelRateLimitError,
+    ModelRequestTimeout, ModelServerError, ModelTimeoutError,
+    ModelUnavailableError, UnexpectedModelBehavior, UsageLimitExceeded,
 )
 from pydantic_ai.messages import (
     ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart,
@@ -44,6 +48,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter, VercelAIEventStream
 from pydantic_ai.ui.vercel_ai.response_types import ErrorChunk
+from pydantic_ai.usage import UsageLimits
 
 logger = getLogger("agent")
 
@@ -65,6 +70,36 @@ MAX_STATEMENT_BODY = 64 * 1024
 NAME_MAX = 120
 
 
+#: The reason of each category Pydantic AI sorts a provider's error into,
+#: whether or not an HTTP status came with it.
+_REASONS = (
+    (ModelContextWindowExceededError, 'context'),
+    (ModelQuotaExceededError, 'quota'),
+    (ModelRateLimitError, 'rate_limit'),
+    ((ModelUnavailableError, ModelServerError), 'overloaded'),
+    (ModelRequestTimeout, 'timeout'),
+)
+
+
+def turn_refusal(error: ModelAPIError) -> str:
+    """Why a turn's provider failed: its category, else what :func:`agent.refusal`
+    reads in the status.
+
+    A connection that never opened is ``unreachable``, even timed out. An error
+    told inside an open stream reached the provider, status or not.
+    """
+    for kinds, reason in _REASONS:
+        if isinstance(error, kinds):
+            return reason
+    if isinstance(error, ModelTimeoutError):
+        return 'unreachable' if error.phase in ('connect', 'pool') else 'timeout'
+    if isinstance(error, ModelHTTPError):
+        return agent.refusal(error.status_code, error.body, 'turn')
+    if error.in_stream and not isinstance(error, ModelConnectionError):
+        return 'refused'
+    return agent.refusal(None, error.body, 'turn')
+
+
 @dataclass
 class _EventStream(VercelAIEventStream):
     """The stock stream, with a provider failure told in the provider's words."""
@@ -77,7 +112,8 @@ class _EventStream(VercelAIEventStream):
 
         Only a provider's failure is put in the provider's mouth, and carries
         the ``reason`` the page translates (#1269); anything else (a bug of
-        ours, a usage limit) is said as the agent's, as plain text.
+        ours) is said as the agent's, as plain text, and a turn past its
+        limits with the reason ``limit``.
         """
         http = error if isinstance(error, ModelHTTPError) else None
         said = agent.said(http.body if http else None, str(error), self.secret)
@@ -86,11 +122,15 @@ class _EventStream(VercelAIEventStream):
         logger.warning(f"agent turn failed: {speaker}: {said}")
         text = f'{speaker}: {said}'
         if provider:
+            refused = {'error': text, 'provider': speaker,
+                       'reason': turn_refusal(error)}
+            # The header is the provider's: ``nan`` and ``inf`` are not JSON.
+            if error.retry_after is not None and math.isfinite(error.retry_after) and error.retry_after > 0:
+                refused['retry_after'] = math.ceil(error.retry_after)
+            text = json.dumps(refused)
+        elif isinstance(error, UsageLimitExceeded):
             text = json.dumps({
-                'error': text, 'provider': speaker,
-                'reason': agent.refusal(
-                    http.status_code if http else None,
-                    http.body if http else None, 'turn')})
+                'error': text, 'provider': speaker, 'reason': 'limit'})
         async for chunk in super().on_error(error):
             if isinstance(chunk, ErrorChunk):
                 chunk = ErrorChunk(error_text=text)
@@ -315,6 +355,9 @@ def build_app(runtime, mcp, release_checker=None) -> Starlette:
                     try:
                         async for chunk in adapter.run_stream(
                                 message_history=history,
+                                usage_limits=UsageLimits(
+                                    request_limit=agent.TURN_REQUESTS,
+                                    total_tokens_limit=agent.TURN_TOKENS),
                                 on_complete=on_complete):
                             failed = failed or (
                                 not kept and isinstance(chunk, ErrorChunk))

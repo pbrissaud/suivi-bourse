@@ -298,7 +298,10 @@ function AgentConversation() {
   // A thread read back whose last turn failed: the error is gone with the
   // stream, so the page says it in a generic sentence under the partial answer.
   const failed = streamFailed || failedOnReload
-  const refusal = streamFailed ? turnRefusal(error) : null
+  const refused = streamFailed ? turnRefusal(error) : null
+  // The turn passed the agent's own limits: no provider said anything.
+  const limited = refused?.reason === 'limit'
+  const refusal = limited ? null : refused
   const retryButton = (
     <div className="flex flex-wrap items-center gap-4 pt-1">
       <Button variant="outline" onClick={retry}>
@@ -377,13 +380,18 @@ function AgentConversation() {
                           provider={providerName(provider, t)}
                           reason={refusal.reason}
                           said={refusal.said}
+                          retryAfter={refusal.retryAfter}
                         >
                           {retryButton}
                         </RefusalNotice>
                       ) : (
                         <div className="flex flex-col items-start gap-2">
                           <p className="text-sm text-destructive">
-                            {streamFailed ? errorSentence(error) : t('agent.failed.reloaded')}
+                            {limited
+                              ? t('agent.limit')
+                              : streamFailed
+                                ? errorSentence(error)
+                                : t('agent.failed.reloaded')}
                           </p>
                           {retryButton}
                         </div>
