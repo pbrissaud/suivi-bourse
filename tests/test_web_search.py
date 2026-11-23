@@ -5,12 +5,14 @@ The SearXNG is a function that answers JSON; every model is Pydantic AI's
 ``FunctionModel``. No network, no provider.
 """
 import asyncio
+import http.client
 import json
 import urllib.error
 from urllib.parse import parse_qs, urlsplit
 
 import anyio
 import pytest
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -46,6 +48,7 @@ NAMES = ['PEA Paul', 'cto', 'pea']
     ('CW8 $400', 'amount'),
     ('USD 400 in CW8', 'amount'),
     ('CW8 400 EUR', 'amount'),
+    ('CW8 400 usd', 'amount'),
     ('CW8 35.5 shares', 'amount'),
     ('dividend 3,5 CW8', 'amount'),
     ('CW8 12500', 'more than 4 digits'),
@@ -64,7 +67,6 @@ def test_a_query_that_carries_portfolio_data_is_refused(query, why):
     'CW8 EUR hedged',
     'S&P 500 composition 2026',
     'European ETF',       # `pea` is in the word, not a word of the query
-    'world cup eur 2026',  # a currency code is in capitals
 ])
 def test_a_ticker_an_isin_and_a_year_pass(query):
     assert web_search.refusal(query, NAMES) is None
@@ -87,6 +89,7 @@ def test_the_results_kept_are_the_first_with_a_web_address_and_a_snippet():
     answered = {'results': [
         {'url': 'javascript:alert(1)', 'content': 'a'},
         {'url': 'https://a.example/x y', 'content': 'a'},
+        {'url': 'https://a.example/\u200b', 'content': 'a'},
         {'url': 'https://a.example/](evil)', 'content': 'a'},
         {'url': 'https://a.example/' + 'x' * web_search.URL_MAX, 'content': 'a'},
         {'url': 'https://no-snippet.example', 'content': ' '},
@@ -223,6 +226,9 @@ def test_a_refused_query_asks_no_one(tmp_path, monkeypatch):
      'the search address answered HTTP 500'),
     (TimeoutError('no full answer within 10 s'),
      'the search address did not answer: no full answer within 10 s'),
+    # The server's own line, in no word of the error.
+    (http.client.BadStatusLine(INJECTION),
+     'the search address did not answer: BadStatusLine'),
     (b'<!doctype html>', 'the search address did not return JSON'),
 ])
 def test_a_searxng_that_fails_is_a_tool_error_with_the_reason(
@@ -234,6 +240,7 @@ def test_a_searxng_that_fails_is_a_tool_error_with_the_reason(
 
     assert part.outcome == 'failed'
     assert part.content.startswith(f'the web search failed: {said}')
+    assert INJECTION not in part.content
     assert models.snippets == []
 
 
@@ -258,6 +265,22 @@ def test_an_extractor_that_does_not_answer_is_a_tool_error_not_a_hang(
     assert part.outcome == 'failed'
     assert part.content == ('the web search failed: the model did not read '
                             'the results within 0.05 seconds')
+
+
+def test_a_provider_that_refuses_the_extractor_is_a_tool_error(
+        tmp_path, monkeypatch):
+    searx(monkeypatch)
+    models = Models()
+
+    async def refused(messages, info):
+        raise ModelHTTPError(429, 'm', INJECTION)
+    models.extractor = refused
+
+    part, _ = called(tmp_path, models)
+
+    assert part.outcome == 'failed'
+    assert part.content == ('the web search failed: the model could not read '
+                            'the results (ModelHTTPError)')
 
 
 # ------------------------------------------------------ the tool, in a turn --

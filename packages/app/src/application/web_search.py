@@ -61,12 +61,12 @@ NOTHING = 'The search returned no result.'
 
 _ISIN = re.compile(r'\b[A-Z]{2}[A-Z0-9]{9}[0-9]\b')
 _SIGNS = '€$£¥'
-#: In capitals only: ``eur`` in a sentence is a word, ``EUR 400`` an amount.
 _CODES = 'EUR|USD|GBP|CHF|JPY|CAD|AUD|SEK|NOK|DKK|PLN|CNY|HKD|SGD'
 #: A number beside a currency. ``\b`` before the digits: the 8 of ``CW8 EUR``
 #: ends a ticker, it is no amount.
 _AMOUNT = re.compile(
-    rf'\b\d+\s*(?:[{_SIGNS}]|(?:{_CODES})\b)|(?:[{_SIGNS}]|\b(?:{_CODES}))\s*\d')
+    rf'\b\d+\s*(?:[{_SIGNS}]|(?:{_CODES})\b)|(?:[{_SIGNS}]|\b(?:{_CODES}))\s*\d',
+    re.IGNORECASE)
 _DECIMAL = re.compile(r'\d[.,]\d')
 #: A run of digits, the thousands a space groups read as one: ``12 500``.
 _DIGITS = re.compile(r'(?<!\d)\d{1,3}(?: \d{3})+(?!\d)|\d+')
@@ -132,7 +132,7 @@ def kept(answered: dict) -> List[Tuple[str, str]]:
             if isinstance(one, dict) else (None, None)
         if not (isinstance(url, str) and isinstance(snippet, str)):
             continue
-        if len(url) <= URL_MAX and _URL.fullmatch(url) and snippet.strip():
+        if (len(url) <= URL_MAX and url.isprintable() and _URL.fullmatch(url) and snippet.strip()):
             found.append((url, ' '.join(snippet.split())[:SNIPPET_MAX]))
             if len(found) == RESULTS:
                 break
@@ -158,7 +158,7 @@ def build_toolset(search_url: str, model, reader):
     gives a store cursor on the calling thread, for the accounts' names.
     """
     from pydantic_ai import RunContext
-    from pydantic_ai.exceptions import ToolFailed
+    from pydantic_ai.exceptions import AgentRunError, ToolFailed
     from pydantic_ai.toolsets import FunctionToolset
 
     async def web_search(ctx: RunContext[None], query: str) -> WebAnswer:
@@ -185,7 +185,14 @@ def build_toolset(search_url: str, model, reader):
                 f'the store could not name the accounts, so the query was '
                 f'not checked and nothing was sent: {exc}') from exc
         except agent.InvalidAgentConfig as exc:
-            raise ToolFailed(f'the web search failed: {exc}') from exc
+            # An ``http.client`` error quotes the server's own line, which
+            # the agent must not read: its type alone. The owner's probe of
+            # the address keeps the words.
+            cause = exc.__cause__
+            why = (f'the search address did not answer: {type(cause).__name__}'
+                   if cause is not None and not isinstance(cause, OSError)
+                   else exc)
+            raise ToolFailed(f'the web search failed: {why}') from exc
 
         found = kept(answered)
         if not found:
@@ -197,6 +204,11 @@ def build_toolset(search_url: str, model, reader):
             raise ToolFailed(
                 f'the web search failed: the model did not read the results '
                 f'within {EXTRACTION_TIMEOUT} seconds') from exc
+        except AgentRunError as exc:
+            # The type and nothing else: a body may quote the snippets.
+            raise ToolFailed(
+                f'the web search failed: the model could not read the '
+                f'results ({type(exc).__name__})') from exc
         # The sources are the result list's, never a word of the extractor's.
         return {'answer': answer.strip()[:ANSWER_MAX],
                 'sources': [url for url, _ in found]}
