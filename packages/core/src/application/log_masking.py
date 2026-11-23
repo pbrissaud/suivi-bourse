@@ -23,15 +23,18 @@ _NAMED = (r'(?:token|secret|passw(?:or)?d|pwd|pass(?:phrase|code)'
           r'|session(?:[_\-]?id)?|crumb|(?<![a-z])pin)')
 
 _RULES = tuple((re.compile(pattern, re.IGNORECASE), kept) for pattern, kept in (
-    # A URL's credentials (what stands between ``://`` and ``@``): the host
-    # stays, it says where.
-    (r'(\b[a-z][a-z0-9+.\-]{0,20}://)[^\s/?#]+@', r'\1' + MASK + '@'),
-    # The same with a ``/`` or a ``?`` left raw in the password; a port is no
-    # password.
-    (r'(\b[a-z][a-z0-9+.\-]{0,20}://)[^\s/?#@:]{0,200}:(?!\d+[/?#])[^\s@]{1,200}@',
+    # A URL's credentials, to the last ``@`` of the run: a password may hold a
+    # raw ``/``, ``?`` or ``@``. A port is no password.
+    (r'(\b[a-z][a-z0-9+.\-]{0,20}://)[^\s/?#@:]{0,200}:(?!\d+[/?#])[^\s]{1,200}@',
      r'\1' + MASK + '@'),
-    # A cookie header, to the end of its line: every pair in it is a session.
-    (r'''(\b(?:set-)?cookie["']?\s*[=:]\s*["']?)[^\r\n'"]+''', r'\1' + MASK),
+    # The same with no password, or a numeric one: the host stays, it says where.
+    (r'(\b[a-z][a-z0-9+.\-]{0,20}://)[^\s/?#]+@', r'\1' + MASK + '@'),
+    # A cookie header, every pair in it: to its closing quote, or to the end of
+    # the line when it has no opening one.
+    (r"""(\b(?:set-)?cookie\\*["']?\s*[=:]\s*)(\\*["'])"""
+     r"""(?:(?!\2)(?:\\.|[^\r\n]))*""", r'\1\2' + MASK),
+    (r"""(\b(?:set-)?cookie\\*["']?\s*[=:]\s*)(?!\s|\\*["'])[^\r\n]+""",
+     r'\1' + MASK),
     # ``Authorization: Bearer …``, its scheme kept; then a bearer on its own.
     (r'''(\b(?:proxy-)?authorization["']?\s*[=:]\s*["']?'''
      r'''(?:(?:bearer|basic|digest|token)\s+)?)[^\s,;'"]+''', r'\1' + MASK),

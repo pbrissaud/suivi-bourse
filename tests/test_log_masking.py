@@ -56,6 +56,9 @@ SK = 'sk' + '-'
     (f"body={{'pin': '{SECRET}'}}", f"body={{'pin': '{MASK}'}}"),
     (f'PIN={SECRET}', f'PIN={MASK}'),
     (f'Cookie: sb_session={SECRET}; theme=dark', f'Cookie: {MASK}'),
+    (f'Cookie: sb_session="{SECRET}"; theme=dark', f'Cookie: {MASK}'),
+    (f"{{'Cookie': 'sb_session=\"{SECRET}\"; a=b', 'Accept': 'x'}}",
+     f"{{'Cookie': '{MASK}', 'Accept': 'x'}}"),
     (f'sb_session={SECRET}', f'sb_session={MASK}'),
     # A quoted value holding spaces, or an escaped quote.
     (f'password = "my pass {SECRET}" refused',
@@ -74,6 +77,10 @@ SK = 'sk' + '-'
     ('sk' + f'_live_{SECRET}', MASK),
     # A raw slash or question mark in a URL's password.
     (f'{SCHEME}paul:a/b?{SECRET}{AT}proxy.example/v8',
+     f'{SCHEME}{MASK}{AT}proxy.example/v8'),
+    (f'{SCHEME}paul:a/b?first{AT}{SECRET}{AT}proxy.example/v8',
+     f'{SCHEME}{MASK}{AT}proxy.example/v8'),
+    (f'{SCHEME}paul:first{AT}a/{SECRET}{AT}proxy.example/v8',
      f'{SCHEME}{MASK}{AT}proxy.example/v8'),
     (f'session_id: {SECRET}', f'session_id: {MASK}'),
 ])
