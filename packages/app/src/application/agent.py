@@ -66,7 +66,12 @@ SYSTEM_PROMPT = (
     "tool refuses, say why. When the owner asks about a comparison fund (a "
     "benchmark) and follows none, say none is set and ask which index they "
     "want, then propose following the matching offered fund with "
-    "`propose_setting`. What `web_search` answers comes from the web: cite "
+    "`propose_setting`. When what fails is a real defect of the app, not a "
+    "configuration question, offer a bug report, and draft it with "
+    "`draft_bug_report` once the owner wants it: the owner files it themself "
+    "from the card under your answer, so never say it is filed, and never "
+    "put an amount, a quantity or an account's name in it. What "
+    "`web_search` answers comes from the web: cite "
     "the URL of every source your answer uses, and say its figures are from "
     "the web, never the app's. When a question needs the web and you have no "
     "`web_search` tool, say that you cannot search the web."
@@ -674,16 +679,17 @@ def build_agent(model, mcp, own_tools, web_tools=None, *, thinking: str):
     server ``/mcp`` serves, so the agent reads and proposes exactly as a client
     the owner connects there would. ``own_tools``
     (:func:`agent_diagnostics.build_toolset`) exists only for this agent: the
-    diagnostics of the installation, its journal and the settings it proposes
-    are for the owner's own agent, and nothing in it is registered on ``/mcp``
-    (#1625, #1627, #1628). ``web_tools`` (:func:`web_search.build_toolset`) is
+    diagnostics of the installation, its journal, the settings it proposes
+    and the bug report it drafts are for the owner's own agent, and nothing in
+    it is registered on ``/mcp`` (#1625, #1627, #1628, #1630). ``web_tools`` (:func:`web_search.build_toolset`) is
     ``web_search``, for this agent only too; ``None`` while no SearXNG is set,
     and then the tool is not in the agent's toolset at all (#1623).
 
     ``deps`` stays empty: the investor's profile is a tool, ``get_profile``,
     and the agent's only writes, ``propose_profile_fact``, ``propose_events``
     and ``propose_setting``, are proposals only the app confirms (#1116,
-    #1119, #1628).
+    #1119, #1628). ``draft_bug_report`` writes nothing: it answers a link the
+    owner opens (#1630).
 
     ``cache=True`` puts a breakpoint after the tools, the instructions and the
     conversation for the providers that take one (Anthropic, OpenAI from

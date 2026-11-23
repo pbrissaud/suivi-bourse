@@ -1,6 +1,12 @@
+import type { UIMessage } from 'ai'
 import { describe, expect, it } from 'vitest'
 
-import { exampleQuestions, toolSentence, turnRefusal } from '@/features/agent/lib/agentChat'
+import {
+  bugReportOf,
+  exampleQuestions,
+  toolSentence,
+  turnRefusal,
+} from '@/features/agent/lib/agentChat'
 import { aPosition } from '@/test/factories'
 
 const label = (id: string) => id.toUpperCase()
@@ -75,9 +81,57 @@ describe('the sentence a tool call is shown as', () => {
     expect(toolSentence('read_logs')).toEqual({ key: 'agent.tool.read_logs' })
     expect(toolSentence('propose_setting')).toEqual({ key: 'agent.tool.propose_setting' })
     expect(toolSentence('web_search')).toEqual({ key: 'agent.tool.web_search' })
+    expect(toolSentence('draft_bug_report')).toEqual({ key: 'agent.tool.draft_bug_report' })
     expect(toolSentence('unheard_of')).toEqual({
       key: 'agent.tool.other',
       values: { name: 'unheard_of' },
     })
+  })
+})
+
+describe('the bug report a call drafted', () => {
+  const QUERY = 'title=Prix%20fig%C3%A9%20%26%20faux&body=Ligne%201%0ALigne%202'
+  const URL_OK = `https://github.com/pbrissaud/suivi-bourse/issues/new?${QUERY}`
+  const part = (over: object): UIMessage['parts'][number] =>
+    ({
+      type: 'tool-draft_bug_report',
+      toolCallId: 'b1',
+      state: 'output-available',
+      input: {},
+      output: { url: URL_OK, note: 'n' },
+      ...over,
+    }) as UIMessage['parts'][number]
+
+  it('reads the title and the body out of the link', () => {
+    expect(bugReportOf(part({}))).toEqual({
+      url: URL_OK,
+      title: 'Prix figé & faux',
+      body: 'Ligne 1\nLigne 2',
+    })
+  })
+
+  it.each([
+    ['a running call', { state: 'input-available', output: undefined }],
+    ['a failed call', { state: 'output-error', output: undefined, errorText: 'x' }],
+    ['another tool', { type: 'tool-web_search' }],
+    [
+      'another host',
+      { output: { url: `https://evil.test/pbrissaud/suivi-bourse/issues/new?${QUERY}` } },
+    ],
+    ['a lookalike host', { output: { url: `https://github.com.evil.test/issues/new?${QUERY}` } }],
+    [
+      'another repository',
+      { output: { url: `https://github.com/pbrissaud/other/issues/new?${QUERY}` } },
+    ],
+    [
+      'another path',
+      { output: { url: `https://github.com/pbrissaud/suivi-bourse/issues?${QUERY}` } },
+    ],
+    ['a script', { output: { url: 'javascript:alert(1)' } }],
+    ['a url that is not text', { output: { url: 3 } }],
+    ['a text output', { output: URL_OK }],
+    ['a null output', { output: null }],
+  ])('is none for %s', (_name, over) => {
+    expect(bugReportOf(part(over))).toBeNull()
   })
 })

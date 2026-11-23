@@ -58,6 +58,7 @@ import { declaredLabel, DEFAULT_ACCOUNT_LABEL } from '@/features/accounts/lib/ac
 import { accountsApi } from '@/features/accounts/lib/api'
 import { Composer } from '@/features/agent/components/Composer'
 import { defaultRunner, providerName, type Runner } from '@/features/agent/components/ModelPicker'
+import { BugReportCard } from '@/features/agent/components/BugReportCard'
 import { RefusalNotice } from '@/features/agent/components/RefusalNotice'
 import { EventsCard } from '@/features/agent/components/EventsCard'
 import { SettingCard } from '@/features/agent/components/SettingCard'
@@ -71,6 +72,8 @@ import {
 import { RailBody, ThreadRail } from '@/features/agent/components/ThreadRail'
 import {
   type AgentToolPart,
+  type BugReport,
+  bugReportOf,
   errorSentence,
   exampleQuestions,
   getToolName,
@@ -640,6 +643,8 @@ function Turn({
     )
   }
   const { steps, cards } = stepsAndText(message.parts, proposals)
+  // A bug report has no button: it does not take the filled one from the events.
+  const lastProposal = cards.filter((card) => !('url' in card)).at(-1)
   return (
     <Message>
       <MessageContent className="gap-3.5">
@@ -663,12 +668,14 @@ function Turn({
             </div>
           )
         })}
-        {cards.map((proposal, index) =>
-          'kind' in proposal ? (
+        {cards.map((proposal) =>
+          'url' in proposal ? (
+            <BugReportCard key={proposal.id} report={proposal} />
+          ) : 'kind' in proposal ? (
             <EventsCard
               key={proposal.id}
               proposal={proposal}
-              primary={latest && index === cards.length - 1}
+              primary={latest && proposal === lastProposal}
             />
           ) : 'previous' in proposal ? (
             // Before the fact: a setting has a key and a value too.
@@ -682,19 +689,23 @@ function Turn({
   )
 }
 
+/** What is drawn under an answer: a stored proposal, or a drafted bug report. */
+type AnswerCard = ThreadProposal | (BugReport & { id: string })
+
 /**
  * The parts in order, consecutive tool calls gathered into one Trace, and
  * apart from them the proposals' cards (5A), drawn under the answer (#1271):
  * the model calls `propose_profile_fact` before it writes, so a card drawn
  * where its call sits stood above the words it is about. The call keeps its
- * trace line; a card is there once its state is read, and not before.
+ * trace line; a card is there once its state is read, and not before. A drafted
+ * bug report (#1630) has no stored state: its card is its call's answer.
  */
 function stepsAndText(
   parts: UIMessage['parts'],
   proposals: Map<string, ThreadProposal> | undefined,
-): { steps: (string | AgentToolPart[])[]; cards: ThreadProposal[] } {
+): { steps: (string | AgentToolPart[])[]; cards: AnswerCard[] } {
   const steps: (string | AgentToolPart[])[] = []
-  const cards: ThreadProposal[] = []
+  const cards: AnswerCard[] = []
   for (const part of parts) {
     if (part.type === 'text') steps.push(part.text)
     else if (isToolUIPart(part)) {
@@ -704,6 +715,8 @@ function stepsAndText(
       const ref = proposalOf(part)
       const proposal = ref === null ? undefined : proposals?.get(ref.id)
       if (proposal) cards.push(proposal)
+      const report = bugReportOf(part)
+      if (report) cards.push({ ...report, id: part.toolCallId })
     }
   }
   return { steps, cards }
