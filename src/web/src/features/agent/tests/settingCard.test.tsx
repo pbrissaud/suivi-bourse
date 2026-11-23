@@ -1,6 +1,6 @@
 /**
- * A setting the agent proposed (#1628): the card reads its stored state, and
- * only the owner's press decides it.
+ * A setting the agent proposed (#1628, #1629): the card reads its stored state,
+ * and only the owner's press decides it.
  */
 import { screen, within } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
@@ -23,6 +23,7 @@ function aProposal(status: SettingProposal['status']): SettingProposal {
     key: 'log_level',
     value: 'DEBUG',
     previous: 'INFO',
+    doc: null,
     status,
     created_at: AT,
     decided_at: status === 'ready' || status === 'expired' ? null : AT,
@@ -86,6 +87,41 @@ describe('the setting proposal card', () => {
     ).toBeInTheDocument()
     expect(within(main).getByRole('button', { name: 'Confirmer' })).toBeInTheDocument()
     expect(within(main).getByRole('button', { name: 'Ignorer' })).toBeInTheDocument()
+  })
+
+  it('says a stored setting as it is stored, under the registry’s own line', async () => {
+    const doc = 'Poll cadence, in seconds, of a symbol whose market is REGULAR.'
+    threadWithProposal({
+      ...aProposal('ready'),
+      key: 'regular_interval',
+      previous: 120,
+      value: 300,
+      doc,
+    })
+    const { main } = await openPage()
+
+    expect(
+      await within(main).findByText('Changer ce réglage : regular_interval: 120 → 300'),
+    ).toBeInTheDocument()
+    expect(within(main).getByText(doc)).toBeInTheDocument()
+    expect(within(main).queryByText(/prochain redémarrage/)).not.toBeInTheDocument()
+  })
+
+  it('names a followed fund by its ticker, and no fund as a word', async () => {
+    threadWithProposal({
+      ...aProposal('ready'),
+      key: 'benchmark_symbols',
+      previous: [],
+      value: ['CW8.PA', 'CSPX.AS'],
+      doc: 'The reference ETFs followed.',
+    })
+    const { main } = await openPage()
+
+    expect(
+      await within(main).findByText(
+        'Changer ce réglage : benchmark_symbols: aucun → CW8.PA, CSPX.AS',
+      ),
+    ).toBeInTheDocument()
   })
 
   for (const [answer, route, status, line] of [

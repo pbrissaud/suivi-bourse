@@ -6,6 +6,7 @@ from flask import Blueprint, Response, current_app, jsonify, request
 from logfmt_logger import getLogger
 
 from application import advisories
+from application import benchmark_view
 from application import build_info
 from application import installation_facts
 from application import instants
@@ -18,11 +19,13 @@ from application import proposals as proposals_module
 from application import runtime_view
 from application import setting_proposals
 from application import settings as settings_module
+from application import settings_registry
 from application import store as store_module
 from api.problem import (
     bad_request,
     conflict,
     not_found,
+    unprocessable,
     unprocessable_request,
 )
 from api.profile import PROPOSAL_IDS_MAX
@@ -270,14 +273,32 @@ def _decide_setting(proposal_id, confirm: bool):
     if not profile_module.is_proposal_id(proposal_id):
         return not_found("no proposal has this id")
     decide = setting_proposals.confirm if confirm else setting_proposals.ignore
+    runtime = current_runtime()
+    snapshot = runtime.config_manager.current()
+    now = datetime.now(timezone.utc)
+    changes = ()
     try:
-        with current_runtime().config_manager.writing() as opened:
-            proposal = decide(opened, proposal_id, datetime.now(timezone.utc))
+        with runtime.config_manager.writing() as opened:
+            if confirm:
+                # A stored setting, by the road ``PUT /api/settings`` takes
+                # and before the decision: a refused write leaves it ready.
+                changes = setting_proposals.write(
+                    opened, proposal_id, now,
+                    lambda symbol: benchmark_view.ready(
+                        opened, snapshot, symbol, now))
+            proposal = decide(opened, proposal_id, now)
     except proposals_module.UnknownProposal:
         return not_found(f"no proposal {proposal_id!r}")
     except proposals_module.ProposalNotReady as exc:
         return conflict(f"Cette proposition est {_DECIDED[exc.status]}.")
-    if confirm:
+    except setting_proposals.SettingMoved:
+        return conflict("Ce réglage a changé depuis la proposition ; "
+                        "demandez-en une nouvelle.")
+    except settings_registry.InvalidSetting as exc:
+        return unprocessable(str(exc), key=exc.key or None)
+    if changes:
+        main.apply_settings(runtime, changes)
+    if confirm and proposal['key'] == setting_proposals.LOG_LEVEL:
         # Only once the decision has won, and by the road ``PUT
         # /config/log-level`` takes: the level was validated when proposed.
         main.set_log_level(proposal['value'])

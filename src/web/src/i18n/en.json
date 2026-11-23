@@ -943,6 +943,7 @@
   "agent.fact.failed": "The decision was not saved.",
   "agent.setting.ask": "Change this setting: {change}",
   "agent.setting.untilRestart": "The log level lasts until the next restart.",
+  "agent.setting.none": "none",
   "agent.setting.merged": "Applied",
   "agent.setting.ignored": "Ignored",
   "agent.setting.expired": "Expired",

@@ -899,6 +899,16 @@
             }
           ]
         },
+        "doc": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "id": {
           "type": "string"
         },
@@ -922,6 +932,7 @@
         "key",
         "value",
         "previous",
+        "doc",
         "status",
         "created_at",
         "decided_at"
