@@ -68,10 +68,13 @@ _CODES = 'EUR|USD|GBP|CHF|JPY|CAD|AUD|SEK|NOK|DKK|PLN|CNY|HKD|SGD'
 #: ``Euro 2026`` is no amount.
 _WORDS = ('euros?|dollars?|pounds?|livres?|sterling|francs?|yens?|yuans?|'
           'couronnes?|kron[ae]|kroner|zlotys?')
+#: ``12k EUR``, ``2 millions d'euros``: what may stand between the two.
+_TIMES = (r"(?:(?:k|m|mn|bn|md|thousand|mille|millions?|billions?|milliards?)"
+          r"\s*(?:d['’]\s*|de\s+)?)?")
 #: A number beside a currency. ``\b`` before the digits: the 8 of ``CW8 EUR``
 #: ends a ticker, it is no amount.
 _AMOUNT = re.compile(
-    rf'\b\d+\s*[km]?(?:[{_SIGNS}]|(?:{_CODES}|{_WORDS})\b)|(?:[{_SIGNS}]|\b(?:{_CODES}))\s*\d',
+    rf'\b\d+\s*{_TIMES}(?:[{_SIGNS}]|(?:{_CODES}|{_WORDS})\b)|(?:[{_SIGNS}]|\b(?:{_CODES}))\s*\d',
     re.IGNORECASE)
 _DECIMAL = re.compile(r'\d[.,]\d')
 #: A run of digits, the thousands a space groups read as one: ``12 500``.
