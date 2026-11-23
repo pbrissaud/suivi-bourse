@@ -82,6 +82,13 @@ SK = 'sk' + '-'
      f'{SCHEME}{MASK}{AT}proxy.example/v8'),
     (f'{SCHEME}paul:first{AT}a/{SECRET}{AT}proxy.example/v8',
      f'{SCHEME}{MASK}{AT}proxy.example/v8'),
+    # A password that starts as a port does.
+    (f'{SCHEME}paul:123/a?first{AT}{SECRET}{AT}proxy.example/v8',
+     f'{SCHEME}{MASK}{AT}proxy.example/v8'),
+    (f'{SCHEME}paul:123/{SECRET}{AT}proxy.example/v8',
+     f'{SCHEME}{MASK}{AT}proxy.example/v8'),
+    (f'{SCHEME}paul.b:123/a{AT}{SECRET}{AT}proxy.example/v8',
+     f'{SCHEME}{MASK}{AT}proxy.example/v8'),
     (f'session_id: {SECRET}', f'session_id: {MASK}'),
 ])
 def test_a_secret_is_masked_and_the_line_around_it_kept(line, masked):
@@ -98,6 +105,7 @@ def test_a_secret_is_masked_and_the_line_around_it_kept(line, masked):
     'GET https://query1.finance.yahoo.com/v8/finance/chart/AI.PA?range=1d',
     'turn done: input_tokens=1200 output_tokens=340',
     'GET https://host.example:8080/users/paul@example.test',
+    'GET http://localhost:8080/users/paul@example.test failed',
     'sk-learn-model-registry loaded',
     'session_seconds=900, spinning=3',
     'The PIN was removed, and the access tokens with it',
@@ -129,7 +137,7 @@ def test_masking_twice_changes_nothing_more():
 
 @pytest.mark.parametrize('text', [
     'a' * 50_000, 'a-' * 25_000, 'token' * 10_000, 'http' + '://' + 'a:' * 25_000,
-    'a' + '://b:c' * 10_000, 'sk' + '-sk' * 15_000, 'token="' * 8_000,
+    'a' + '://b:c' * 10_000, 'a' + '://b.c:1/' * 6_000, 'sk' + '-sk' * 15_000, 'token="' * 8_000,
     'token' + ' ' * 50_000, 'key' + '\\' * 50_000,
 ])
 def test_a_long_line_is_masked_in_linear_time(text):
