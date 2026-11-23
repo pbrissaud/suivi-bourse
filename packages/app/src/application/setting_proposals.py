@@ -86,6 +86,10 @@ def validate(key: Any, value: Any) -> Any:
             f"{', '.join(KEYS)}. The owner changes any other setting "
             f"themself, in the app's Settings")
     if key != LOG_LEVEL:
+        if key == 'benchmark_symbols' and isinstance(value, str) \
+                and value.strip():
+            # A model writes one fund as a string as readily as a list.
+            value = value.split(',')
         try:
             return settings_registry.validate(key, value)
         except settings_registry.InvalidSetting as exc:
@@ -128,6 +132,9 @@ def write(store, proposal_id: str, now: datetime,
     written for the log level, nor for a proposal that is not ready:
     :func:`confirm` says why.
     """
+    # ponytail: two transactions, as ``settings.save`` opens its own and DuckDB
+    # does not nest them. A store that fails between the two leaves the setting
+    # written and the card ready; one transaction if that is ever seen.
     found = read(store, [proposal_id], now)
     if not found or found[0]['status'] != 'ready' \
             or found[0]['key'] == LOG_LEVEL:

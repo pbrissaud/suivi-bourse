@@ -130,6 +130,8 @@ def test_an_expired_or_unknown_proposal_cannot_be_decided(opened):
     ('regular_interval', '300', 300),
     ('update_check', 'false', False),
     ('benchmark_symbols', ['cspx.as'], ['CSPX.AS']),
+    ('benchmark_symbols', 'cspx.as', ['CSPX.AS']),
+    ('benchmark_symbols', 'CW8.PA, CSPX.AS', ['CW8.PA', 'CSPX.AS']),
     ('benchmark_symbol', 'cw8.pa', 'CW8.PA'),
 ])
 def test_a_stored_setting_is_read_by_the_registry_s_validator(
