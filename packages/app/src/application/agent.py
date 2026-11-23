@@ -675,6 +675,13 @@ def build_model(config: dict):
     raise ValueError(f'unknown provider {provider!r}')
 
 
+def turn_limits():
+    """What one turn may use, the run inside ``web_search`` counted with it."""
+    from pydantic_ai.usage import UsageLimits
+    return UsageLimits(request_limit=TURN_REQUESTS,
+                       total_tokens_limit=TURN_TOKENS)
+
+
 def build_agent(model, mcp, own_tools, web_tools=None, *, thinking: str):
     """The agent: ``model`` over the MCP server's tools and its own, in process.
 

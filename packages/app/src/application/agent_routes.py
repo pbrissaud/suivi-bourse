@@ -48,7 +48,6 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter, VercelAIEventStream
 from pydantic_ai.ui.vercel_ai.response_types import ErrorChunk
-from pydantic_ai.usage import UsageLimits
 
 logger = getLogger("agent")
 
@@ -355,9 +354,7 @@ def build_app(runtime, mcp, release_checker=None) -> Starlette:
                     try:
                         async for chunk in adapter.run_stream(
                                 message_history=history,
-                                usage_limits=UsageLimits(
-                                    request_limit=agent.TURN_REQUESTS,
-                                    total_tokens_limit=agent.TURN_TOKENS),
+                                usage_limits=agent.turn_limits(),
                                 on_complete=on_complete):
                             failed = failed or (
                                 not kept and isinstance(chunk, ErrorChunk))

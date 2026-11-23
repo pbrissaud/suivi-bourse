@@ -175,13 +175,15 @@ def kept(answered: dict) -> List[Tuple[str, str]]:
 async def extract(model, query: str, snippets: List[str], usage=None) -> str:
     """The model's answer to ``query``. **The one place the snippets go.**
 
-    ``usage`` is the turn's: the extractor's tokens are counted with it.
+    ``usage`` is the turn's: the extractor's tokens and its request are
+    counted with it, under the turn's limits.
     """
     extractor = agent.build_extractor(model, str, EXTRACTION_PROMPT)
     asked = f'Question: {query}\n\nSnippets:\n' + '\n'.join(
         f'[{n}] {snippet}' for n, snippet in enumerate(snippets, 1))
     with anyio.fail_after(EXTRACTION_TIMEOUT):
-        return (await extractor.run(asked, usage=usage)).output
+        return (await extractor.run(
+            asked, usage=usage, usage_limits=agent.turn_limits())).output
 
 
 def build_toolset(search_url: str, model, reader):
@@ -191,12 +193,14 @@ def build_toolset(search_url: str, model, reader):
     gives a store cursor on the calling thread, for the accounts' names.
     """
     from pydantic_ai import RunContext
-    from pydantic_ai.exceptions import AgentRunError, ToolFailed
+    from pydantic_ai.exceptions import (
+        AgentRunError, ToolFailed, UsageLimitExceeded)
     from pydantic_ai.toolsets import FunctionToolset
 
     async def web_search(ctx: RunContext[None], query: str) -> WebAnswer:
-        """Guard, search, extract. Every failure is a :class:`ToolFailed`:
-        the model reads the reason and relays it, and the turn goes on."""
+        """Guard, search, extract. Every failure is a :class:`ToolFailed`
+        but the turn's limits, which end it: the model reads the reason and
+        relays it, and the turn goes on."""
         query = ' '.join(query.split())
         if not 1 <= len(query) <= QUERY_MAX:
             raise ToolFailed(
@@ -230,6 +234,8 @@ def build_toolset(search_url: str, model, reader):
             raise ToolFailed(
                 f'the web search failed: the model did not read the results '
                 f'within {EXTRACTION_TIMEOUT} seconds') from exc
+        except UsageLimitExceeded:
+            raise  # the turn's own end, not a search that failed
         except AgentRunError as exc:
             # The type and nothing else: a body may quote the snippets.
             raise ToolFailed(
