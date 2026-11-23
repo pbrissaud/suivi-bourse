@@ -50,7 +50,8 @@ export const agentSeam = {
 
 /**
  * The agent's tools in plain words: the ones the MCP server serves
- * (`mcp_server.build_server`), then its own (`agent_diagnostics.build_toolset`).
+ * (`mcp_server.build_server`), then its own (`agent_diagnostics.build_toolset`,
+ * `web_search.build_toolset`).
  */
 const TOOL_SENTENCES: Record<string, MessageKey> = {
   list_positions: 'agent.tool.list_positions',
@@ -66,6 +67,7 @@ const TOOL_SENTENCES: Record<string, MessageKey> = {
   propose_events: 'agent.tool.propose_events',
   propose_setting: 'agent.tool.propose_setting',
   get_system_status: 'agent.tool.get_system_status',
+  web_search: 'agent.tool.web_search',
 }
 
 /** The sentence a tool call is shown as; a tool this list does not know is named. */

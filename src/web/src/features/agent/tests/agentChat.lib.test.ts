@@ -73,6 +73,7 @@ describe('the sentence a tool call is shown as', () => {
   it('says the System page read in plain words, and names a tool it does not know', () => {
     expect(toolSentence('get_system_status')).toEqual({ key: 'agent.tool.get_system_status' })
     expect(toolSentence('propose_setting')).toEqual({ key: 'agent.tool.propose_setting' })
+    expect(toolSentence('web_search')).toEqual({ key: 'agent.tool.web_search' })
     expect(toolSentence('unheard_of')).toEqual({
       key: 'agent.tool.other',
       values: { name: 'unheard_of' },
