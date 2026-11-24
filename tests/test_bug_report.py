@@ -59,6 +59,10 @@ def test_a_text_that_names_an_account_is_refused(text):
     ('The value in EUR is about 52 340', '52 340'),
     ('It is worth 52340 US dollars', '52340'),
     ('It is worth 12 chf', '12'),
+    # Grouped thousands are no version, and a date exempts only itself.
+    ('The portfolio value is 1.234.567 EUR', '1.234.567'),
+    ('{"date":"2026-11-20","value":52340,"currency":"EUR"}',
+     '{"date":"2026-11-20","value":52340,"currency":"EUR"}'),
     ('Il vaut 1,2 million d’euros', '1,2'),
     ('La valeur est de 52\u202f340 en euros', '52\u202f340'),
 ])
@@ -89,6 +93,7 @@ def test_a_number_beside_a_held_security_is_refused(text, quoted):
     'The backfill of CW8.PA has failed since 2026-11-20 09:00',
     'CW8.PA and AAPL have no price',
     'Since 5.4.0 the page of AAPL stays empty',
+    'AAPL failed at 2026-11-20T09:00:00.123456+00:00 on v5.4.0',
     # A number with no currency beside it and no security near it is a count.
     'HTTP 404 on GET /api/positions, 3 passes in a row since 5.4.0',
     # A currency with no number is only its name, and a code is capitals.
@@ -216,3 +221,8 @@ def test_the_job_errors_go_after_the_lines_and_then_the_report_is_refused():
     with pytest.raises(Refused, match='shorten the description'):
         bug_report.draft('The scrape fails', 'é' * bug_report.DESCRIPTION_MAX,
                          BUILD, [], errors, [])
+
+
+def test_a_label_with_no_word_in_it_is_matched_as_written():
+    assert refusal('The page of my\U0001f3e6 fails', ['\U0001f3e6'])
+    assert scrub('on \U0001f3e6: failed', ['\U0001f3e6']) == f'on {MASK}: failed'

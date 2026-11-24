@@ -47,9 +47,16 @@ _WORDS = r'euros?|dollars?|pounds?|francs?|yens?|cents?|centimes?'
 _TOKEN = re.compile(
     r'\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?(?!\d)|\S+')
 _DIGIT = re.compile(r'\d')
-#: A day, an hour or a version: a number that is no quantity and no amount.
-_DATED = re.compile(r'\d{4}-\d{2}-\d{2}'
-                    r'|^\W*(?:\d{1,2}:\d{2}(?::\d{2})?|v?\d+\.\d+\.\d+)\W*$')
+#: A day, with its hour when it is an instant: taken out of a word, whose
+#: other digits still count (``{"date":"2026-11-20","value":52340}``).
+_DATE = re.compile(
+    r'(?<!\d)\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?'
+    r'(?:Z|[+-]\d{2}:?\d{2})?)?(?!\d)')
+#: A word that is only an hour or a version. Three digits after each dot is an
+#: amount with its thousands grouped (``1.234.567``), never a bare version.
+_PLAIN = re.compile(
+    r'^\W*(?:\d{1,2}:\d{2}(?::\d{2})?|v\d+\.\d+\.\d+'
+    r'|(?!\d{1,3}\.\d{3}\.\d{3}(?!\d))\d+\.\d+\.\d+)\W*$')
 #: How many words away a number still reads as the quantity or the price of
 #: a security, or as an amount in a currency: *12 shares of Apple (X)*, *X
 #: closed at 180.50*, *a value in EUR of about 52 340*. Wide on purpose: a
@@ -76,14 +83,18 @@ def _accounts(text: str, labels: Iterable[Optional[str]]) -> List[Span]:
     The label is read whole: one of its words alone, or its words in another
     order, is not found.
     """
-    worded = [[word for word in re.split(r'[\W_]+', label or '') if word]
-              for label in labels]
-    named = [r'[\W_]*'.join(map(re.escape, words))
-             for words in worded if words]
+    named = []
+    for label in labels:
+        words = [word for word in re.split(r'[\W_]+', label or '') if word]
+        if words:
+            worded = r'[\W_]*'.join(map(re.escape, words))
+            named.append(rf'(?<!\w){worded}(?!\w)')
+        elif label and label.strip():
+            # No word in it (an emoji): the label itself, wherever it stands.
+            named.append(re.escape(label.strip()))
     if not named:
         return []
-    pattern = re.compile(rf'(?<!\w)(?:{_alternation(named)})(?!\w)',
-                         re.IGNORECASE)
+    pattern = re.compile(_alternation(named), re.IGNORECASE)
     return [found.span() for found in pattern.finditer(text)]
 
 
@@ -99,7 +110,7 @@ def _beside(text: str, marker: 're.Pattern[str]') -> List[Span]:
     named = [at for at, token in enumerate(tokens)
              if rest[at] != token.group()]
     counted = [at for at, left in enumerate(rest)
-               if _DIGIT.search(left) and not _DATED.search(left)]
+               if _DIGIT.search(_DATE.sub('', _PLAIN.sub('', left)))]
     return [tokens[at].span() for at in counted
             if any(abs(at - one) <= NEAR for one in named)]
 
