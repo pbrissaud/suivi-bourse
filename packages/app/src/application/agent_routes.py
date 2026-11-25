@@ -230,7 +230,7 @@ def build_app(runtime, mcp, release_checker=None) -> Starlette:
             model = agent.build_model(settings)
             # No address, no tool: the agent then says it cannot search (#1623).
             web_tools = web_search.build_toolset(
-                settings['search_url'], model, runtime.store.reader
+                settings['search_url'], model
             ) if settings['search_url'] else None
             return agent.build_agent(model, mcp, own_tools, web_tools,
                                      thinking=settings['thinking'])
