@@ -69,6 +69,7 @@ const TOOL_SENTENCES: Record<string, MessageKey> = {
   get_system_status: 'agent.tool.get_system_status',
   read_logs: 'agent.tool.read_logs',
   web_search: 'agent.tool.web_search',
+  draft_bug_report: 'agent.tool.draft_bug_report',
 }
 
 /** The sentence a tool call is shown as; a tool this list does not know is named. */
@@ -84,6 +85,32 @@ export function toolParts(message: UIMessage): AgentToolPart[] {
 }
 
 export { getToolName, isToolUIPart }
+
+export interface BugReport {
+  url: string
+  title: string
+  body: string
+}
+
+const NEW_ISSUE = 'https://github.com/pbrissaud/suivi-bourse/issues/new?'
+
+/**
+ * The bug report a `draft_bug_report` call came back with (#1630), or `null` for
+ * any other part. Read out of the link itself, so what is previewed is what it
+ * carries; a link to anywhere but this repository's new issue is none.
+ */
+export function bugReportOf(part: UIMessage['parts'][number]): BugReport | null {
+  if (!isToolUIPart(part) || part.state !== 'output-available') return null
+  if (getToolName(part) !== 'draft_bug_report') return null
+  const url = (part.output as { url?: unknown } | null | undefined)?.url
+  if (typeof url !== 'string' || !url.startsWith(NEW_ISSUE)) return null
+  try {
+    const { searchParams } = new URL(url)
+    return { url, title: searchParams.get('title') ?? '', body: searchParams.get('body') ?? '' }
+  } catch {
+    return null
+  }
+}
 
 /** A tool still waiting on its result. */
 export function toolRunning(part: AgentToolPart): boolean {

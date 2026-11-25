@@ -1,5 +1,6 @@
-"""The built-in agent's own tools: the System page, read (#1625), and its
-journal, secrets masked (#1627).
+"""The built-in agent's own tools: the System page, read (#1625), its
+journal, secrets masked (#1627), and a bug report drafted for the owner to
+file (#1630).
 
 Over a real store and the process's own recorder, as ``/api/runtime`` and
 ``/api/advisories`` are tested; no provider is ever called.
@@ -9,11 +10,15 @@ import json
 import logging
 import sys
 from datetime import date, datetime, timezone
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
 
 from application import accounts as accounts_module
 from application import advisories
 from application import agent
 from application import agent_diagnostics
+from application import bug_report
 from application import build_info
 from application import entries
 from application import job_history
@@ -278,3 +283,181 @@ def test_the_agent_reads_the_logs_and_never_an_unmasked_secret(tmp_path):
         f'ConnectionError: Authorization: Bearer {log_masking.MASK} was refused')
     assert SECRET not in json.dumps(answer)
     assert len(answer['lines']) <= agent_diagnostics.LOG_LINES
+
+
+# --- draft_bug_report (#1630) ------------------------------------------------
+
+LABEL = 'PEA Boursorama'
+HELD = 'AI.PA'
+PERF_FAILED = (f'the series of {LABEL} could not be written: 12 {HELD} worth '
+               f'1 500,00 EUR, token={SECRET}')
+
+
+def an_owner_with_a_failing_job(tmp_path, monkeypatch):
+    """One labelled account holding one security, a performance pass that
+    failed, and an error line in the journal: both say too much."""
+    runtime, opened = build_runtime(tmp_path)
+    accounts_module.create_account(opened, 'pea', LABEL)
+    entries.declare_symbol(opened, HELD)
+    entries.create(opened, Event(ORIGIN, EventType.BUY, symbol=HELD,
+                                 account='pea', quantity=12.0,
+                                 unit_price=125.0))
+    runtime.config_manager.reload()
+    runtime.build = build_info.Build(
+        version='5.4.0', revision='0123456789abcdef',
+        source=build_info.RELEASE)
+    runtime.recorder.history.record(
+        job_history.PERFORMANCE, None, job_history.Pass(
+            NOW, 0.4, job_history.ERROR, PERF_FAILED))
+    ring = journal.Ring()
+    monkeypatch.setattr(journal, 'RING', ring)
+    ring.emit(_record('the page could not be served', logging.ERROR,
+                      module='api'))
+    ring.emit(_record(
+        f'the pass failed on {PROXY}/v8', logging.ERROR, module='performance',
+        exc_info=_raised(ValueError(f'{LABEL}: 12 {HELD} at 1 500,00 EUR'))))
+    return runtime
+
+
+def body_of(url):
+    return parse_qs(urlsplit(url).query)['body'][0]
+
+
+@pytest.mark.parametrize('title, description, reason', [
+    ('The page stays empty', f'The page of {LABEL.lower()} stays empty.',
+     "the description names one of the owner's accounts"),
+    ('The total reads 12\u202f000 € instead of nothing', 'It is wrong.',
+     'the title gives an amount of money'),
+    ('The page stays empty', f'The line of 12 shares of {HELD} is missing.',
+     'the description gives a number beside a security the owner holds'),
+])
+def test_a_report_that_carries_the_owner_s_money_is_refused(
+        tmp_path, monkeypatch, title, description, reason):
+    """One refusal per rule, against what the store itself holds."""
+    runtime = an_owner_with_a_failing_job(tmp_path, monkeypatch)
+
+    with pytest.raises(bug_report.Refused, match=reason):
+        agent_diagnostics.bug_report_url(runtime, title, description, now=NOW)
+
+
+def test_the_app_s_half_holds_the_version_the_job_and_its_error_and_no_money(
+        tmp_path, monkeypatch):
+    runtime = an_owner_with_a_failing_job(tmp_path, monkeypatch)
+    masked = log_masking.MASK
+
+    url = agent_diagnostics.bug_report_url(
+        runtime, 'The performance job fails',
+        'The dashboard should show a return and stays empty.', now=NOW)
+
+    body = body_of(url)
+    assert url.startswith(bug_report.NEW_ISSUE + '?title=The%20performance')
+    assert body.startswith(
+        'The dashboard should show a return and stays empty.\n\n---\n')
+    assert 'Version: 5.4.0 (0123456789ab) (release)' in body
+    # The job and its error, readable: only what is the owner's is gone.
+    assert (f'- performance: the series of {masked} could not be written: '
+            f'{masked} {HELD} worth {masked} EUR, token={masked}') in body
+    # The failing job's line first, the unrelated one after it; a secret
+    # masked by the logs' masker stays masked here.
+    failed, served = [line for line in body.splitlines()
+                      if '+00:00 error ' in line]
+    assert failed.endswith(
+        f'error performance: the pass failed on https://{masked}'
+        '@proxy.example:8080/v8')
+    assert served.endswith('error system: the page could not be served')
+    assert f'ValueError: {masked}: {masked} {HELD} at {masked} EUR' in body
+    for private in (SECRET, 'hunter2', LABEL, '1 500', '12 '):
+        assert private not in body
+
+
+def test_a_secret_the_agent_wrote_is_masked_and_its_text_is_never_cut(
+        tmp_path, monkeypatch):
+    runtime = an_owner_with_a_failing_job(tmp_path, monkeypatch)
+    for n in range(agent_diagnostics.LOG_LINES):
+        journal.RING.emit(_record(f'line {n} ' + 'x' * 400, logging.ERROR))
+    description = f'The proxy at {PROXY} refuses every pass. ' + 'é' * 500
+
+    url = agent_diagnostics.bug_report_url(
+        runtime, 'The scrape fails', description, now=NOW)
+
+    body = body_of(url)
+    assert len(url) <= bug_report.URL_MAX
+    assert body.startswith(
+        f'The proxy at https://{log_masking.MASK}@proxy.example:8080 refuses '
+        'every pass. ' + 'é' * 500 + '\n\n---\n')
+    assert SECRET not in body
+    assert 0 < body.count(' error scrape: line ') < agent_diagnostics.LOG_LINES
+
+
+def test_the_seeded_account_s_own_label_is_no_secret(tmp_path):
+    """``Default account`` is the code's label, not the owner's."""
+    runtime, _ = build_runtime(tmp_path)
+
+    url = agent_diagnostics.bug_report_url(
+        runtime, 'The default account page fails',
+        'Opening the default account answers an error.', now=NOW)
+
+    assert body_of(url).startswith('Opening the default account answers')
+
+
+def _calls(title, description):
+    """A model that drafts one report with these words, then answers."""
+    from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+    from pydantic_ai.models.function import FunctionModel
+
+    def respond(messages, info):
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart(
+                'draft_bug_report',
+                {'title': title, 'description': description})])
+        return ModelResponse(parts=[TextPart('done')])
+    return FunctionModel(respond)
+
+
+def _returned(runtime, title, description):
+    from pydantic_ai.messages import ToolReturnPart
+
+    assistant = agent.build_agent(
+        _calls(title, description), mcp_server.build_server(runtime),
+        agent_diagnostics.build_toolset(runtime), thinking='low')
+    result = asyncio.run(assistant.run('Report this as a bug.'))
+    answer, = [part for message in result.all_messages()
+               for part in message.parts if isinstance(part, ToolReturnPart)]
+    return answer
+
+
+def test_the_agent_drafts_a_report_and_gets_the_link(tmp_path, monkeypatch):
+    runtime = an_owner_with_a_failing_job(tmp_path, monkeypatch)
+
+    answer = _returned(runtime, 'The performance job fails',
+                       'The dashboard stays empty.')
+
+    assert set(answer.content) == {'url', 'note'}
+    assert answer.content['url'].startswith(bug_report.NEW_ISSUE + '?title=')
+    assert '- performance: the series of' in body_of(answer.content['url'])
+
+
+def test_the_agent_reads_why_a_report_is_refused_and_no_link(
+        tmp_path, monkeypatch):
+    runtime = an_owner_with_a_failing_job(tmp_path, monkeypatch)
+
+    answer = _returned(runtime, 'The performance job fails',
+                       'My portfolio is worth 52 340 € and it shows nothing.')
+
+    said = answer.model_response_str()
+    assert 'this report is refused: the description gives an amount of money' in said
+    assert bug_report.NEW_ISSUE not in said
+
+
+def test_no_label_to_check_against_and_nothing_is_drafted(
+        tmp_path, monkeypatch):
+    """A store that cannot name the accounts refuses the draft: the rule
+    cannot be enforced, so no link is built."""
+    runtime = an_owner_with_a_failing_job(tmp_path, monkeypatch)
+    runtime.store = None
+
+    said = _returned(runtime, 'The performance job fails',
+                     f'{LABEL} stays empty.').model_response_str()
+
+    assert 'nothing is drafted' in said
+    assert bug_report.NEW_ISSUE not in said
