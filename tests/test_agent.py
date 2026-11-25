@@ -259,7 +259,7 @@ def test_web_search_is_the_agent_s_with_an_address_and_never_mcp_s(tmp_path):
         return ModelResponse(parts=[TextPart('ok')])
     model = FunctionModel(answer)
     for web_tools in (None, web_search.build_toolset(
-            'http://searx.example', model, runtime.store.reader)):
+            'http://searx.example', model)):
         assistant = agent.build_agent(
             model, mcp_server.build_server(runtime),
             agent_diagnostics.build_toolset(runtime), web_tools,
