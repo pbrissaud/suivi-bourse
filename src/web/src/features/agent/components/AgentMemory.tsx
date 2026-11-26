@@ -117,6 +117,9 @@ function AboutMe({ profile }: { profile: Profile }) {
         aria-describedby={described.filter(Boolean).join(' ')}
         aria-invalid={write.error !== null || undefined}
         value={draft}
+        // Read-only, not disabled, while a write is out: what it answers replaces
+        // the field, and the focus can still land here after *Effacer*.
+        readOnly={write.isPending}
         onChange={(event) => setDraft(event.target.value)}
       />
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
