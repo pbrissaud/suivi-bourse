@@ -509,6 +509,36 @@ describe('the proposals still waiting, on the memory page (#1621)', () => {
     expect(list).toHaveFocus()
   })
 
+  it('drops a decided card at once, before the list is read again', async () => {
+    waitingOn([rate])
+    const { user } = await openPage('/agent/memory', 'Mémoire')
+
+    const pending = await screen.findByRole('region', { name: 'En attente' })
+    // The list's next read never lands: only the card's own write can take it off.
+    server.use(http.get(ROUTES.profileProposals, () => new Promise<never>(() => {})))
+    await user.click(within(pending).getByRole('button', { name: 'Ignorer' }))
+
+    await waitFor(() => expect(pending).not.toBeInTheDocument())
+    expect(screen.queryByText('Ignoré')).not.toBeInTheDocument()
+  })
+
+  it('keeps the facts when the pending list cannot be read', async () => {
+    switchedOn({
+      facts: { marginal_rate: { value: 0.3, confirmed_at: CONFIRMED } },
+      projects: [],
+      about: null,
+    })
+    server.use(
+      http.get(ROUTES.profileProposals, () =>
+        HttpResponse.json({ title: 'Unavailable', status: 503 }, { status: 503 }),
+      ),
+    )
+    await openPage('/agent/memory', 'Mémoire')
+
+    expect(await within(await memory()).findByText(/^TMI 30\s%$/)).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'En attente' })).not.toBeInTheDocument()
+  })
+
   it('draws no heading when nothing waits', async () => {
     waitingOn([])
     await openPage('/agent/memory', 'Mémoire')

@@ -32,7 +32,9 @@ export function AgentMemoryView() {
   // Under `proposals`, as a thread's reads are: a card's decision is written to
   // this list and read again without the card knowing which screen holds it.
   const pending = useQuery({ queryKey: ['proposals', 'pending'], queryFn: profileApi.pending })
-  const failure = oneFailure(readConditions({ queries: [profile, pending] }))
+  // Only the profile's read can leave the page empty: a pending list that fails
+  // to read is a section left out, not the facts hidden.
+  const failure = oneFailure(readConditions({ queries: [profile] }))
   const all = profile.data && entries(profile.data)
   // A card writes its decision to the cache before the list is read again: a
   // decided proposal has left already.
