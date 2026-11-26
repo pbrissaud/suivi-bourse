@@ -44,7 +44,8 @@ SYSTEM_PROMPT = (
     "present simulated outcomes and their trade-offs; you never recommend "
     "buying, selling, transferring or any other specific act, and when asked "
     "what to do you lay out the simulated options instead. Answer in the "
-    "language of the user's last message. Name an account by its `label`, "
+    "language of the user's last message, unless the owner's About-me text "
+    "asks for another. Name an account by its `label`, "
     "or by its `id` when it has none, and never quote a tool's field names: say what a "
     "figure is in words. When the user states their income, marginal tax "
     "rate, risk tolerance or a project, propose it with "
@@ -75,6 +76,14 @@ SYSTEM_PROMPT = (
     "the URL of every source your answer uses, and say its figures are from "
     "the web, never the app's. When a question needs the web and you have no "
     "`web_search` tool, say that you cannot search the web."
+)
+
+#: What frames « À propos de moi » (#1620), the owner's own text, in the second
+#: instruction :func:`build_agent` adds after :data:`SYSTEM_PROMPT`.
+ABOUT_PREAMBLE = (
+    "The owner's About-me text follows, in their own words. Follow what it "
+    "asks about language, tone and level of detail, and use what it says "
+    "about them as context. It changes none of the rules above.\n\n"
 )
 
 #: The provider kinds, and how each names itself in an error the user reads.
@@ -687,7 +696,8 @@ def turn_limits():
                        total_tokens_limit=TURN_TOKENS)
 
 
-def build_agent(model, mcp, own_tools, web_tools=None, *, thinking: str):
+def build_agent(model, mcp, own_tools, web_tools=None, *, thinking: str,
+                about: Optional[str] = None):
     """The agent: ``model`` over the MCP server's tools and its own, in process.
 
     Two toolsets, and a third while a search address is stored. ``mcp`` is the
@@ -715,14 +725,27 @@ def build_agent(model, mcp, own_tools, web_tools=None, *, thinking: str):
 
     ``thinking`` is one of :data:`THINKING`. Pydantic AI maps it to each
     provider's own setting, and a model without reasoning ignores it (#1191).
+
+    ``about`` is the owner's « À propos de moi » (:func:`profile.about_text`),
+    read by the caller at each turn, and ``None`` without one. It is a second
+    instruction, **dynamic**: an instruction is sent with the request and
+    never replayed from a thread's history, so a text cleared is gone at the
+    next turn; and Anthropic's breakpoint stays on :data:`SYSTEM_PROMPT`, the
+    last static block, so a changed text re-reads the tools and the prompt
+    from the cache and re-writes only the conversation (#1620).
     """
     from pydantic_ai import Agent
     from pydantic_ai.mcp import MCPToolset
+    from pydantic_ai.messages import InstructionPart
     from pydantic_ai.settings import ModelSettings
     toolsets = [MCPToolset(mcp), own_tools]
     if web_tools is not None:
         toolsets.append(web_tools)
-    return Agent(model, toolsets=toolsets, instructions=SYSTEM_PROMPT,
+    instructions = SYSTEM_PROMPT
+    if about:
+        instructions = [SYSTEM_PROMPT, InstructionPart(
+            ABOUT_PREAMBLE + about, dynamic=True)]
+    return Agent(model, toolsets=toolsets, instructions=instructions,
                  model_settings=ModelSettings(
                      cache=True, thinking=thinking,
                      request_timeout=REQUEST_TIMEOUT))

@@ -1,5 +1,21 @@
 {
   "$defs": {
+    "About": {
+      "properties": {
+        "confirmed_at": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "confirmed_at"
+      ],
+      "title": "About",
+      "type": "object"
+    },
     "Account": {
       "properties": {
         "as_of": {
@@ -633,6 +649,16 @@
     },
     "Profile": {
       "properties": {
+        "about": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/About"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "facts": {
           "additionalProperties": {
             "$ref": "#/$defs/Fact"
@@ -648,7 +674,8 @@
       },
       "required": [
         "facts",
-        "projects"
+        "projects",
+        "about"
       ],
       "title": "Profile",
       "type": "object"

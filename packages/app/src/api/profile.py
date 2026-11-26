@@ -1,5 +1,8 @@
 """The investor's profile under ``/api`` (#1116): the owner's own facts, and
 the agent's proposals they confirm or ignore. The only place one is confirmed.
+
+``about`` is the owner's free text (#1620), written and forgotten at the same
+two routes as a fact; a blank text forgets it.
 """
 from datetime import datetime, timezone
 
@@ -25,13 +28,13 @@ def _now() -> datetime:
 
 @bp.get('/profile')
 def get_profile():
-    """Every confirmed fact, the income amount included."""
+    """Every confirmed fact, the income amount included, and the text."""
     return jsonify(profile_module.read(_store()))
 
 
 @bp.put('/profile/<key>')
 def put_profile_fact(key):
-    """Change one fact, or a project that exists. Answers the whole profile."""
+    """Change one fact, a project that exists, or the text. Answers the profile."""
     if not profile_module.is_key(key):
         return not_found(f"{key!r} is not a fact of the profile")
     body = _json_object()
@@ -49,7 +52,7 @@ def put_profile_fact(key):
 
 @bp.delete('/profile/<key>')
 def delete_profile_fact(key):
-    """Forget one fact, at once."""
+    """Forget one fact, or the text, at once."""
     if not profile_module.is_key(key):
         return not_found(f"{key!r} is not a fact of the profile")
     try:
