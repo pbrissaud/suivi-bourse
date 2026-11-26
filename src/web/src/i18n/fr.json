@@ -1011,6 +1011,7 @@
   "agent.memory.link": "Mémoire",
   "agent.memory.title": "Mémoire",
   "agent.memory.empty": "L’agent ne sait encore rien de vous.",
+  "agent.memory.pending": "En attente",
   "agent.memory.about.title": "À propos de moi",
   "agent.memory.about.count": "{count} / {max}",
   "agent.memory.about.clear": "Effacer",

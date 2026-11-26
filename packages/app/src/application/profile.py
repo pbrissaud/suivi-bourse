@@ -247,6 +247,13 @@ def read_proposals(store, ids: Sequence[str], now: datetime) -> List[Proposal]:
     return [_shape(rows[i], now) for i in ids if i in rows]
 
 
+def pending_proposals(store, now: datetime) -> List[Proposal]:
+    """The proposals still waiting for an answer, newest first (#1621).
+    ``expired`` is read, never stored, so it is left out here."""
+    return [_shape(row, now) for row in proposals.stored_ready(store, KIND)
+            if status(row, now) == 'ready']
+
+
 # ----------------------------------------------------------------- inside --
 
 def _shape(row: dict, now: datetime) -> Proposal:

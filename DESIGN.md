@@ -533,6 +533,8 @@ dialog, the notifications popover, a picker) are `background` with a 1 px `borde
   *Mémoire* is a page: what the agent knows about the owner, the confirmed facts and
   projects as ruled rows on the ground, each its value with « Confirmé le … » as a
   sub-line and Modifier · Oublier as text actions; one sentence when nothing is confirmed.
+  Above them, « En attente »: the proposals no one has answered yet, each the thread's
+  own card (Confirmer · Ignorer); no heading when none waits.
 - **Réglages:** sections Sécurité, Portefeuille, Agent, Notifications, Affichage, Avancé,
   each a plane with its title in the 220 px gutter and no lead sentence. A switch is a
   section's first row where it exists (« Agent activé »). *Sécurité*: Code d'accès (state +

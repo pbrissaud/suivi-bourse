@@ -65,7 +65,11 @@ def delete_profile_fact(key):
 
 @bp.get('/profile/proposals')
 def get_proposals():
-    """The proposals ``ids`` names; an id that names none is left out."""
+    """The proposals ``ids`` names; an id that names none is left out.
+    Without ``ids``, the ones still waiting, newest first (#1621)."""
+    if 'ids' not in request.args:
+        return jsonify({'proposals': profile_module.pending_proposals(
+            _store(), _now())})
     ids = list(dict.fromkeys(
         part for part in (request.args.get('ids') or '').split(',') if part))
     if not 1 <= len(ids) <= PROPOSAL_IDS_MAX or not all(

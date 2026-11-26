@@ -9,7 +9,7 @@ what its payload means.
 """
 import json
 from datetime import datetime, timedelta
-from typing import Dict, Literal, Optional, Sequence
+from typing import Dict, List, Literal, Optional, Sequence
 
 from application import instants
 
@@ -61,9 +61,23 @@ def fetch(store, kind: str, ids: Sequence[str]) -> Dict[str, dict]:
     rows = store.query(
         f'SELECT {COLUMNS} FROM proposal WHERE kind = ? AND id IN ({marks})',
         [kind, *ids])
-    return {row[0]: {**json.loads(row[1]), 'id': row[0], 'status': row[2],
-                     'created_at': instants.utc(row[3]),
-                     'decided_at': instants.utc(row[4])} for row in rows}
+    return {row[0]: _decoded(row) for row in rows}
+
+
+def stored_ready(store, kind: str) -> List[dict]:
+    """The ``kind`` rows stored ``ready``, newest first, decoded as
+    :func:`fetch` decodes them. An expired one is still among them:
+    :func:`status` is the caller's to ask."""
+    return [_decoded(row) for row in store.query(
+        f'SELECT {COLUMNS} FROM proposal '
+        "WHERE kind = ? AND status = 'ready' ORDER BY created_at DESC, id",
+        [kind])]
+
+
+def _decoded(row) -> dict:
+    return {**json.loads(row[1]), 'id': row[0], 'status': row[2],
+            'created_at': instants.utc(row[3]),
+            'decided_at': instants.utc(row[4])}
 
 
 def insert(store, kind: str, payload: dict, proposal_id: str,

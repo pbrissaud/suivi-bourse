@@ -233,6 +233,7 @@ export function defaultHandlers() {
     http.get(ROUTES.tokens, () => HttpResponse.json({ tokens: [] })),
     // Nothing declared about the owner (#1116).
     http.get(ROUTES.profile, () => HttpResponse.json({ facts: {}, projects: [] })),
+    http.get(ROUTES.profileProposals, () => HttpResponse.json({ proposals: [] })),
     // **No reference chosen** (#760), which is what a fresh installation reads
     // and what the shell's walk meets on this route. A test comparing anything
     // asks for the payload by name, exactly as it asks for an orphan.

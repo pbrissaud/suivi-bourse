@@ -39,6 +39,8 @@ export const profileApi = {
   forgetFact: (key: string) => forget(factPath(key)),
   proposals: (ids: string[]) =>
     get<ProposalsPayload>(`${ROUTES.profileProposals}?ids=${ids.join(',')}`),
+  /** The proposals still waiting for an answer, newest first (#1621). */
+  pending: () => get<ProposalsPayload>(ROUTES.profileProposals),
   confirm: (id: string) =>
     send<Confirmed>(proposalPath(ROUTES.profileProposalConfirm, id), 'POST', {}),
   ignore: (id: string) => send<Ignored>(proposalPath(ROUTES.profileProposalIgnore, id), 'POST', {}),
