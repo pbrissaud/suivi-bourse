@@ -48,7 +48,7 @@ export function AgentMemoryView() {
           {t('agent.stats.back')}
         </Link>
       </div>
-      {failure === null && waiting.length > 0 ? (
+      {failure === null && !pending.isError && waiting.length > 0 ? (
         <section aria-labelledby={pendingTitle} className="flex max-w-prose flex-col gap-3">
           <h2 id={pendingTitle} className="text-prose font-medium">
             {t('agent.memory.pending')}
