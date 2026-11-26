@@ -10,6 +10,14 @@ export interface Api {
 }
 /**
  * This interface was referenced by `Api`'s JSON-Schema
+ * via the `definition` "About".
+ */
+export interface About {
+  confirmed_at: string;
+  text: string;
+}
+/**
+ * This interface was referenced by `Api`'s JSON-Schema
  * via the `definition` "Account".
  */
 export interface Account {
@@ -57,6 +65,7 @@ export interface Confirmed {
  * via the `definition` "Profile".
  */
 export interface Profile {
+  about: About | null;
   facts: {
     [k: string]: Fact;
   };

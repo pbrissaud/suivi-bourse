@@ -1,5 +1,5 @@
-"""The investor's profile (#1116): four declared facts, and the proposals the
-agent makes about them.
+"""The investor's profile (#1116): four declared facts, the proposals the
+agent makes about them, and the owner's own text (#1620).
 
 **The agent never writes a fact, it proposes one; only the UI confirms.**
 :func:`propose` is the agent's one write and lands in ``proposal``;
@@ -9,6 +9,11 @@ writers of ``profile_fact``. Every write runs under
 
 A ``ready`` proposal older than :data:`EXPIRY` reads ``expired``. Nothing
 stores that: no background job, the write mutex is busy enough (#972).
+
+« À propos de moi » is one more row, under :data:`ABOUT`, and **never a fact
+the agent proposes**: it is not in :data:`FACTS`, :func:`validate` refuses its
+key, and only :func:`put` writes it. The agent is handed it at every turn
+(:func:`about_text`), so it goes to the model whole; no tool returns it.
 """
 import json
 import math
@@ -32,6 +37,9 @@ LABEL_MAX = 80
 HORIZON_YEARS = 50
 #: A new project's key in a proposal; confirming it mints ``project:<id>``.
 NEW_PROJECT = 'project'
+#: The key of the owner's free text, and the most it holds once trimmed.
+ABOUT = 'about'
+ABOUT_MAX = 1000
 
 _PROJECT_KEY = re.compile(r'project:[0-9a-f]{12}')
 _PROPOSAL_ID = re.compile(r'[0-9a-f]{32}')
@@ -54,9 +62,15 @@ class Project(TypedDict):
     confirmed_at: str
 
 
+class About(TypedDict):
+    text: str
+    confirmed_at: str
+
+
 class Profile(TypedDict):
     facts: Dict[str, Fact]
     projects: List[Project]
+    about: Optional[About]
 
 
 class Proposal(TypedDict):
@@ -94,8 +108,8 @@ class UnknownFact(LookupError):
 
 
 def is_key(key: str) -> bool:
-    """A key a fact can be stored under."""
-    return key in FACTS or _is_project(key)
+    """A key a fact, or the owner's text, can be stored under."""
+    return key in FACTS or key == ABOUT or _is_project(key)
 
 
 def _is_project(key: Any) -> bool:
@@ -181,9 +195,11 @@ def ignore(store, proposal_id: str, now: datetime) -> Proposal:
 
 
 def put(store, key: str, value: Any, now: datetime) -> None:
-    """The UI's edit of a fact, or of a project that exists."""
+    """The UI's edit of a fact, of a project that exists, or of the text."""
     if not is_key(key):
         raise UnknownFact(key)
+    if key == ABOUT:
+        return _put_about(store, value, now)
     earliest = None
     if _is_project(key):
         earliest = json.loads(_existing(store, key))['target_year']
@@ -202,10 +218,13 @@ def read(store) -> Profile:
     """Every confirmed fact, income amount included: the owner's own screen."""
     facts: Dict[str, Fact] = {}
     projects: List[Project] = []
+    said: Optional[About] = None
     for key, value, confirmed_at in store.query(
             'SELECT key, value, confirmed_at FROM profile_fact'):
         value, at = json.loads(value), instants.iso(confirmed_at)
-        if key.startswith('project:'):
+        if key == ABOUT:
+            said = {'text': value, 'confirmed_at': at}
+        elif key.startswith('project:'):
             projects.append({'id': key.partition(':')[2], 'label': value['label'],
                              'target_year': value['target_year'],
                              'amount': value.get('amount'), 'confirmed_at': at})
@@ -213,7 +232,13 @@ def read(store) -> Profile:
             facts[key] = {'value': value, 'confirmed_at': at}
     projects.sort(key=lambda project: (project['target_year'], project['label']))
     return {'facts': {key: facts[key] for key in FACTS if key in facts},
-            'projects': projects}
+            'projects': projects, 'about': said}
+
+
+def about_text(store) -> Optional[str]:
+    """The owner's text as the agent is handed it, or ``None`` without one."""
+    rows = store.query('SELECT value FROM profile_fact WHERE key = ?', [ABOUT])
+    return json.loads(rows[0][0]) if rows else None
 
 
 def read_proposals(store, ids: Sequence[str], now: datetime) -> List[Proposal]:
@@ -266,6 +291,25 @@ def _write(store, key: str, value: Any, now: datetime,
     value = validate(key, value, now, earliest)
     if key == 'income':
         value = {**value, 'currency': currency or _currency(store)}
+    _upsert(store, key, value, now)
+
+
+def _put_about(store, value: Any, now: datetime) -> None:
+    """The owner's text, trimmed; a blank one means none, and forgets it."""
+    if not isinstance(value, str):
+        raise InvalidProfileFact("the About-me text is a text", ABOUT)
+    text = value.strip()
+    if len(text) > ABOUT_MAX:
+        raise InvalidProfileFact(
+            f"the About-me text is at most {ABOUT_MAX} characters "
+            f"({len(text)} given)", ABOUT)
+    if not text:
+        store.execute('DELETE FROM profile_fact WHERE key = ?', [ABOUT])
+        return
+    _upsert(store, ABOUT, text, now)
+
+
+def _upsert(store, key: str, value: Any, now: datetime) -> None:
     store.execute(
         'INSERT INTO profile_fact (key, value, confirmed_at) VALUES (?, ?, ?) '
         'ON CONFLICT (key) DO UPDATE SET value = excluded.value, '

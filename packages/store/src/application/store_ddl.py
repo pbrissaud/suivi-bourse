@@ -237,10 +237,10 @@ CREATE TABLE IF NOT EXISTS access_tokens (
     last_used_at  TIMESTAMPTZ);
 
 -- What the owner declares **about themself** (#1116), confirmed in the UI and
--- never written by the agent. An absent row is an absence. ``value`` is JSON,
+-- never written by the agent; ``about`` is their own free text (#1620). An absent row is an absence. ``value`` is JSON,
 -- validated by ``application.profile``.
 CREATE TABLE IF NOT EXISTS profile_fact (
-    key           VARCHAR PRIMARY KEY,   -- 'income' | 'marginal_rate' | 'risk_tolerance' | 'project:<id>'
+    key           VARCHAR PRIMARY KEY,   -- 'income' | 'marginal_rate' | 'risk_tolerance' | 'project:<id>' | 'about'
     value         VARCHAR NOT NULL,
     confirmed_at  TIMESTAMPTZ NOT NULL);
 

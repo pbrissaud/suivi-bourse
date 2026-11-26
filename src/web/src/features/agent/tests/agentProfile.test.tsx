@@ -18,7 +18,7 @@ import { server } from '@/test/server'
 const ID = 'a'.repeat(32)
 const CONFIRMED = '2026-10-12T09:00:00+00:00'
 
-function switchedOn(profile: Profile = { facts: {}, projects: [] }) {
+function switchedOn(profile: Profile = { facts: {}, projects: [], about: null }) {
   const writes: { method: string; path: string; body: unknown }[] = []
   let current = profile
   server.use(
@@ -278,6 +278,7 @@ const full: Profile = {
     project('b', 'Études', 2032),
     project('c', 'Voilier', 2040),
   ],
+  about: null,
 }
 
 describe('the profile line (13A)', () => {
@@ -310,7 +311,11 @@ describe('the profile line (13A)', () => {
   })
 
   it('edits a fact in its popover, and the line shows the new value', async () => {
-    const writes = switchedOn({ facts: { marginal_rate: full.facts.marginal_rate }, projects: [] })
+    const writes = switchedOn({
+      facts: { marginal_rate: full.facts.marginal_rate },
+      projects: [],
+      about: null,
+    })
     const { user, main } = await openPage('/agent')
 
     const chips = await within(main).findByRole('group', { name: 'Votre profil' })
@@ -333,6 +338,7 @@ describe('the profile line (13A)', () => {
     const writes = switchedOn({
       facts: { income: full.facts.income, risk_tolerance: full.facts.risk_tolerance },
       projects: [],
+      about: null,
     })
     const { user, main } = await openPage('/agent')
 
@@ -354,6 +360,7 @@ describe('the memory page (#1619)', () => {
   const balanced: Profile = {
     facts: { risk_tolerance: full.facts.risk_tolerance },
     projects: [],
+    about: null,
   }
   /** The list, once the page under the rail's « Mémoire » has it. */
   const memory = () => within(screen.getByRole('main')).findByRole('group', { name: 'Mémoire' })

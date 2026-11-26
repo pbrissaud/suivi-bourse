@@ -32,6 +32,7 @@ from application import agent_usage
 from application import event_proposals
 from application import instants
 from application import market
+from application import profile
 from application import proposals
 from application import statements
 from application import web_search
@@ -271,8 +272,11 @@ def build_app(runtime, mcp, release_checker=None) -> Starlette:
             web_tools = web_search.build_toolset(
                 settings['search_url'], model
             ) if settings['search_url'] else None
-            return agent.build_agent(model, mcp, own_tools, web_tools,
-                                     thinking=settings['thinking'])
+            # Read at each turn: a text cleared is gone at the next (#1620).
+            return agent.build_agent(
+                model, mcp, own_tools, web_tools,
+                thinking=settings['thinking'],
+                about=profile.about_text(runtime.store.reader()))
         # Off the loop: the first build imports a provider SDK (half a second).
         assistant = await anyio.to_thread.run_sync(built)
         adapter = _Adapter(

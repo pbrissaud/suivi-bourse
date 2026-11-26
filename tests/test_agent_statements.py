@@ -120,6 +120,19 @@ def test_the_raw_statement_reaches_the_extractor_and_nothing_else(
     assert CANARY not in caplog.text
 
 
+def test_the_extractor_never_gets_the_about_text(runtime, monkeypatch):
+    """« À propos de moi » (#1620) is the agent's: the reader of a statement
+    has its own instructions, and the owner's text is not among them."""
+    from application import profile
+    with runtime.config_manager.writing() as opened:
+        profile.put(opened, 'about', 'I am a beginner', agent.now())
+    extractor = reading(monkeypatch, Extractor())
+
+    assert run(runtime, send()).status_code == 201
+
+    assert extractor.seen and 'beginner' not in ''.join(extractor.seen)
+
+
 def test_the_next_turn_sees_the_four_messages_and_never_the_statement(
         runtime, monkeypatch):
     reading(monkeypatch, Extractor())

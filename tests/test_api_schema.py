@@ -18,7 +18,7 @@ def test_the_schema_names_exactly_its_shapes():
     assert set(api_schema.schema()['$defs']) == {
         'Account', 'AccountsPayload', 'Converted', 'Fundamentals', 'Position',
         'Positions', 'Price',
-        'Confirmed', 'Fact', 'Ignored', 'Profile', 'Project', 'Proposal',
+        'About', 'Confirmed', 'Fact', 'Ignored', 'Profile', 'Project', 'Proposal',
         'ProposalsPayload', 'EventsProposal', 'EventsProposalsPayload',
         'ProposedLine', 'StatementFacts', 'TotalCheck', 'UnresolvedLine',
         'SettingProposal', 'SettingProposalDecided',
