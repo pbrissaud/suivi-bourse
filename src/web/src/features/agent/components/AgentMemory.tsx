@@ -87,11 +87,15 @@ function AboutMe({ profile }: { profile: Profile }) {
     mutationFn: async (text: string | null) => {
       if (text !== null) return profileApi.putFact('about', text)
       await profileApi.forgetFact('about')
-      return { ...profile, about: null }
+      return null
     },
     onSuccess: (saved, text) => {
-      client.setQueryData(['profile'], saved)
-      setDraft(saved.about?.text ?? '')
+      // A forgetting answers no profile: the cached one, as it is now, loses its text.
+      client.setQueryData<Profile>(
+        ['profile'],
+        (cached) => saved ?? (cached && { ...cached, about: null }),
+      )
+      setDraft(saved?.about?.text ?? '')
       // *Effacer* is disabled now: the focus goes back to the field.
       if (text === null) field.current?.focus()
     },
