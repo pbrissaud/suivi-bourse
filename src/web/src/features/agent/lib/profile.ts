@@ -15,6 +15,8 @@ export const FACTS = ['income', 'marginal_rate', 'risk_tolerance'] as const
 export const RISK_TOLERANCES = ['prudent', 'balanced', 'dynamic'] as const
 /** The server's bounds (`application/profile.py`), so a field says them first. */
 export const LABEL_MAX = 80
+/** The About-me text's bound, counted trimmed and in code points as the server counts. */
+export const ABOUT_MAX = 1000
 export const MARGINAL_RATE_MAX_PERCENT = 60
 
 export interface ProjectValue {

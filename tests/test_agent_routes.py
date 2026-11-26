@@ -469,6 +469,32 @@ def test_a_page_is_ignored(runtime, monkeypatch):
     assert seen == [agent.SYSTEM_PROMPT]
 
 
+def test_a_turn_reads_the_about_text_and_the_next_one_reads_it_gone(
+        runtime, monkeypatch):
+    """« À propos de moi » (#1620) is read at each turn: saved, the model
+    gets it after the prompt; cleared, the same thread's next turn does not."""
+    from application import profile
+    switched_on(runtime)
+    with runtime.config_manager.writing() as opened:
+        profile.put(opened, 'about', 'I am a beginner', agent.now())
+    seen = []
+
+    async def echo(messages, info):
+        seen.append(messages[-1].instructions)
+        yield 'ok'
+    monkeypatch.setattr(agent, 'build_model', scripted(
+        FunctionModel(stream_function=echo)))
+
+    run(runtime, post('k1'))
+    with runtime.config_manager.writing() as opened:
+        profile.forget(opened, 'about')
+    run(runtime, post('k1'))
+
+    assert seen == [
+        f'{agent.SYSTEM_PROMPT}\n\n{agent.ABOUT_PREAMBLE}I am a beginner',
+        agent.SYSTEM_PROMPT]
+
+
 def test_a_turn_logs_its_counts_and_never_the_key(runtime, monkeypatch, caplog):
     switched_on(runtime)
 

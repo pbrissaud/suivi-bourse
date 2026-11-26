@@ -189,7 +189,8 @@ def test_a_proposal_is_confirmed_through_the_route_once(client):
     http, runtime = client
     proposal_id = profile.propose(runtime.store, 'marginal_rate', 0.3,
                                   datetime.now(timezone.utc))
-    assert http.get('/api/profile').get_json() == {'facts': {}, 'projects': []}
+    assert http.get('/api/profile').get_json() == {
+        'facts': {}, 'projects': [], 'about': None}
 
     first = http.post(f'/api/profile/proposals/{proposal_id}/confirm')
     second = http.post(f'/api/profile/proposals/{proposal_id}/confirm')
@@ -396,3 +397,77 @@ def test_a_decision_on_a_proposal_decided_meanwhile_writes_nothing(opened):
             profile._decide(opened, proposal_id, 'merged', NOW)
     assert refused.value.status == 'ignored'
     assert facts(opened) == []
+
+
+# ------------------------------------------- « À propos de moi » (#1620) --
+
+ABOUT = 'Answer me in English, I am a beginner'
+
+
+def test_the_about_text_is_saved_trimmed_read_and_forgotten(client):
+    http, runtime = client
+
+    saved = http.put('/api/profile/about', json={'value': f'  {ABOUT}\n'})
+
+    assert saved.status_code == 200
+    assert saved.get_json()['about']['text'] == ABOUT
+    assert http.get('/api/profile').get_json()['about'] == saved.get_json()['about']
+    assert saved.get_json()['facts'] == {}
+    assert profile.about_text(runtime.store) == ABOUT
+    assert http.delete('/api/profile/about').status_code == 204
+    assert http.get('/api/profile').get_json()['about'] is None
+    assert profile.about_text(runtime.store) is None
+    assert http.delete('/api/profile/about').status_code == 404
+
+
+def test_an_about_text_past_the_cap_is_refused_naming_it_and_saves_nothing(
+        client):
+    http, runtime = client
+    http.put('/api/profile/about', json={'value': ABOUT})
+
+    refused = http.put('/api/profile/about', json={'value': 'x' * 1001})
+
+    assert refused.status_code == 422
+    assert 'at most 1000 characters' in refused.get_json()['detail']
+    assert refused.get_json()['key'] == 'about'
+    assert profile.about_text(runtime.store) == ABOUT
+    assert http.put('/api/profile/about', json={'value': 7}).status_code == 422
+    # The cap counts what is kept: the text once trimmed.
+    kept = http.put('/api/profile/about', json={'value': ' ' + 'é' * 1000 + ' '})
+    assert kept.get_json()['about']['text'] == 'é' * 1000
+
+
+def test_a_blank_about_text_means_none(client):
+    http, runtime = client
+    http.put('/api/profile/about', json={'value': ABOUT})
+
+    blank = http.put('/api/profile/about', json={'value': ' \n\t'})
+
+    assert blank.status_code == 200 and blank.get_json()['about'] is None
+    assert facts(runtime.store) == []
+    # Nothing to forget is still a blank text, not a failure.
+    assert http.put('/api/profile/about', json={'value': ''}).status_code == 200
+
+
+def test_the_agent_cannot_propose_the_about_text(opened, tmp_path):
+    with pytest.raises(profile.InvalidProfileFact):
+        profile.propose(opened, 'about', ABOUT, NOW)
+
+    runtime, _ = build_runtime(tmp_path / 'mcp')
+    answer = call(runtime, 'propose_profile_fact',
+                  {'key': 'about', 'value': ABOUT})
+
+    assert answer.is_error
+    assert runtime.store.query('SELECT count(*) FROM proposal') == [(0,)]
+
+
+def test_get_profile_leaves_the_about_text_out(tmp_path):
+    runtime = rich_runtime(tmp_path)
+    with runtime.config_manager.writing() as writing:
+        profile.put(writing, 'about', ABOUT, NOW)
+
+    answer = payload(call(runtime, 'get_profile'))
+
+    assert set(answer) == {'facts', 'projects'}
+    assert 'about' not in answer['facts']
+    assert 'beginner' not in json.dumps(answer)

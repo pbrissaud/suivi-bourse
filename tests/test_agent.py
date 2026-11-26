@@ -154,11 +154,12 @@ CHAT_ANSWER = {'id': 'c1', 'object': 'chat.completion', 'created': 0,
                          'total_tokens': 11}}
 
 
-def run_turns(tmp_path, steps):
+def run_turns(tmp_path, steps, abouts=()):
     """The JSON bodies each step sent, a step being ``(model_for, answer,
     thinking, events)``: a turn that continues the history of the one before,
     over the MCP server's real tools. ``model_for(http_client)`` builds the
-    model, ``events`` is what an Anthropic stream carries."""
+    model, ``events`` is what an Anthropic stream carries. ``abouts`` is the
+    owner's text at each turn, none past its end."""
     import asyncio
     import json
 
@@ -182,13 +183,14 @@ def run_turns(tmp_path, steps):
         runtime, _ = build_runtime(tmp_path)
         server = mcp_server.build_server(runtime)
         history, sent = [], []
-        for model_for, answer, thinking, events in steps:
+        for turn, (model_for, answer, thinking, events) in enumerate(steps):
             bodies = []
             client = httpx2.AsyncClient(transport=httpx2.MockTransport(
                 handler_of(bodies, answer, events)))
             assistant = agent.build_agent(
                 model_for(client), server,
-                agent_diagnostics.build_toolset(runtime), thinking=thinking)
+                agent_diagnostics.build_toolset(runtime), thinking=thinking,
+                about=abouts[turn] if turn < len(abouts) else None)
             result = await assistant.run(
                 'Et le CTO ?' if history else 'Mes positions ?',
                 message_history=history)
@@ -229,6 +231,61 @@ def test_anthropic_caches_the_tools_the_prompt_and_the_conversation(tmp_path):
         assert 'cache_control' in sent
     assert json.dumps(first['system']) == json.dumps(second['system'])
     assert json.dumps(first['tools']) == json.dumps(second['tools'])
+
+
+def test_the_about_text_is_a_second_block_after_the_cached_prompt(tmp_path):
+    """« À propos de moi » (#1620) on the wire: its own block, after the
+    breakpoint, so the tools and the prompt are read from the cache whatever
+    the text; unchanged, it leaves the whole prefix byte-stable."""
+    import json
+    about = 'Answer me in English, I am a beginner'
+    step = (anthropic('claude-sonnet-5-5'), ANSWER, 'low', ANSWER_EVENTS)
+
+    first, second = run_turns(tmp_path, [step, step], [about, about])
+
+    prompt, text = first['system']
+    assert prompt['text'] == agent.SYSTEM_PROMPT and 'cache_control' in prompt
+    assert text == {'type': 'text', 'text': agent.ABOUT_PREAMBLE + about}
+    assert json.dumps(first['system']) == json.dumps(second['system'])
+    assert 'cache_control' in second
+
+
+def test_an_about_text_cleared_is_gone_from_the_next_turn(tmp_path):
+    """An instruction is never replayed from the history: the turn after the
+    owner cleared the text carries no trace of it, and the prompt alone."""
+    import json
+    step = (anthropic('claude-sonnet-5-5'), ANSWER, 'low', ANSWER_EVENTS)
+
+    first, second = run_turns(tmp_path, [step, step], ['I am a beginner'])
+
+    assert 'I am a beginner' in json.dumps(first)
+    assert 'beginner' not in json.dumps(second)
+    assert [block['text'] for block in second['system']] == [agent.SYSTEM_PROMPT]
+
+
+def test_an_openai_turn_carries_the_about_text_too(tmp_path):
+    step = (openai('gpt-5.6'), CHAT_ANSWER, 'low', ANSWER_EVENTS)
+
+    [sent] = run_turns(tmp_path, [step], ['I am a beginner'])
+
+    prompt, text, asked = sent['messages']
+    assert prompt['content'][0]['text'] == agent.SYSTEM_PROMPT
+    assert text == {'role': 'system',
+                    'content': agent.ABOUT_PREAMBLE + 'I am a beginner'}
+    assert asked['role'] == 'user'
+
+
+def test_the_prompt_changed_by_one_clause_only():
+    """The prompt is the cached prefix of every thread: #1620 touches the
+    language rule, which yields to the owner's text, and not a byte more."""
+    import hashlib
+    before = agent.SYSTEM_PROMPT.replace(
+        "the user's last message, unless the owner's About-me text asks for "
+        "another. ", "the user's last message. ")
+
+    assert before != agent.SYSTEM_PROMPT
+    assert hashlib.sha256(before.encode()).hexdigest() == (
+        '69d44a8fbf77fad2ab5a84d1e0a7a8568022a1f2d30bb0bdbae7ae3da9a5a67d')
 
 
 def test_the_agent_gets_the_system_status_and_mcp_does_not(tmp_path):
