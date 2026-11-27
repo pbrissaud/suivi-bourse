@@ -39,7 +39,7 @@
     "sonner": "^2.0.8"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.8",
+    "@biomejs/biome": "2.6.9",
     "@shadcn/helpers": "^0.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^8.0.0",
