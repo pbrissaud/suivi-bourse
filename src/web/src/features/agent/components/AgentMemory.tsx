@@ -3,7 +3,8 @@
  * (#1116), one ruled row each with its value, its confirmation date, *Modifier*
  * and *Oublier*. The rows are the empty thread's own (`FactDetail`), read under
  * the same key, so an edit or a forgetting made here shows there too.
- * Under them, the owner's own About-me text (#1620), sent with every question.
+ * Above them, the proposals still waiting (#1621), each the thread's own card;
+ * under them, the owner's own About-me text (#1620), sent with every question.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -14,7 +15,7 @@ import { Refusal } from '@/components/Refusal'
 import { Unreadable } from '@/components/Unreadable'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { entries, FactDetail } from '@/features/agent/components/AgentProfile'
+import { entries, FactCard, FactDetail } from '@/features/agent/components/AgentProfile'
 import { agentApi } from '@/features/agent/lib/api'
 import { ABOUT_MAX, type Profile, profileApi } from '@/features/agent/lib/profile'
 import { ACT } from '@/features/agent/lib/styles'
@@ -26,9 +27,18 @@ import { oneFailure, readConditions } from '@/lib/status'
 export function AgentMemoryView() {
   const { t } = useI18n()
   const list = useRef<HTMLDivElement>(null)
+  const pendingTitle = useId()
   const profile = useQuery({ queryKey: ['profile'], queryFn: profileApi.profile })
+  // Under `proposals`, as a thread's reads are: a card's decision is written to
+  // this list and read again without the card knowing which screen holds it.
+  const pending = useQuery({ queryKey: ['proposals', 'pending'], queryFn: profileApi.pending })
+  // Only the profile's read can leave the page empty: a pending list that fails
+  // to read is a section left out, not the facts hidden.
   const failure = oneFailure(readConditions({ queries: [profile] }))
   const all = profile.data && entries(profile.data)
+  // A card writes its decision to the cache before the list is read again: a
+  // decided proposal has left already.
+  const waiting = pending.data?.proposals.filter((p) => p.status === 'ready') ?? []
 
   return (
     <div className="flex flex-col gap-9">
@@ -38,6 +48,21 @@ export function AgentMemoryView() {
           {t('agent.stats.back')}
         </Link>
       </div>
+      {failure === null && !pending.isError && waiting.length > 0 ? (
+        <section aria-labelledby={pendingTitle} className="flex max-w-prose flex-col gap-3">
+          <h2 id={pendingTitle} className="text-prose font-medium">
+            {t('agent.memory.pending')}
+          </h2>
+          <ul className="flex flex-col gap-3">
+            {waiting.map((proposal) => (
+              <li key={proposal.id}>
+                {/* Decided, the card and its buttons leave: the focus goes to the facts. */}
+                <FactCard proposal={proposal} onDecided={() => list.current?.focus()} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {/* A forgotten fact takes its row, and the last one the list: the focus lands here. */}
       <div
         ref={list}

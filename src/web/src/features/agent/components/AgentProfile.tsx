@@ -131,8 +131,12 @@ export function useProposals(
   }, [factsFailed, eventsFailed, settingsFailed, facts.data, events.data, settings.data])
 }
 
-/** A proposal (5A): the question and its two answers, or the one line it came to. */
-export function FactCard({ proposal }: { proposal: Proposal }) {
+/**
+ * A proposal (5A): the question and its two answers, or the one line it came to.
+ * `onDecided` is for a list the decided card leaves (#1621): its buttons go
+ * with it, so the list says where the focus lands.
+ */
+export function FactCard({ proposal, onDecided }: { proposal: Proposal; onDecided?: () => void }) {
   const { t, locale } = useI18n()
   const f = useFormatters()
   const client = useQueryClient()
@@ -141,14 +145,16 @@ export function FactCard({ proposal }: { proposal: Proposal }) {
       confirm ? profileApi.confirm(proposal.id) : profileApi.ignore(proposal.id),
     // Written at once: while a later turn streams, the read is disabled and an
     // invalidation alone would leave the buttons standing.
-    onSuccess: ({ proposal: decided }) =>
+    onSuccess: ({ proposal: decided }) => {
       client.setQueriesData<{ proposals: Proposal[] }>(
         { queryKey: ['proposals'] },
         (read) =>
           read && {
             proposals: read.proposals.map((p) => (p.id === decided.id ? decided : p)),
           },
-      ),
+      )
+      onDecided?.()
+    },
     // A 409 too: the card then reads what the server holds.
     onSettled: () =>
       Promise.all([

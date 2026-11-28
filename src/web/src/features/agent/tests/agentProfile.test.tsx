@@ -426,3 +426,123 @@ describe('the memory page (#1619)', () => {
     ).toBeInTheDocument()
   })
 })
+
+describe('the proposals still waiting, on the memory page (#1621)', () => {
+  const rate = aProposal('ready')
+  const tolerance: Proposal = {
+    ...rate,
+    id: 'b'.repeat(32),
+    key: 'risk_tolerance',
+    value: 'prudent',
+  }
+  const memory = () => within(screen.getByRole('main')).findByRole('group', { name: 'Mémoire' })
+
+  /** The server's side of it: a decision takes the proposal off the list, a confirmation writes its fact. */
+  function waitingOn(proposals: Proposal[]) {
+    const decisions: string[] = []
+    let waiting = proposals
+    let profile: Profile = { facts: {}, projects: [], about: null }
+    const decide = (status: 'merged' | 'ignored') => (id: unknown) => {
+      const proposal = waiting.find((p) => p.id === id) as Proposal
+      decisions.push(`${status} ${proposal.key}`)
+      waiting = waiting.filter((p) => p !== proposal)
+      if (status === 'merged')
+        profile = {
+          ...profile,
+          facts: { [proposal.key]: { value: proposal.value, confirmed_at: CONFIRMED } },
+        }
+      return { proposal: { ...proposal, status, decided_at: CONFIRMED }, profile }
+    }
+    switchedOn()
+    server.use(
+      http.get(ROUTES.profile, () => HttpResponse.json(profile)),
+      http.get(ROUTES.profileProposals, ({ request }) => {
+        // The list is the call without `ids`: with them, it is a thread's read.
+        expect(new URL(request.url).searchParams.has('ids')).toBe(false)
+        return HttpResponse.json({ proposals: waiting })
+      }),
+      http.post(ROUTES.profileProposalConfirm, ({ params }) =>
+        HttpResponse.json(decide('merged')(params.id)),
+      ),
+      http.post(ROUTES.profileProposalIgnore, ({ params }) =>
+        HttpResponse.json(decide('ignored')(params.id)),
+      ),
+    )
+    return decisions
+  }
+
+  it('lists them above the facts, and a confirmed one moves to the facts', async () => {
+    const decisions = waitingOn([rate, tolerance])
+    const { user } = await openPage('/agent/memory', 'Mémoire')
+
+    const pending = await screen.findByRole('region', { name: 'En attente' })
+    const cards = within(pending).getAllByRole('listitem')
+    expect(cards).toHaveLength(2)
+    expect(cards[0]).toHaveTextContent(/^Retenir pour la suite : TMI 30\s%/)
+    expect(cards[1]).toHaveTextContent('Retenir pour la suite : Prudent')
+    const list = await memory()
+    expect(pending.compareDocumentPosition(list)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(within(list).getByText(fr['agent.memory.empty'])).toBeInTheDocument()
+
+    await user.click(within(cards[0]).getByRole('button', { name: 'Confirmer' }))
+
+    expect(await within(list).findByText(/^TMI 30\s%$/)).toBeInTheDocument()
+    expect(decisions).toEqual(['merged marginal_rate'])
+    expect(within(pending).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(pending).queryByText(/TMI/)).not.toBeInTheDocument()
+    // The card left with its buttons: the focus is on the facts it joined.
+    expect(list).toHaveFocus()
+  })
+
+  it('ignores one, which leaves the list and the profile as it was', async () => {
+    const decisions = waitingOn([rate])
+    const { user } = await openPage('/agent/memory', 'Mémoire')
+
+    const pending = await screen.findByRole('region', { name: 'En attente' })
+    await user.click(within(pending).getByRole('button', { name: 'Ignorer' }))
+
+    // The last one takes the heading with it.
+    await waitFor(() => expect(pending).not.toBeInTheDocument())
+    expect(decisions).toEqual(['ignored marginal_rate'])
+    const list = await memory()
+    expect(within(list).getByText(fr['agent.memory.empty'])).toBeInTheDocument()
+    expect(list).toHaveFocus()
+  })
+
+  it('drops a decided card at once, before the list is read again', async () => {
+    waitingOn([rate])
+    const { user } = await openPage('/agent/memory', 'Mémoire')
+
+    const pending = await screen.findByRole('region', { name: 'En attente' })
+    // The list's next read never lands: only the card's own write can take it off.
+    server.use(http.get(ROUTES.profileProposals, () => new Promise<never>(() => {})))
+    await user.click(within(pending).getByRole('button', { name: 'Ignorer' }))
+
+    await waitFor(() => expect(pending).not.toBeInTheDocument())
+    expect(screen.queryByText('Ignoré')).not.toBeInTheDocument()
+  })
+
+  it('keeps the facts when the pending list cannot be read', async () => {
+    switchedOn({
+      facts: { marginal_rate: { value: 0.3, confirmed_at: CONFIRMED } },
+      projects: [],
+      about: null,
+    })
+    server.use(
+      http.get(ROUTES.profileProposals, () =>
+        HttpResponse.json({ title: 'Unavailable', status: 503 }, { status: 503 }),
+      ),
+    )
+    await openPage('/agent/memory', 'Mémoire')
+
+    expect(await within(await memory()).findByText(/^TMI 30\s%$/)).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'En attente' })).not.toBeInTheDocument()
+  })
+
+  it('draws no heading when nothing waits', async () => {
+    waitingOn([])
+    await openPage('/agent/memory', 'Mémoire')
+    await within(await memory()).findByText(fr['agent.memory.empty'])
+    expect(screen.queryByRole('heading', { name: 'En attente' })).not.toBeInTheDocument()
+  })
+})

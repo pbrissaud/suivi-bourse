@@ -10,7 +10,7 @@ import pytest
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from api import create_app
-from application import agent, profile
+from application import agent, profile, proposals
 from test_agent_routes import chunks, post, run, scripted, switched_on
 from test_mcp_server import _text, build_runtime, call, payload, rich_runtime
 
@@ -241,9 +241,37 @@ def test_proposals_are_read_by_ids_and_unknown_ones_are_left_out(client):
 
     assert [p['id'] for p in answer.get_json()['proposals']] == [proposal_id]
     assert http.get('/api/profile/proposals?ids=nope').status_code == 400
-    assert http.get('/api/profile/proposals').status_code == 400
+    assert http.get('/api/profile/proposals?ids=').status_code == 400
     many = ','.join(f'{i:032x}' for i in range(51))
     assert http.get(f'/api/profile/proposals?ids={many}').status_code == 400
+
+
+def test_without_ids_the_proposals_still_waiting_are_listed_newest_first(
+        client):
+    http, runtime = client
+    store, now = runtime.store, datetime.now(timezone.utc)
+    older = profile.propose(store, 'risk_tolerance', 'prudent',
+                            now - timedelta(hours=2))
+    newer = profile.propose(store, 'marginal_rate', 0.3,
+                            now - timedelta(hours=1))
+    merged = profile.propose(store, 'marginal_rate', 0.11, now)
+    ignored = profile.propose(store, 'marginal_rate', 0.41, now)
+    profile.propose(store, 'marginal_rate', 0.45,
+                    now - profile.EXPIRY - timedelta(seconds=1))
+    proposals.insert(store, 'setting', {
+        'key': 'log_level', 'value': 'DEBUG', 'previous': 'INFO'},
+        'a' * 32, now)
+    assert http.post(f'/api/profile/proposals/{merged}/confirm').status_code == 200
+    assert http.post(f'/api/profile/proposals/{ignored}/ignore').status_code == 200
+
+    waiting = http.get('/api/profile/proposals').get_json()['proposals']
+
+    assert [(p['id'], p['status']) for p in waiting] == [
+        (newer, 'ready'), (older, 'ready')]
+    assert waiting[0]['key'] == 'marginal_rate' and waiting[0]['value'] == 0.3
+    assert http.post(f'/api/profile/proposals/{newer}/ignore').status_code == 200
+    assert [p['id'] for p in http.get(
+        '/api/profile/proposals').get_json()['proposals']] == [older]
 
 
 # ------------------------------------------------- a turn, scripted --
